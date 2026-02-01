@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "livelimatch-1c945"
+  },
+  "targets": {
+    "livelimatch-1c945": {
+      "hosting": {
+        "portal": [
+          "livelimatch-portal"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

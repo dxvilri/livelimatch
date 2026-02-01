@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Ensuring the app takes up the full screen height */
+:root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
