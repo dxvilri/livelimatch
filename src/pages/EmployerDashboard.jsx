@@ -22,13 +22,16 @@ import {
   ChartBarIcon, SignalIcon, UserPlusIcon, PresentationChartLineIcon,
   TrendingUpIcon, BuildingOfficeIcon, ChevronDownIcon,
   ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon, VideoCameraIcon,
-  ShieldCheckIcon, HomeIcon, BellIcon, MegaphoneIcon
+  ShieldCheckIcon, HomeIcon, BellIcon, MegaphoneIcon,
+  QuestionMarkCircleIcon // Added Icon
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
 const PUROK_LIST = [
   "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary"
 ];
+
+const ADMIN_EMAIL = "admin@livelimatch.com"; // Defined Admin Email for Support lookup
 
 const JOB_TYPES = [
   { id: "Full-time", icon: <BriefcaseIcon className="w-5 h-5"/>, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20" },
@@ -150,6 +153,7 @@ export default function EmployerDashboard() {
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const chatFileRef = useRef(null); 
   const scrollRef = useRef(null);
+  const [adminUser, setAdminUser] = useState(null); // State for Admin user
     
   // -- ANALYTICS STATE --
   const [analyticsData, setAnalyticsData] = useState({
@@ -160,18 +164,53 @@ export default function EmployerDashboard() {
   // --- EFFECTS ---
 
   useEffect(() => {
-    if (activeTab !== "Messages") {
+    if (activeTab !== "Messages" && activeTab !== "Support") {
        setActiveChat(null);
     }
   }, [activeTab]);
 
   useEffect(() => {
-    if (activeTab === "Messages") {
+    if (activeTab === "Messages" || activeTab === "Support") {
        setIsBubbleVisible(false);
        setIsBubbleExpanded(false);
        setIsDesktopInboxVisible(false);
     }
   }, [activeTab]);
+
+  // Effect to find Admin User for Support Tab
+  useEffect(() => {
+      const fetchAdmin = async () => {
+          // Attempt to find admin in 'employers' first (assuming admin might be an employer role)
+          // Adjust collection if Admin is stored elsewhere.
+          let q = query(collection(db, "employers"), where("email", "==", ADMIN_EMAIL));
+          let snap = await getDocs(q);
+          
+          if (snap.empty) {
+             // Fallback: check applicants or a dedicated 'admins' collection if you create one
+             q = query(collection(db, "applicants"), where("email", "==", ADMIN_EMAIL));
+             snap = await getDocs(q);
+          }
+
+          if (!snap.empty) {
+              const docData = snap.docs[0].data();
+              setAdminUser({ id: snap.docs[0].id, ...docData });
+          } else {
+              console.warn("Support Admin not found in database.");
+          }
+      };
+      fetchAdmin();
+  }, []);
+
+  // Auto-select Admin chat when entering Support tab
+  useEffect(() => {
+      if (activeTab === "Support" && adminUser) {
+          setActiveChat({
+              id: adminUser.id,
+              name: `${adminUser.firstName || 'Admin'} ${adminUser.lastName || 'Support'}`,
+              profilePic: getAvatarUrl(adminUser)
+          });
+      }
+  }, [activeTab, adminUser]);
 
    useEffect(() => {
      if(activeTab === "Discover" || activeTab === "Analytics") {
@@ -242,7 +281,11 @@ export default function EmployerDashboard() {
 
   useEffect(() => {
     if (!effectiveActiveChatId) return;
-    const otherUserRef = doc(db, "applicants", effectiveActiveChatId);
+    // Check if chatting with Admin (who might be in employers) or Applicant
+    let collectionName = "applicants";
+    if (adminUser && effectiveActiveChatId === adminUser.id) collectionName = "employers"; // Assuming admin is stored in employers
+
+    const otherUserRef = doc(db, collectionName, effectiveActiveChatId);
     const unsubStatus = onSnapshot(otherUserRef, (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
@@ -250,7 +293,7 @@ export default function EmployerDashboard() {
         }
     });
     return () => unsubStatus();
-  }, [effectiveActiveChatId]);
+  }, [effectiveActiveChatId, adminUser]);
 
   useEffect(() => {
     localStorage.setItem("theme", darkMode ? "dark" : "light");
@@ -283,7 +326,13 @@ export default function EmployerDashboard() {
 
         if (otherId) {
             try {
-                const userSnap = await getDoc(doc(db, "applicants", otherId));
+                // Try fetching from applicants first
+                let userSnap = await getDoc(doc(db, "applicants", otherId));
+                if (!userSnap.exists()) {
+                    // Fallback to employers (e.g. for Admin or other employers)
+                    userSnap = await getDoc(doc(db, "employers", otherId));
+                }
+
                 if (userSnap.exists()) {
                     const userData = userSnap.data();
                     const freshPic = getAvatarUrl(userData);
@@ -731,12 +780,12 @@ return (
                              <div className="p-3 border-b border-white/5 font-black text-xs uppercase tracking-widest opacity-50">Notifications</div>
                              <div className="p-2 space-y-1">
                                  <button onClick={() => { setActiveTab("Messages"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${unreadMsgCount > 0 ? 'text-blue-500 bg-blue-500/10' : 'opacity-50'}`}>
-                                      <span>Unread Messages</span>
-                                      <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
+                                         <span>Unread Messages</span>
+                                         <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
                                  </button>
                                  <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-amber-500 bg-amber-500/10' : 'opacity-50'}`}>
-                                      <span>New Applicants</span>
-                                      <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
+                                         <span>New Applicants</span>
+                                         <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
                                  </button>
                                  {totalNotifications === 0 && <div className="text-center py-4 opacity-30 text-xs font-bold uppercase">No new notifications</div>}
                              </div>
@@ -763,21 +812,28 @@ return (
         className={`fixed top-0 right-0 h-full w-64 z-50 rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel} 
         ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}
       >
-        <div className="h-24 flex items-center justify-center relative mt-8">
-            <div className={`flex items-center gap-3 transition-all duration-300`}>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                    <BriefcaseIcon className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                    <h1 className="font-black text-lg tracking-tight leading-none">LIVELI<br/><span className="text-blue-500">MATCH</span></h1>
+        {/* REPLACED LIVELI MATCH Logo with Clickable Profile Card */}
+        <div className="h-24 flex items-center justify-center relative mt-8 cursor-pointer" onClick={() => { setActiveTab("Profile"); setIsSidebarOpen(false); }}>
+            <div className={`flex items-center gap-3 p-2 pr-4 rounded-2xl transition-all duration-300 hover:bg-white/10 group`}>
+                <ProfilePicComponent sizeClasses="w-12 h-12" isCollapsed={true} />
+                <div className="text-left overflow-hidden">
+                    <h1 className="font-black text-sm tracking-tight leading-none truncate max-w-[120px]">{employerData.firstName || "User"} {employerData.lastName || ""}</h1>
+                    <p className="text-[10px] opacity-60 font-bold uppercase tracking-wider group-hover:text-blue-500 transition-colors">View Profile</p>
                 </div>
             </div>
-             <button onClick={() => setIsSidebarOpen(false)} className="absolute top-0 right-4 p-2 opacity-50 hover:opacity-100"><XMarkIcon className="w-6 h-6" /></button>
+             <button onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }} className="absolute top-0 right-4 p-2 opacity-50 hover:opacity-100"><XMarkIcon className="w-6 h-6" /></button>
         </div>
 
         <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
             {/* Main Tabs Removed as requested, keeping Analytics & Profile/System actions */}
             <NavBtn active={activeTab==="Analytics"} onClick={()=>{setActiveTab("Analytics"); setIsSidebarOpen(false)}} icon={<PresentationChartLineIcon className="w-6 h-6"/>} label="Analytics" open={true} dark={darkMode} />
+            
+            {/* Added Help & Support Tab */}
+            <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
+            <NavBtn active={activeTab==="Support"} onClick={()=>{setActiveTab("Support"); setIsSidebarOpen(false)}} icon={<QuestionMarkCircleIcon className="w-6 h-6"/>} label="Help & Support" open={true} dark={darkMode} />
+
+            <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
+
             <NavBtn active={activeTab==="Profile"} onClick={()=>{setActiveTab("Profile"); setIsSidebarOpen(false)}} icon={<UserCircleIcon className="w-6 h-6"/>} label="Profile" open={true} dark={darkMode} />
         </nav>
 
@@ -804,6 +860,8 @@ return (
       <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] p-4 lg:p-8 pt-24 lg:pt-28`}>
         
         {/* Floating Header (Kept as Page Title Sub-header) */}
+        {/* Hides on Support tab on mobile to give full screen chat feel */}
+        {!(isMobile && (activeTab === "Support" || activeChat)) && (
         <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 rounded-2xl ${glassPanel}`}>
             <div className="flex items-center gap-4">
                 <div className={`p-2 rounded-xl hidden md:block ${darkMode ? 'bg-white/5' : 'bg-blue-50'}`}>
@@ -813,13 +871,15 @@ return (
                     {activeTab === "Messages" && <ChatBubbleLeftRightIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Analytics" && <PresentationChartLineIcon className="w-6 h-6 text-blue-500"/>}
+                    {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500"/>}
                 </div>
                 <div>
-                    <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeTab === "Profile" ? "Profile" : activeTab}</h2>
+                    <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeTab === "Profile" ? "Profile" : activeTab === "Support" ? "Help & Support" : activeTab}</h2>
                     <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">Employer Workspace</p>
                 </div>
             </div>
         </header>
+        )}
 
         {/* PROFILE TAB */}
         {activeTab === "Profile" && (
@@ -856,6 +916,86 @@ return (
                         {isEditingProfile ? <textarea value={employerData.education} onChange={(e) => setEmployerData({...employerData, education: e.target.value})} placeholder="List your education background..." className={`w-full h-32 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} /> : <p className={`text-sm leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{employerData.education || "No education listed."}</p>}
                     </div>
                 </div>
+            </div>
+        )}
+
+        {/* SUPPORT TAB Dedicated Support Chat View */}
+        {activeTab === "Support" && (
+            <div className={`animate-in fade-in duration-700 h-[calc(100vh-200px)] md:h-[calc(100vh-10rem)] flex flex-col rounded-[2.5rem] overflow-hidden relative shadow-xl ${glassPanel}`}>
+                {adminUser ? (
+                    <>
+                         <div className={`p-4 md:p-6 flex items-center justify-between border-b shrink-0 backdrop-blur-md z-10 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-200'}`}>
+                             <div className="flex items-center gap-3 md:gap-4">
+                                 <div className="w-10 h-10 md:w-12 md:h-12 rounded-full overflow-hidden bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center text-white font-black text-lg md:text-xl shadow-lg">
+                                     {adminUser.profilePic ? <img src={adminUser.profilePic} alt="Admin" className="w-full h-full object-cover" /> : "A"}
+                                 </div>
+                                 <div>
+                                     <h3 className={`font-black text-base md:text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>{adminUser.firstName || "Admin"} {adminUser.lastName || "Support"}</h3>
+                                     <div className="flex items-center gap-1.5">
+                                         <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
+                                         <p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Official Support</p>
+                                     </div>
+                                 </div>
+                             </div>
+                         </div>
+
+                         <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
+                            {/* System Welcome Message */}
+                            <div className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">Secure Support Channel</div>
+                            
+                            {messages.map((msg, i) => {
+                                const isMe = msg.senderId === auth.currentUser.uid;
+                                const isSystem = msg.type === 'system';
+                                const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
+                                const hasText = msg.text && msg.text.trim().length > 0;
+                                if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
+                                return (
+                                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
+                                        {msg.replyTo && (<div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>)}
+                                        <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                            <MessageAvatar isMe={isMe} />
+                                            <div className="relative group/bubble flex flex-col gap-1">
+                                                {msg.fileUrl && (
+                                                    <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-slate-100 text-slate-900')}`}>
+                                                        {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
+                                                        {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
+                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName || "Download File"}</span></a>}
+                                                    </div>
+                                                )}
+                                                {hasText && (
+                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-slate-100 text-slate-900 rounded-bl-none'}`}>
+                                                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
+                                    </div>
+                                )
+                            })}
+                            <div ref={scrollRef}/>
+                         </div>
+
+                         <div className={`p-4 border-t shrink-0 z-20 pb-8 md:pb-4 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-300'}`}>
+                            {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-white/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : "Admin"}</span><span className="opacity-70 truncate max-w-xs">{replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
+                            {attachment && (<div className="mb-3 relative inline-block animate-in zoom-in duration-200"><div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">{attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}<span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span></div><button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button></div>)}
+                            <form onSubmit={handleSendMessage} className="flex items-end gap-3">
+                                <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
+                                <button type="button" onClick={() => chatFileRef.current.click()} className={`p-4 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                <div className={`flex-1 rounded-2xl flex items-center px-4 py-3.5 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-slate-100 border-transparent focus-within:bg-white focus-within:border-blue-300 shadow-inner'}`}><textarea value={newMessage} onChange={e=>setNewMessage(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }} placeholder="Type a message..." className="w-full bg-transparent outline-none text-sm font-medium resize-none max-h-24 hide-scrollbar" rows={1} /></div>
+                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 shadow-lg shadow-blue-500/20 flex items-center justify-center">{isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5 -ml-0.5 mt-0.5"/>}</button>
+                            </form>
+                         </div>
+                    </>
+                ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 p-10 select-none">
+                        <div className={`w-32 h-32 rounded-full flex items-center justify-center mb-6 ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                            <QuestionMarkCircleIcon className="w-16 h-16 opacity-20"/>
+                        </div>
+                        <h3 className="text-2xl font-black mb-2">Support Unavailable</h3>
+                        <p className="max-w-xs text-xs font-bold uppercase tracking-wide">Unable to connect to Admin. Please ensure an admin account exists with email "{ADMIN_EMAIL}"</p>
+                    </div>
+                )}
             </div>
         )}
         
@@ -1053,10 +1193,10 @@ return (
 
                                <div className="flex gap-2">
                                    <button onClick={() => handleOpenJobModal(job)} className={`p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
-                                      <PencilSquareIcon className="w-4 h-4" />
+                                        <PencilSquareIcon className="w-4 h-4" />
                                    </button>
                                    <button onClick={() => handleDeleteJob(job.id)} className={`p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}>
-                                      <TrashIcon className="w-4 h-4" />
+                                        <TrashIcon className="w-4 h-4" />
                                    </button>
                                </div>
                           </div>
@@ -1399,13 +1539,13 @@ return (
                                             <div ref={scrollRef}/>
                                     </div>
                                     <div className={`p-3 border-t shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                                            {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : effectiveActiveChatUser.name}</span><span className="opacity-70 truncate max-w-xs">{replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
+                                            {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : effectiveActiveChatUser.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
                                             {attachment && (<div className="mb-3 relative inline-block animate-in zoom-in duration-200"><div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">{attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}<span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span></div><button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button></div>)}
-                                           <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
+                                           <form onSubmit={handleSendMessage} className={`flex gap-2 items-center`}>
                                                 <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
                                                 <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-slate-400' : 'bg-slate-100 hover:bg-slate-200 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
                                                 <div className={`flex-1 rounded-2xl flex items-center px-4 py-2 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-slate-100 border-transparent focus-within:bg-white focus-within:border-blue-300 shadow-inner'}`}><input value={newMessage} onChange={e=>setNewMessage(e.target.value)} placeholder="Message..." className="w-full bg-transparent outline-none text-sm font-medium" /></div>
-                                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5"/>}</button>
+                                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
                                            </form>
                                     </div>
                                 </>
@@ -1490,7 +1630,7 @@ return (
                                 if(isSystem) return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
                                 return (
                                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
+                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.text}</span></div>}
                                             <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                                 <MessageAvatar isMe={isMe} />
                                                 <div className="relative group/bubble flex flex-col gap-1">
