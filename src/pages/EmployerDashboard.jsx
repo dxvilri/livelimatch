@@ -46,10 +46,12 @@ const getAvatarUrl = (user) => {
 export default function EmployerDashboard() {
   const { userData } = useAuth(); 
   const [activeTab, setActiveTab] = useState("Discover"); 
-  const [isMenuOpen, setIsMenuOpen] = useState(false); 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Default closed for right sidebar
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
   const [loading, setLoading] = useState(false); 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // --- NOTIFICATION STATE ---
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
 
   // --- MESSENGER BUBBLE LOGIC ---
   const [isBubbleVisible, setIsBubbleVisible] = useState(false); 
@@ -94,6 +96,19 @@ export default function EmployerDashboard() {
     : 'bg-white/40 border-white/60 hover:bg-white/70 hover:border-blue-300/50 hover:shadow-lg'}`;
 
   const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 ${darkMode ? 'text-white' : 'text-slate-800'}`;
+
+  // Glass Button Style for Header Nav
+  const glassNavBtn = `p-4 rounded-2xl transition-all duration-300 backdrop-blur-md border ${
+      darkMode 
+      ? 'border-white/5 text-slate-400 hover:bg-white/10 hover:text-white hover:border-white/20 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]' 
+      : 'border-white/40 text-slate-400 hover:bg-white/60 hover:text-blue-600 hover:border-blue-200 hover:shadow-lg'
+  }`;
+  
+  const activeGlassNavBtn = `p-4 rounded-2xl transition-all duration-300 backdrop-blur-md border shadow-lg scale-110 ${
+      darkMode
+      ? 'bg-blue-600/90 border-blue-500/50 text-white shadow-blue-900/50'
+      : 'bg-blue-600 border-blue-400 text-white shadow-blue-500/30'
+  }`;
 
   const [myPostedJobs, setMyPostedJobs] = useState([]); 
   const [receivedApplications, setReceivedApplications] = useState([]); 
@@ -547,7 +562,7 @@ export default function EmployerDashboard() {
   };
   const displayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
 
-  // --- FILTERS ---
+  // --- FILTERS & NOTIFICATIONS ---
   const filteredJobs = myPostedJobs.filter(job => job.title.toLowerCase().includes(searchTerm.toLowerCase()) || (job.sitio && job.sitio.toLowerCase().includes(searchTerm.toLowerCase())));
   const filteredChats = conversations.filter(c => {
       const otherId = c.participants.find(p => p !== auth.currentUser.uid);
@@ -566,6 +581,11 @@ export default function EmployerDashboard() {
   const acceptedApplications = filteredApps.filter(app => app.status === 'accepted');
   const hasNewApps = receivedApplications.some(app => app.status === 'pending' && !app.isViewed);
   const hasGlobalUnread = conversations.some(c => (c[`unread_${auth.currentUser?.uid}`] || 0) > 0);
+
+  // --- NOTIFICATION CALCS ---
+  const unreadMsgCount = conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0);
+  const newAppCount = receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length;
+  const totalNotifications = unreadMsgCount + newAppCount;
 
   const ProfilePicComponent = ({ sizeClasses = "w-12 h-12", isCollapsed = false }) => (
     <div className={`relative group shrink-0 ${sizeClasses} rounded-2xl overflow-hidden shadow-lg border select-none ${darkMode ? 'border-white/10 bg-slate-800' : 'border-slate-200 bg-slate-100'}`}>
@@ -670,20 +690,75 @@ return (
           </div>
         </div>
       )}
+      
+      {/* --- NEW MAIN FIXED HEADER --- */}
+      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'}`}>
+            {/* Logo/Title (REMOVED BADGE) */}
+            <div className="flex items-center gap-3">
+                 <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>LIVELI<span className="text-blue-500">MATCH</span></h1>
+            </div>
 
-      {/* --- FLOATING HAMBURGER (Top-Right) --- */}
-      {!(isMobile && activeChat) && (
-        <div className="fixed top-4 right-4 z-[60]">
-          <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className={`p-3 rounded-2xl shadow-lg backdrop-blur-md border ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/20 text-slate-800'}`}
-          >
-              {isSidebarOpen ? <XMarkIcon className="w-6 h-6"/> : <Bars3BottomRightIcon className="w-6 h-6"/>}
-          </button>
-        </div>
-      )}
+            {/* NEW CENTER NAV (DESKTOP) - REPLACED TEXT WITH ICONS WITH GLASS EFFECT AND MORE SPACING */}
+            <div className="hidden lg:flex items-center gap-12">
+                <button onClick={() => setActiveTab("Discover")} className={activeTab === "Discover" ? activeGlassNavBtn : glassNavBtn}>
+                    <SparklesIcon className="w-7 h-7" />
+                </button>
+                <button onClick={() => setActiveTab("Listings")} className={activeTab === "Listings" ? activeGlassNavBtn : glassNavBtn}>
+                    <BriefcaseIcon className="w-7 h-7" />
+                </button>
+                <button onClick={() => setActiveTab("Applicants")} className={`relative ${activeTab === "Applicants" ? activeGlassNavBtn : glassNavBtn}`}>
+                    <UsersIcon className="w-7 h-7" />
+                    {hasNewApps && <span className="absolute top-2 right-2 w-3 h-3 bg-amber-500 border-2 border-white rounded-full animate-pulse"></span>}
+                </button>
+                <button onClick={() => setActiveTab("Messages")} className={`relative ${activeTab === "Messages" ? activeGlassNavBtn : glassNavBtn}`}>
+                    <ChatBubbleLeftRightIcon className="w-7 h-7" />
+                    {hasGlobalUnread && <span className="absolute top-2 right-2 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse"></span>}
+                </button>
+            </div>
 
-      {/* --- RIGHT SIDEBAR (Collapsible) --- */}
+            {/* Right Side Actions */}
+            <div className="flex items-center gap-4">
+                {/* Notification Bell with Dropdown */}
+                <div className="relative">
+                    <button onClick={() => setIsNotifOpen(!isNotifOpen)} className={`relative p-2 rounded-full transition-all active:scale-95 ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-slate-100 text-slate-600'}`}>
+                        <BellIcon className="w-6 h-6" />
+                        {totalNotifications > 0 && (
+                            <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 border-2 border-slate-900 rounded-full animate-pulse"></span>
+                        )}
+                    </button>
+                    {isNotifOpen && (
+                        <div className={`absolute right-0 top-12 w-64 rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'}`}>
+                             <div className="p-3 border-b border-white/5 font-black text-xs uppercase tracking-widest opacity-50">Notifications</div>
+                             <div className="p-2 space-y-1">
+                                 <button onClick={() => { setActiveTab("Messages"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${unreadMsgCount > 0 ? 'text-blue-500 bg-blue-500/10' : 'opacity-50'}`}>
+                                      <span>Unread Messages</span>
+                                      <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
+                                 </button>
+                                 <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-amber-500 bg-amber-500/10' : 'opacity-50'}`}>
+                                      <span>New Applicants</span>
+                                      <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
+                                 </button>
+                                 {totalNotifications === 0 && <div className="text-center py-4 opacity-30 text-xs font-bold uppercase">No new notifications</div>}
+                             </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Profile Pic */}
+                <div onClick={() => setActiveTab("Profile")} className="cursor-pointer group">
+                    <div className={`w-10 h-10 rounded-full overflow-hidden border-2 shadow-sm transition-transform active:scale-95 ${darkMode ? 'border-slate-600 group-hover:border-white' : 'border-white group-hover:border-blue-500'}`}>
+                        {profileImage ? <img src={profileImage} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">{employerData.firstName ? employerData.firstName.charAt(0) : "E"}</div>}
+                    </div>
+                </div>
+                
+                {/* Hamburger (Visible on Mobile & Desktop) */}
+                 <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl transition-colors ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-900 hover:bg-slate-100'}`}>
+                    <Bars3BottomRightIcon className="w-7 h-7" />
+                 </button>
+            </div>
+      </header>
+
+      {/* --- RIGHT SIDEBAR (Collapsible - CLEANED) --- */}
       <aside 
         className={`fixed top-0 right-0 h-full w-64 z-50 rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel} 
         ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}
@@ -697,35 +772,12 @@ return (
                     <h1 className="font-black text-lg tracking-tight leading-none">LIVELI<br/><span className="text-blue-500">MATCH</span></h1>
                 </div>
             </div>
+             <button onClick={() => setIsSidebarOpen(false)} className="absolute top-0 right-4 p-2 opacity-50 hover:opacity-100"><XMarkIcon className="w-6 h-6" /></button>
         </div>
 
         <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
-            <NavBtn active={activeTab==="Discover"} onClick={()=>{setActiveTab("Discover"); setIsSidebarOpen(false)}} icon={<SparklesIcon className="w-6 h-6"/>} label="Discover" open={true} dark={darkMode} />
-            <NavBtn active={activeTab==="Listings"} onClick={()=>{setActiveTab("Listings"); setIsSidebarOpen(false)}} icon={<BriefcaseIcon className="w-6 h-6"/>} label="My Listings" open={true} dark={darkMode} />
-            <NavBtn 
-                active={activeTab==="Applicants"} 
-                onClick={()=>{setActiveTab("Applicants"); setIsSidebarOpen(false)}} 
-                icon={<UsersIcon className="w-6 h-6"/>} 
-                label="Applicants" 
-                open={true} 
-                dark={darkMode}
-                badge={getBadge("Applicants", receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length)}
-                badgeColor="bg-amber-500"
-            />
-            <NavBtn 
-                active={activeTab==="Messages"} 
-                onClick={()=>{setActiveTab("Messages"); setIsSidebarOpen(false)}} 
-                icon={<ChatBubbleLeftRightIcon className="w-6 h-6"/>} 
-                label="Messages" 
-                open={true} 
-                dark={darkMode}
-                badge={getBadge("Messages", conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0))}
-                badgeColor="bg-red-500"
-            />
+            {/* Main Tabs Removed as requested, keeping Analytics & Profile/System actions */}
             <NavBtn active={activeTab==="Analytics"} onClick={()=>{setActiveTab("Analytics"); setIsSidebarOpen(false)}} icon={<PresentationChartLineIcon className="w-6 h-6"/>} label="Analytics" open={true} dark={darkMode} />
-            
-            <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
-            
             <NavBtn active={activeTab==="Profile"} onClick={()=>{setActiveTab("Profile"); setIsSidebarOpen(false)}} icon={<UserCircleIcon className="w-6 h-6"/>} label="Profile" open={true} dark={darkMode} />
         </nav>
 
@@ -748,10 +800,10 @@ return (
         </div>
       </aside>
 
-      {/* --- MAIN CONTENT --- */}
-      <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] p-4 lg:p-8 pt-20 lg:pt-8`}>
+      {/* --- MAIN CONTENT (ADDED TOP PADDING FOR FIXED HEADER) --- */}
+      <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] p-4 lg:p-8 pt-24 lg:pt-28`}>
         
-        {/* Floating Header */}
+        {/* Floating Header (Kept as Page Title Sub-header) */}
         <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 rounded-2xl ${glassPanel}`}>
             <div className="flex items-center gap-4">
                 <div className={`p-2 rounded-xl hidden md:block ${darkMode ? 'bg-white/5' : 'bg-blue-50'}`}>
@@ -766,12 +818,6 @@ return (
                     <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeTab === "Profile" ? "Profile" : activeTab}</h2>
                     <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">Employer Workspace</p>
                 </div>
-            </div>
-            <div className="flex items-center gap-4 pr-12 lg:pr-14">
-               {/* Profile Pic on Header */}
-               <div onClick={() => setActiveTab("Profile")} className="cursor-pointer">
-                   <ProfilePicComponent sizeClasses="w-10 h-10" isCollapsed={true} />
-               </div>
             </div>
         </header>
 
@@ -817,43 +863,43 @@ return (
         {activeTab === "Discover" && (
             <div className="animate-in fade-in duration-700">
                 <div className="space-y-6 mb-8">
-                      {/* --- QUICK STATS (UPDATED GLASS STYLES) --- */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-8">
+                      {/* --- QUICK STATS (UPDATED FOR MOBILE FIT) --- */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
                         
-                        {/* 1. CANDIDATES - BLUE GLASS */}
-                        <div onClick={() => setActiveTab("Discover")} className={`relative p-6 rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 hover:shadow-[0_0_30px_rgba(59,130,246,0.3)]' : 'bg-blue-50/40 border-white/60 hover:bg-blue-100/50 shadow-lg shadow-blue-500/5'}`}>
+                        {/* 1. CANDIDATES */}
+                        <div onClick={() => setActiveTab("Discover")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20' : 'bg-blue-50/40 border-white/60 hover:bg-blue-100/50 shadow-lg shadow-blue-500/5'}`}>
                             <div className="relative z-10">
-                                <h3 className={`text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{discoverTalents.length}</h3>
-                                <p className={`text-xs font-bold uppercase tracking-widest mt-2 ${darkMode ? 'text-blue-200' : 'text-blue-600'}`}>Candidates</p>
+                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{discoverTalents.length}</h3>
+                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-600'}`}>Candidates</p>
                             </div>
-                            <UsersIcon className={`w-24 h-24 absolute -right-4 -bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-600'}`}/>
+                            <UsersIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-600'}`}/>
                         </div>
 
-                        {/* 2. LISTINGS - PURPLE GLASS */}
-                        <div onClick={() => setActiveTab("Listings")} className={`relative p-6 rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 hover:shadow-[0_0_30px_rgba(168,85,247,0.3)]' : 'bg-purple-50/40 border-white/60 hover:bg-purple-100/50 shadow-lg shadow-purple-500/5'}`}>
+                        {/* 2. LISTINGS */}
+                        <div onClick={() => setActiveTab("Listings")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20' : 'bg-purple-50/40 border-white/60 hover:bg-purple-100/50 shadow-lg shadow-purple-500/5'}`}>
                             <div className="relative z-10">
-                                <h3 className={`text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-purple-900'}`}>{myPostedJobs.length}</h3>
-                                <p className={`text-xs font-bold uppercase tracking-widest mt-2 ${darkMode ? 'text-purple-200' : 'text-purple-600'}`}>Listings</p>
+                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-purple-900'}`}>{myPostedJobs.length}</h3>
+                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-purple-600'}`}>Listings</p>
                             </div>
-                            <BriefcaseIcon className={`w-24 h-24 absolute -right-4 -bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-purple-600'}`}/>
+                            <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-purple-600'}`}/>
                         </div>
 
-                        {/* 3. PENDING - AMBER GLASS */}
-                        <div onClick={() => setActiveTab("Applicants")} className={`relative p-6 rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]' : 'bg-amber-50/40 border-white/60 hover:bg-amber-100/50 shadow-lg shadow-amber-500/5'}`}>
+                        {/* 3. PENDING */}
+                        <div onClick={() => setActiveTab("Applicants")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20' : 'bg-amber-50/40 border-white/60 hover:bg-amber-100/50 shadow-lg shadow-amber-500/5'}`}>
                             <div className="relative z-10">
-                                <h3 className={`text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-amber-900'}`}>{receivedApplications.filter(a => a.status === 'pending').length}</h3>
-                                <p className={`text-xs font-bold uppercase tracking-widest mt-2 ${darkMode ? 'text-amber-200' : 'text-amber-600'}`}>Pending</p>
+                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-amber-900'}`}>{receivedApplications.filter(a => a.status === 'pending').length}</h3>
+                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-amber-600'}`}>Pending</p>
                             </div>
-                            <ClockIcon className={`w-24 h-24 absolute -right-4 -bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-amber-600'}`}/>
+                            <ClockIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-amber-600'}`}/>
                         </div>
 
-                        {/* 4. UNREAD MSGS - PINK GLASS */}
-                        <div onClick={() => setActiveTab("Messages")} className={`relative p-6 rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 hover:shadow-[0_0_30px_rgba(236,72,153,0.3)]' : 'bg-pink-50/40 border-white/60 hover:bg-pink-100/50 shadow-lg shadow-pink-500/5'}`}>
+                        {/* 4. UNREAD MSGS */}
+                        <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20' : 'bg-pink-50/40 border-white/60 hover:bg-pink-100/50 shadow-lg shadow-pink-500/5'}`}>
                             <div className="relative z-10">
-                                <h3 className={`text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-pink-900'}`}>{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser.uid}`] || 0), 0)}</h3>
-                                <p className={`text-xs font-bold uppercase tracking-widest mt-2 ${darkMode ? 'text-pink-200' : 'text-pink-600'}`}>Unread Msgs</p>
+                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-pink-900'}`}>{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser.uid}`] || 0), 0)}</h3>
+                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-pink-600'}`}>Unread Msgs</p>
                             </div>
-                            <ChatBubbleLeftRightIcon className={`w-24 h-24 absolute -right-4 -bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-pink-600'}`}/>
+                            <ChatBubbleLeftRightIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-pink-600'}`}/>
                         </div>
                       </div>
 
@@ -932,48 +978,86 @@ return (
             </div>
         )}
 
-        {/* MANAGE LISTINGS TAB */}
+        {/* MANAGE LISTINGS TAB (UPDATED CARD STYLE) */}
         {activeTab === "Listings" && (
           <div className="animate-in fade-in duration-700">
-            <div className="flex flex-col md:flex-row justify-end mb-6 gap-4">
-              <button onClick={() => handleOpenJobModal()} className="flex items-center gap-2 px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all active:scale-95"><PlusIcon className="w-4 h-4" /> Post New Job</button>
-            </div>
-            <div className={`flex items-center p-1.5 rounded-2xl border mb-10 shadow-sm max-w-md ${glassPanel}`}>
-                <div className="relative flex-1">
-                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="text" placeholder="Search your listings..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={glassInput + " pl-9 pr-4 py-2.5"} />
+            {/* UPDATED: Combined Search and Button Row for alignment */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
+                <div className={`flex items-center p-2 rounded-2xl border shadow-sm w-full md:max-w-md ${glassPanel}`}>
+                    <div className="relative flex-1">
+                        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                        <input type="text" placeholder="Search your listings..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={glassInput + " pl-10 pr-4 py-2 text-sm"} />
+                    </div>
                 </div>
+                <button onClick={() => handleOpenJobModal()} className="flex items-center gap-2 px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all active:scale-95 w-full md:w-auto justify-center">
+                    <PlusIcon className="w-5 h-5" /> Post New Job
+                </button>
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {filteredJobs.length > 0 ? filteredJobs.map(job => {
                 const applicantCount = receivedApplications.filter(a => a.jobId === job.id).length;
                 const style = getJobStyle(job.type);
                 return (
-                  <div key={job.id} className={`group relative p-4 md:p-6 ${glassCard} overflow-hidden`}>
-                      <div className={`absolute -right-4 -top-4 p-6 opacity-[0.03] transition-transform group-hover:scale-110 group-hover:opacity-[0.05] select-none pointer-events-none transform rotate-12 ${darkMode ? 'text-white' : 'text-black'}`}>{style.icon && <div className="scale-[4]">{style.icon}</div>}</div>
+                  <div key={job.id} className={`group relative p-5 ${glassCard} overflow-hidden`}>
+                      {/* Background Icon - Reduced scale for mobile so it doesn't obscure text */}
+                      <div className={`absolute -right-4 -top-4 p-6 opacity-[0.03] transition-transform group-hover:scale-110 group-hover:opacity-[0.05] select-none pointer-events-none transform rotate-12 ${darkMode ? 'text-white' : 'text-black'}`}>
+                          {style.icon && <div className="scale-[2.5] md:scale-[4]">{style.icon}</div>}
+                      </div>
+
                       <div className="relative z-10 flex flex-col h-full">
-                          <div className="flex justify-between items-start mb-4">
-                               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${style.bg} ${style.border}`}><span className={`${style.color}`}>{style.icon}</span><span className={`text-[9px] font-black uppercase tracking-widest ${style.color}`}>{job.type}</span></div>
-                               <div className="flex items-center gap-1.5 mt-1"><span className="flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span></div>
+                          {/* Top Header: Badge & Status */}
+                          <div className="flex justify-between items-start mb-3">
+                               <div className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border ${style.bg} ${style.border}`}>
+                                   <span className={`${style.color} scale-75`}>{style.icon}</span>
+                                   <span className={`text-[9px] font-black uppercase tracking-widest ${style.color}`}>{job.type}</span>
+                               </div>
+                               <div className="flex items-center gap-1.5 mt-1">
+                                   <span className="flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
+                               </div>
                           </div>
+
+                          {/* Title & Location */}
                           <div className="mb-4">
-                              <h3 className={`text-lg md:text-xl font-black leading-tight mb-2 line-clamp-2 select-none cursor-default ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
-                              <div className="flex items-center gap-1.5 text-slate-400 select-none"><MapPinIcon className="w-3.5 h-3.5" /><p className="text-[10px] font-bold uppercase tracking-wide opacity-70">{job.sitio || "No Location"}</p></div>
+                              <h3 className={`text-lg font-black leading-tight mb-1.5 line-clamp-2 select-none cursor-default ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
+                              <div className="flex items-center gap-1.5 text-slate-400 select-none">
+                                  <MapPinIcon className="w-3.5 h-3.5" />
+                                  <p className="text-[10px] font-bold uppercase tracking-wide opacity-70 truncate">{job.sitio || "No Location"}</p>
+                              </div>
                           </div>
+
+                          {/* Salary Section */}
                           <div className="mb-6 select-none cursor-default">
                                <div className={`inline-flex items-center gap-3 px-3 py-2 rounded-xl border ${darkMode ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-300'}`}>
                                    <CurrencyDollarIcon className="w-4 h-4 text-green-500" />
-                                   <div><p className="text-[7px] font-black uppercase tracking-widest text-slate-400 leading-none mb-0.5">Rate</p><p className={`text-sm font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.salary}</p></div>
+                                   <div>
+                                       <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 leading-none mb-0.5">Rate</p>
+                                       <p className={`text-sm font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.salary}</p>
+                                   </div>
                                </div>
                           </div>
-                          <div className="mt-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-dashed border-slate-500/20">
-                               <div className="flex items-center gap-2 select-none cursor-default">
-                                   <div className="flex -space-x-1.5">{[...Array(Math.min(3, applicantCount))].map((_, i) => (<div key={i} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-[9px] font-bold ${darkMode ? 'bg-slate-800 border-slate-900 text-white' : 'bg-slate-200 border-white text-slate-600'}`}>?</div>))}</div>
-                                   <div><span className={`text-xs font-black block leading-none ${applicantCount > 0 ? 'text-blue-500' : 'text-slate-400'}`}>{applicantCount}</span><span className="text-[7px] font-bold uppercase tracking-widest text-slate-400">Apps</span></div>
+
+                          {/* Bottom Actions - Kept as row on mobile for better fit */}
+                          <div className="mt-auto flex items-center justify-between gap-3 pt-4 border-t border-dashed border-slate-500/20">
+                               <div className="flex items-center gap-2 select-none cursor-default shrink-0">
+                                   <div className="flex -space-x-1.5">
+                                      {[...Array(Math.min(3, applicantCount))].map((_, i) => (
+                                          <div key={i} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-[9px] font-bold ${darkMode ? 'bg-slate-800 border-slate-900 text-white' : 'bg-slate-200 border-white text-slate-600'}`}>?</div>
+                                      ))}
+                                   </div>
+                                   <div className="flex flex-col">
+                                       <span className={`text-xs font-black leading-none ${applicantCount > 0 ? 'text-blue-500' : 'text-slate-400'}`}>{applicantCount}</span>
+                                       <span className="text-[7px] font-bold uppercase tracking-widest text-slate-400">Apps</span>
+                                   </div>
                                </div>
-                               <div className="flex gap-2 w-full sm:w-auto">
-                                   <button onClick={() => handleOpenJobModal(job)} className={`flex-1 sm:flex-none justify-center flex p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}><PencilSquareIcon className="w-4 h-4" /></button>
-                                   <button onClick={() => handleDeleteJob(job.id)} className={`flex-1 sm:flex-none justify-center flex p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}><TrashIcon className="w-4 h-4" /></button>
+
+                               <div className="flex gap-2">
+                                   <button onClick={() => handleOpenJobModal(job)} className={`p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                                      <PencilSquareIcon className="w-4 h-4" />
+                                   </button>
+                                   <button onClick={() => handleDeleteJob(job.id)} className={`p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}>
+                                      <TrashIcon className="w-4 h-4" />
+                                   </button>
                                </div>
                           </div>
                       </div>
@@ -1007,9 +1091,6 @@ return (
         {/* MESSAGES TAB */}
         {activeTab === "Messages" && (
           <div className="animate-in fade-in duration-700 h-[calc(100vh-100px)] md:h-[calc(100vh-2rem)] flex flex-col pb-2">
-            {!isMobile && (
-                 <div className="mb-6"><h2 className={`text-3xl font-black tracking-tight select-none cursor-default ${darkMode ? 'text-white' : 'text-slate-900'}`}>Messages</h2><p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2 select-none cursor-default">Chat with candidates</p></div>
-            )}
             <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0 relative">
                 <div className={`${isMobile && activeChat ? 'hidden' : 'flex'} w-full md:w-72 rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
                     <div className="p-5 pb-2 shrink-0">
@@ -1324,7 +1405,7 @@ return (
                                                 <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
                                                 <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-slate-400' : 'bg-slate-100 hover:bg-slate-200 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
                                                 <div className={`flex-1 rounded-2xl flex items-center px-4 py-2 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-slate-100 border-transparent focus-within:bg-white focus-within:border-blue-300 shadow-inner'}`}><input value={newMessage} onChange={e=>setNewMessage(e.target.value)} placeholder="Message..." className="w-full bg-transparent outline-none text-sm font-medium" /></div>
-                                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed">{isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5"/>}</button>
+                                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5"/>}</button>
                                            </form>
                                     </div>
                                 </>
@@ -1409,7 +1490,7 @@ return (
                                 if(isSystem) return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
                                 return (
                                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.text}</span></div>}
+                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
                                             <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                                 <MessageAvatar isMe={isMe} />
                                                 <div className="relative group/bubble flex flex-col gap-1">
