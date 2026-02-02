@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, cloneElement } from "react";
 import { useAuth } from "../context/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config"; 
@@ -72,17 +72,23 @@ export default function EmployerDashboard() {
   });
 
   // --- STYLES ---
+  // glassPanel: Keeps the glassy look for sidebar, profile, etc.
   const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
     ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' 
     : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
   
+  // modalPanel: SPECIFICALLY for Modals - Solid White in Light Mode
+  const modalPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
+    ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' 
+    : 'bg-white border-slate-200 shadow-2xl text-slate-900'}`;
+
   const glassCard = `backdrop-blur-md border rounded-2xl transition-all duration-300 group hover:-translate-y-1 ${darkMode
     ? 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60 hover:border-blue-500/30'
     : 'bg-white/40 border-white/60 hover:bg-white/70 hover:border-blue-300/50 hover:shadow-lg'}`;
 
   const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 ${darkMode ? 'text-white' : 'text-slate-800'}`;
 
-  // --- NAVIGATION STYLES (ICON ONLY + GLOW + SHINE) ---
+  // --- NAVIGATION STYLES ---
   const glassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out group hover:-translate-y-1 overflow-hidden ${
       darkMode 
       ? 'text-slate-400 hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' 
@@ -114,7 +120,7 @@ export default function EmployerDashboard() {
   const [modalLoading, setModalLoading] = useState(false);
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
-  const [isPurokPopupOpen, setIsPurokPopupOpen] = useState(false);
+  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
   const [jobForm, setJobForm] = useState({ title: "", sitio: "", salary: "", type: "Full-time", description: "" });
   const [profileImage, setProfileImage] = useState(null);
   const [imgScale, setImgScale] = useState(1);
@@ -322,6 +328,7 @@ export default function EmployerDashboard() {
       setJobForm({ title: "", sitio: "", salary: "", type: "Full-time", description: "" });
     }
     setIsJobModalOpen(true);
+    setIsLocationDropdownOpen(false); // Reset dropdown
   };
 
   const handleSaveJob = async () => {
@@ -419,14 +426,19 @@ export default function EmployerDashboard() {
 return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
       
-      {/* --- ADDED SHINE ANIMATION STYLE --- */}
+      {/* --- ADDED SHINE ANIMATION STYLE WITH HOVER & VISIBILITY IN LIGHT MODE --- */}
       <style>{`
         .hide-scrollbar::-webkit-scrollbar { display: none; } 
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
         @keyframes glass-shine {
           0% { transform: translateX(-150%) skewX(-20deg); opacity: 0; }
-          40% { opacity: 0.6; }
+          40% { opacity: 0.8; }
+          100% { transform: translateX(250%) skewX(-20deg); opacity: 0; }
+        }
+        @keyframes glass-shine-hover {
+          0% { transform: translateX(-150%) skewX(-20deg); opacity: 0; }
+          40% { opacity: 0.8; }
           100% { transform: translateX(250%) skewX(-20deg); opacity: 0; }
         }
         .shine-effect::after {
@@ -439,12 +451,15 @@ return (
           background: linear-gradient(
             to right, 
             transparent 0%, 
-            rgba(255, 255, 255, 0.4) 50%, 
+            rgba(255, 255, 255, 0.75) 50%, 
             transparent 100%
           );
           transform: translateX(-150%);
           animation: glass-shine 0.6s ease-out;
           pointer-events: none;
+        }
+        .shine-effect:hover::after {
+          animation: glass-shine-hover 0.75s ease-out;
         }
         
         @keyframes content-wipe {
@@ -474,10 +489,10 @@ return (
           </div>
       )}
 
-      {/* JOB MODAL (Glassmorphism) */}
+      {/* JOB MODAL (Using modalPanel for Solid White in Light Mode) */}
       {isJobModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in">
-            <div className={`max-w-3xl w-full p-5 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${glassPanel}`}>
+            <div className={`max-w-3xl w-full p-5 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${modalPanel}`}>
                 <h3 className="text-2xl font-black mb-8 uppercase tracking-widest text-center">{editingJobId ? 'Edit Listing' : 'Create Job Listing'}</h3>
                 {/* ... Job Form Inputs ... */}
                 <div className="space-y-6">
@@ -498,14 +513,18 @@ return (
                   </div>
                   <div className="space-y-2 relative">
                       <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Location (Sitio/Purok)</label>
-                      <button onClick={() => setIsPurokPopupOpen(true)} className={`w-full p-4 rounded-2xl font-bold bg-transparent border-2 flex justify-between items-center outline-none focus:border-blue-500 transition-colors cursor-pointer text-left ${darkMode ? 'border-white/10 bg-slate-900' : 'border-slate-300 bg-white'}`}><span>{jobForm.sitio || "Select a location..."}</span><MapPinIcon className="w-5 h-5 text-blue-500 pointer-events-none" /></button>
-                      {isPurokPopupOpen && (
-                          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={() => setIsPurokPopupOpen(false)}>
-                             <div className={`w-full max-sm p-6 rounded-[2rem] shadow-2xl animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border border-white/10' : 'bg-white border border-slate-300'}`} onClick={e => e.stopPropagation()}>
-                                  <h4 className="text-center font-black uppercase tracking-widest mb-6 opacity-60">Choose Location</h4>
-                                  <div className="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto hide-scrollbar">{PUROK_LIST.map(p => (<button key={p} onClick={() => { setJobForm({...jobForm, sitio: p}); setIsPurokPopupOpen(false); }} className={`p-4 rounded-xl font-bold transition-all ${jobForm.sitio === p ? 'bg-blue-600 text-white' : darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100'}`}>{p}</button>))}</div>
-                                  <button onClick={() => setIsPurokPopupOpen(false)} className="mt-6 w-full py-3 rounded-xl font-black uppercase text-[10px] tracking-widest text-red-500 border border-red-500/20 hover:bg-red-500/10">Cancel</button>
-                             </div>
+                      <button onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)} className={`w-full p-4 rounded-2xl font-bold bg-transparent border-2 flex justify-between items-center outline-none focus:border-blue-500 transition-colors cursor-pointer text-left ${darkMode ? 'border-white/10 bg-slate-900' : 'border-slate-300 bg-white'}`}><span>{jobForm.sitio || "Select a location..."}</span><MapPinIcon className={`w-5 h-5 transition-transform ${isLocationDropdownOpen ? 'rotate-180' : ''} text-blue-500 pointer-events-none`} /></button>
+                      
+                      {/* UPDATED: Sleek Dropdown instead of Modal */}
+                      {isLocationDropdownOpen && (
+                          <div className={`absolute top-full left-0 mt-2 w-full rounded-2xl border shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${glassPanel}`}>
+                              <div className="max-h-60 overflow-y-auto hide-scrollbar p-2">
+                                  {PUROK_LIST.map(p => (
+                                      <button key={p} onClick={() => { setJobForm({...jobForm, sitio: p}); setIsLocationDropdownOpen(false); }} className={`w-full text-left p-3 rounded-xl font-bold text-xs transition-all hover:pl-4 border-l-2 border-transparent hover:border-blue-500 ${jobForm.sitio === p ? 'bg-blue-500 text-white' : darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-blue-50 text-slate-700'}`}>
+                                          {p}
+                                      </button>
+                                  ))}
+                              </div>
                           </div>
                       )}
                   </div>
@@ -713,13 +732,13 @@ return (
         {activeTab === "Discover" && (
             <div key="Discover" className="animate-content">
                 <div className="space-y-6 mb-8">
-                      {/* --- QUICK STATS (UPDATED: Uniform in Light Mode, Varied in Dark Mode) --- */}
+                      {/* --- QUICK STATS (UPDATED WITH SHINE) --- */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
                         
                         {/* 1. CANDIDATES */}
                         <div 
                             onClick={() => setActiveTab("Discover")} 
-                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer 
+                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect 
                             ${darkMode 
                                 ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' 
                                 : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'
@@ -735,7 +754,7 @@ return (
                         {/* 2. LISTINGS */}
                         <div 
                             onClick={() => setActiveTab("Listings")} 
-                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer 
+                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect 
                             ${darkMode 
                                 ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' 
                                 : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'
@@ -751,7 +770,7 @@ return (
                         {/* 3. PENDING */}
                         <div 
                             onClick={() => setActiveTab("Applicants")} 
-                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer 
+                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect 
                             ${darkMode 
                                 ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' 
                                 : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'
@@ -767,7 +786,7 @@ return (
                         {/* 4. UNREAD MSGS */}
                         <div 
                             onClick={() => setActiveTab("Messages")} 
-                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer 
+                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect 
                             ${darkMode 
                                 ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' 
                                 : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'
@@ -856,30 +875,36 @@ return (
             </div>
         )}
 
-        {/* MANAGE LISTINGS TAB - UPDATED WITH NEON GLOW STYLE */}
+        {/* MANAGE LISTINGS TAB - UPDATED WITH COMPACT MOBILE CARDS & SHINE ON HOVER */}
         {activeTab === "Listings" && (
           <div key="Listings" className="animate-content">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-10">
-                <div className={`relative group flex items-center p-3 rounded-2xl border transition-all duration-300 w-full md:max-w-md ${darkMode ? 'bg-slate-900/50 border-white/10 focus-within:border-blue-500/50 focus-within:shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'bg-white/60 border-slate-200 focus-within:border-blue-400 focus-within:shadow-lg'}`}>
-                    <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 ml-2 group-focus-within:text-blue-500 transition-colors" />
-                    <input type="text" placeholder="Search your listings..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-transparent border-none outline-none text-sm font-bold ml-3 placeholder-slate-400" />
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6 md:mb-10">
+                <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:max-w-md ${glassPanel}`}>
+                    <div className="relative flex-1">
+                        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                        <input type="text" placeholder="Search your listings..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={glassInput + " pl-10 pr-4 py-2 text-sm"} />
+                    </div>
                 </div>
-                <button onClick={() => handleOpenJobModal()} className="flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)] transition-all active:scale-95 w-full md:w-auto justify-center group transform hover:-translate-y-1">
+                {/* REMOVED NEON SHADOW FROM BUTTON */}
+                <button onClick={() => handleOpenJobModal()} className="flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:shadow-xl transition-all active:scale-95 w-full md:w-auto justify-center group transform hover:-translate-y-1">
                     <PlusIcon className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" /> Post New Job
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {filteredJobs.length > 0 ? filteredJobs.map(job => {
                 const applicantCount = receivedApplications.filter(a => a.jobId === job.id).length;
                 const style = getJobStyle(job.type);
                 return (
-                  <div key={job.id} className={`group relative p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl shine-effect ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white/60 border-white/60 hover:border-blue-300/50'}`}>
-                      {/* Decorative Background Glow */}
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/20 to-purple-500/20 blur-[50px] rounded-full pointer-events-none -mr-10 -mt-10"></div>
+                  <div key={job.id} className={`group relative p-4 md:p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl shine-effect ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white border-slate-200 shadow-sm hover:border-blue-400/50'}`}>
+                      
+                      {/* --- LARGE BACKGROUND ICON (QUICK STATS STYLE) - BETWEEN MIDDLE AND TOP-RIGHT --- */}
+                      <div className="absolute top-10 right-4 md:top-10 md:right-8 opacity-10 transform -rotate-12 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
+                           {cloneElement(style.icon, { className: "w-32 h-32 md:w-56 md:h-56" })}
+                      </div>
 
                       <div className="relative z-10 flex flex-col h-full">
-                          <div className="flex justify-between items-start mb-6">
+                          <div className="flex justify-between items-start mb-3 md:mb-6">
                                <div className={`backdrop-blur-md px-3 py-1.5 rounded-xl border flex items-center gap-2 shadow-sm ${style.bg} ${style.border}`}>
                                    <span className={`${style.color} scale-90`}>{style.icon}</span>
                                    <span className={`text-[10px] font-black uppercase tracking-widest ${style.color}`}>{job.type}</span>
@@ -890,22 +915,22 @@ return (
                                </div>
                           </div>
                           
-                          <div className="mb-6 space-y-2">
-                              <h3 className={`text-xl font-black leading-tight line-clamp-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
+                          <div className="mb-3 md:mb-6 space-y-2 pr-4">
+                              <h3 className={`text-base md:text-xl font-black leading-tight line-clamp-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
                               <div className="flex items-center gap-2 text-slate-400">
                                   <MapPinIcon className="w-4 h-4 text-blue-500" />
-                                  <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">{job.sitio || "No Location"}</p>
+                                  <p className={`text-[10px] md:text-[11px] font-bold uppercase tracking-wide opacity-80 ${!darkMode && 'text-slate-500'}`}>{job.sitio || "No Location"}</p>
                               </div>
                           </div>
 
-                          <div className="mb-8">
+                          <div className="mb-4 md:mb-8">
                                <div className="flex flex-col">
-                                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Salary / Rate</p>
-                                   <p className={`text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r ${darkMode ? 'from-white to-slate-400' : 'from-slate-900 to-slate-600'}`}>₱ {job.salary}</p>
+                                   <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Salary / Rate</p>
+                                   <p className={`text-lg md:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r ${darkMode ? 'from-white to-slate-400' : 'from-slate-900 to-slate-600'}`}>₱ {job.salary}</p>
                                </div>
                           </div>
 
-                          <div className="mt-auto pt-6 border-t border-dashed border-slate-500/20 flex items-center justify-between">
+                          <div className="mt-auto pt-4 md:pt-6 border-t border-dashed border-slate-500/20 flex items-center justify-between">
                                <div className="flex items-center gap-3">
                                    <div className="flex -space-x-2">
                                       {[...Array(Math.min(3, applicantCount))].map((_, i) => (
@@ -913,14 +938,14 @@ return (
                                       ))}
                                       {applicantCount === 0 && <div className={`w-8 h-8 rounded-full border-2 border-dashed flex items-center justify-center ${darkMode ? 'border-slate-700' : 'border-slate-300'}`}><span className="text-[10px] opacity-50">0</span></div>}
                                    </div>
-                                   {applicantCount > 0 && <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">Applicants</span>}
+                                   {applicantCount > 0 && <span className={`text-[10px] font-black uppercase tracking-wide ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Applicants</span>}
                                </div>
                                
                                <div className="flex gap-2">
-                                   <button onClick={() => handleOpenJobModal(job)} className={`p-3 rounded-full transition-all duration-300 group/btn hover:scale-110 ${darkMode ? 'bg-white/5 hover:bg-blue-500 hover:text-white text-slate-400' : 'bg-slate-100 hover:bg-blue-500 hover:text-white text-slate-500'}`}>
+                                   <button onClick={() => handleOpenJobModal(job)} className={`p-2 md:p-3 rounded-full transition-all duration-300 group/btn hover:scale-110 ${darkMode ? 'bg-white/5 hover:bg-blue-500 hover:text-white text-slate-400' : 'bg-slate-100 hover:bg-blue-500 hover:text-white text-slate-500'}`}>
                                         <PencilSquareIcon className="w-4 h-4" />
                                    </button>
-                                   <button onClick={() => handleDeleteJob(job.id)} className={`p-3 rounded-full transition-all duration-300 group/btn hover:scale-110 ${darkMode ? 'bg-white/5 hover:bg-red-500 hover:text-white text-slate-400' : 'bg-slate-100 hover:bg-red-500 hover:text-white text-slate-500'}`}>
+                                   <button onClick={() => handleDeleteJob(job.id)} className={`p-2 md:p-3 rounded-full transition-all duration-300 group/btn hover:scale-110 ${darkMode ? 'bg-white/5 hover:bg-red-500 hover:text-white text-slate-400' : 'bg-slate-100 hover:bg-red-500 hover:text-white text-slate-500'}`}>
                                         <TrashIcon className="w-4 h-4" />
                                    </button>
                                </div>
@@ -1041,22 +1066,17 @@ return (
                             <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.bio || modalApplicant?.aboutMe || "No bio information provided."}</p>
                         </div>
                         
-                        {(modalApplicant?.workExperience || modalApplicant?.education) && (
-                            <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                                {modalApplicant?.workExperience && (
-                                    <div className="mb-4">
-                                        <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
-                                        <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant.workExperience}</p>
-                                    </div>
-                                )}
-                                {modalApplicant?.education && (
-                                    <div>
-                                        <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
-                                        <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant.education}</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        {/* Always visible Work Experience & Education */}
+                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                             <div className="mb-4">
+                                <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
+                                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.workExperience || "No experience listed."}</p>
+                             </div>
+                             <div>
+                                <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
+                                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.education || "No education listed."}</p>
+                             </div>
+                        </div>
                     </div>
 
                     <div className="w-full flex gap-3">
