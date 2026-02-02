@@ -4,25 +4,28 @@ import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config"; 
 import { 
   collection, query, where, onSnapshot, 
-  addDoc, serverTimestamp, setDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer 
+  addDoc, serverTimestamp, setDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer, increment
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
-// --- HOOKS & COMPONENTS ---
+// --- HOOKS ---
 import { useChat } from "../hooks/useChat"; 
-import ChatSystem from "../components/ChatSystem"; 
 
 import { 
   BriefcaseIcon, ArrowLeftOnRectangleIcon, XMarkIcon, 
   Bars3BottomRightIcon, MapPinIcon, SunIcon, MoonIcon, 
-  ChevronRightIcon, ChatBubbleLeftRightIcon,
-  MagnifyingGlassIcon, TrashIcon, CheckCircleIcon, CameraIcon, PencilSquareIcon, 
+  ChevronLeftIcon, ChevronRightIcon, ChatBubbleLeftRightIcon,
+  MagnifyingGlassIcon, PaperAirplaneIcon, EyeIcon,
+  TrashIcon, CheckCircleIcon, CameraIcon, PencilSquareIcon, 
   PlusIcon, UsersIcon, ClockIcon, UserIcon, AcademicCapIcon,
   CurrencyDollarIcon, CalendarDaysIcon, BoltIcon,
-  UserCircleIcon, SparklesIcon, FunnelIcon,
+  EllipsisHorizontalIcon, PaperClipIcon, ArrowUturnLeftIcon, 
+  PhotoIcon, DocumentIcon, UserCircleIcon,
+  EnvelopeIcon, SparklesIcon, FunnelIcon,
   ChartBarIcon, UserPlusIcon, PresentationChartLineIcon,
-  BuildingOfficeIcon, BellIcon, QuestionMarkCircleIcon, IdentificationIcon, EyeIcon,
-  LockClosedIcon, ExclamationTriangleIcon, PaperAirplaneIcon, ArrowLeftIcon 
+  BuildingOfficeIcon, ChevronDownIcon,
+  ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon,
+  BellIcon, QuestionMarkCircleIcon, IdentificationIcon
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
@@ -51,65 +54,38 @@ export default function EmployerDashboard() {
   const [loading, setLoading] = useState(false); 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-  // --- INITIALIZE CHAT SYSTEM ---
+  // --- RESTORED: LOCAL BUBBLE & UI STATES ---
+  const [isBubbleVisible, setIsBubbleVisible] = useState(false); 
+  const [isChatMinimized, setIsChatMinimized] = useState(false); 
+  const [openBubbles, setOpenBubbles] = useState([]); 
+  const [isDesktopInboxVisible, setIsDesktopInboxVisible] = useState(false); 
+  const [isBubbleExpanded, setIsBubbleExpanded] = useState(false);
+  const [activeBubbleView, setActiveBubbleView] = useState('inbox'); 
+  const [bubblePos, setBubblePos] = useState({ x: window.innerWidth - 60, y: 150 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+   
+  // --- INTEGRATED CHAT HOOK ---
   const chat = useChat(auth.currentUser, isMobile);
   const { 
-    conversations, activeChat, openChat, closeChat, sendMessage, messages, 
-    setIsBubbleVisible 
+    conversations, activeChat, openChat, closeChat, sendMessage, messages 
   } = chat;
 
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
-  
-  // Chat Input State
+  // Additional Chat UI States
   const [newMessage, setNewMessage] = useState("");
-  const messagesEndRef = useRef(null);
+  const [isChatOptionsOpen, setIsChatOptionsOpen] = useState(false); 
+  const [chatSearch, setChatSearch] = useState(""); 
+  const [replyingTo, setReplyingTo] = useState(null); 
+  const [attachment, setAttachment] = useState(null); 
+  const [isUploading, setIsUploading] = useState(false); 
+  const [lightboxUrl, setLightboxUrl] = useState(null);
+  const chatFileRef = useRef(null); 
+  const scrollRef = useRef(null);
 
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-  
-  // Auto-scroll to bottom of chat
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, activeTab]);
-        
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem("theme");
-    return saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  });
-
-  // --- STYLES ---
-  // glassPanel: Keeps the glassy look for sidebar, profile, etc.
-  const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
-    ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' 
-    : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
-  
-  // modalPanel: SPECIFICALLY for Modals - Solid White in Light Mode
-  const modalPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
-    ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' 
-    : 'bg-white border-slate-200 shadow-2xl text-slate-900'}`;
-
-  const glassCard = `backdrop-blur-md border rounded-2xl transition-all duration-300 group hover:-translate-y-1 ${darkMode
-    ? 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60 hover:border-blue-500/30'
-    : 'bg-white/40 border-white/60 hover:bg-white/70 hover:border-blue-300/50 hover:shadow-lg'}`;
-
-  const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 ${darkMode ? 'text-white' : 'text-slate-800'}`;
-
-  // --- NAVIGATION STYLES ---
-  const glassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out group hover:-translate-y-1 overflow-hidden ${
-      darkMode 
-      ? 'text-slate-400 hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' 
-      : 'text-slate-400 hover:text-blue-500 hover:drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]'
-  }`;
-  
-  const activeGlassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out scale-125 -translate-y-1 overflow-hidden ${
-      darkMode
-      ? 'text-blue-400 drop-shadow-[0_0_15px_rgba(96,165,250,0.8)]'
-      : 'text-blue-600 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)]'
-  }`;
-
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [adminUser, setAdminUser] = useState(null);
+   
+  // --- EMPLOYER SPECIFIC STATES ---
   const [myPostedJobs, setMyPostedJobs] = useState([]); 
   const [receivedApplications, setReceivedApplications] = useState([]); 
   const [searchTerm, setSearchTerm] = useState("");
@@ -136,51 +112,132 @@ export default function EmployerDashboard() {
   const [isEditingImage, setIsEditingImage] = useState(false);
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  
-  // --- UPDATED EMPLOYER DATA STATE ---
+   
   const [employerData, setEmployerData] = useState({ 
       firstName: "", lastName: "", sitio: "", title: "Employer", 
       aboutMe: "", workExperience: "", education: "", 
       verificationStatus: "pending" 
   });
-  
-  const [chatSearch, setChatSearch] = useState(""); 
-  const [adminUser, setAdminUser] = useState(null);
   const [analyticsData, setAnalyticsData] = useState({ totalEmployers: 0, sitioStats: [] });
 
   // --- ACCESS CONTROL CHECK ---
   const isVerified = employerData.verificationStatus === 'verified';
 
-  // --- SCROLL LOCK EFFECT ---
+  // --- EFFECTS ---
   useEffect(() => {
-    if (isJobModalOpen || selectedApplication || selectedTalent || isEditingImage) {
-        document.body.style.overflow = 'hidden';
-    } else {
-        document.body.style.overflow = 'unset';
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+   
+  useEffect(() => {
+    if (isMobile && isBubbleExpanded) { document.body.style.overflow = "hidden"; } 
+    else { document.body.style.overflow = "auto"; }
+    return () => { document.body.style.overflow = "auto"; };
+  }, [isMobile, isBubbleExpanded]);
+   
+  useEffect(() => {
+    if (messages.length > 0) {
+        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-    return () => { document.body.style.overflow = 'unset'; };
-  }, [isJobModalOpen, selectedApplication, selectedTalent, isEditingImage]);
+  }, [messages, activeChat, activeBubbleView]);
+        
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem("theme");
+    return saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  });
 
-  // --- DATA FETCHING ---
+  // --- STYLES ---
+  const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
+    ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' 
+    : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
+   
+  const glassCard = `backdrop-blur-md border rounded-2xl transition-all duration-300 group hover:-translate-y-1 ${darkMode
+    ? 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60 hover:border-blue-500/30'
+    : 'bg-white/40 border-white/60 hover:bg-white/70 hover:border-blue-300/50 hover:shadow-lg'}`;
+
+  const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 ${darkMode ? 'text-white' : 'text-slate-800'}`;
+
+  const glassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out group hover:-translate-y-1 overflow-hidden ${
+      darkMode 
+      ? 'text-slate-400 hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' 
+      : 'text-slate-400 hover:text-blue-500 hover:drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]'
+  }`;
+   
+  const activeGlassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out scale-125 -translate-y-1 overflow-hidden ${
+      darkMode
+      ? 'text-blue-400 drop-shadow-[0_0_15px_rgba(96,165,250,0.8)]'
+      : 'text-blue-600 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)]'
+  }`;
+
   useEffect(() => {
       const fetchAdmin = async () => {
-          let q = query(collection(db, "employers"), where("email", "==", ADMIN_EMAIL));
-          let snap = await getDocs(q);
-          if (snap.empty) { q = query(collection(db, "applicants"), where("email", "==", ADMIN_EMAIL)); snap = await getDocs(q); }
-          if (!snap.empty) { const docData = snap.docs[0].data(); setAdminUser({ id: snap.docs[0].id, ...docData }); }
+          try {
+            // 1. Try 'admins' collection first (Priority)
+            let q = query(collection(db, "admins"), where("email", "==", ADMIN_EMAIL));
+            let snap = await getDocs(q);
+             
+            if (!snap.empty) {
+                const docData = snap.docs[0].data();
+                // Ensure we tag this user as being in the 'admins' collection for useChat to know
+                setAdminUser({ id: snap.docs[0].id, collection: 'admins', ...docData });
+                return;
+            }
+
+            // 2. Try 'employers' (Fallback)
+            q = query(collection(db, "employers"), where("email", "==", ADMIN_EMAIL));
+            snap = await getDocs(q);
+            if (!snap.empty) { 
+                const docData = snap.docs[0].data(); 
+                setAdminUser({ id: snap.docs[0].id, collection: 'employers', ...docData }); 
+                return;
+            }
+
+            // 3. Try 'applicants' (Fallback)
+            q = query(collection(db, "applicants"), where("email", "==", ADMIN_EMAIL)); 
+            snap = await getDocs(q);
+            if (!snap.empty) { 
+                const docData = snap.docs[0].data(); 
+                setAdminUser({ id: snap.docs[0].id, collection: 'applicants', ...docData }); 
+                return;
+            }
+
+            // 4. Virtual Fallback if absolutely no record found
+            console.warn("Admin not found in DB, using virtual fallback.");
+            setAdminUser({ 
+                id: "livelimatch_admin_support", 
+                firstName: "Livelimatch", 
+                lastName: "Support", 
+                email: ADMIN_EMAIL,
+                collection: 'admins' // Assume admins for fallback
+            });
+
+          } catch (e) {
+              console.error("Error finding admin:", e);
+          }
       };
       fetchAdmin();
   }, []);
 
   useEffect(() => {
       if (activeTab === "Support" && adminUser) {
+          // Pass the collection so useChat knows where to listen for status
           openChat({
               id: adminUser.id,
               name: `${adminUser.firstName || 'Admin'} ${adminUser.lastName || 'Support'}`,
-              profilePic: getAvatarUrl(adminUser)
+              profilePic: getAvatarUrl(adminUser),
+              collection: adminUser.collection || 'admins'
           });
       }
   }, [activeTab, adminUser]);
+
+  useEffect(() => {
+    if (activeTab === "Messages" || activeTab === "Support") {
+       setIsBubbleVisible(false);
+       setIsBubbleExpanded(false);
+       setIsDesktopInboxVisible(false);
+    }
+  }, [activeTab]);
 
    useEffect(() => {
      if(activeTab === "Discover" || activeTab === "Analytics") {
@@ -191,13 +248,13 @@ export default function EmployerDashboard() {
                 const talents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 const validTalents = talents.filter(t => t.firstName || t.lastName);
                 setDiscoverTalents(validTalents);
-                
+                 
                 const empSnapshot = await getCountFromServer(collection(db, "employers"));
                 setAnalyticsData(prev => ({...prev, totalEmployers: empSnapshot.data().count}));
 
                 const jobsSnapshot = await getDocs(collection(db, "jobs"));
                 const allJobs = jobsSnapshot.docs.map(d => d.data());
-                
+                 
                 const stats = {};
                 allJobs.forEach(job => {
                     if(job.sitio) {
@@ -207,7 +264,7 @@ export default function EmployerDashboard() {
                 const sortedStats = Object.entries(stats)
                     .map(([name, count]) => ({ name, count }))
                     .sort((a,b) => b.count - a.count);
-                
+                 
                 setAnalyticsData(prev => ({...prev, sitioStats: sortedStats}));
 
             } catch (err) { console.error("Error fetching data", err); }
@@ -261,19 +318,122 @@ export default function EmployerDashboard() {
       appsData.sort((a, b) => (b.appliedAt?.seconds || 0) - (a.appliedAt?.seconds || 0));
       setReceivedApplications(appsData);
     });
-    
     return () => { unsubJobs(); unsubApps(); };
   }, [auth.currentUser]);
 
 
-  // --- HANDLERS ---
-  const handleSendMessage = async (e) => {
-      e.preventDefault();
-      if (!newMessage.trim() || !activeChat) return;
-      await sendMessage(newMessage);
-      setNewMessage("");
+  // --- RESTORED HANDLERS (Drag, Drop, Upload) ---
+  const handleTouchStart = (e) => {
+      setIsDragging(true);
+      const touch = e.touches[0];
+      dragOffset.current = { x: touch.clientX - bubblePos.x, y: touch.clientY - bubblePos.y };
   };
 
+  const handleTouchMove = (e) => {
+      if (!isDragging) return;
+      const touch = e.touches[0];
+      const bubbleSize = 56; 
+      let newX = touch.clientX - dragOffset.current.x;
+      let newY = touch.clientY - dragOffset.current.y;
+      newY = Math.max(80, Math.min(newY, window.innerHeight - 150));
+      newX = Math.max(0, Math.min(newX, window.innerWidth - bubbleSize));
+      setBubblePos({ x: newX, y: newY });
+  };
+
+  const handleTouchEnd = () => {
+      setIsDragging(false);
+      const bubbleSize = 56;
+      if (bubblePos.x < window.innerWidth / 2) { setBubblePos(prev => ({ ...prev, x: 0 })); } 
+      else { setBubblePos(prev => ({ ...prev, x: window.innerWidth - bubbleSize })); }
+  };
+
+  const handleMinimizeToBubble = () => {
+    if (!activeChat) return;
+    setIsBubbleVisible(true);
+    setIsChatMinimized(true);
+    setIsChatOptionsOpen(false);
+    setActiveBubbleView(activeChat.id); 
+
+    if (activeChat && !openBubbles.find(b => b.id === activeChat.id)) {
+      setOpenBubbles(prev => [...prev, activeChat]);
+    }
+    closeChat(); // Clear activeChat from the main window so it doesn't show in the tab
+    setActiveTab("Discover"); 
+  };
+
+  const handleStartChatFromExternal = (userObj) => {
+    if (!isVerified) return alert("Your account must be verified to send messages.");
+    const pic = getAvatarUrl(userObj) || userObj.profilePic;
+    openChat({ ...userObj, profilePic: pic });
+    setIsChatMinimized(false);
+    setActiveTab("Messages");
+    setIsBubbleVisible(false);
+    setIsBubbleExpanded(false);
+    setIsDesktopInboxVisible(false);
+  };
+
+  const handleCloseChat = () => { 
+    if (activeChat) {
+      setOpenBubbles(prev => prev.filter(b => b.id !== activeChat.id));
+    }
+    closeChat(); 
+    setIsChatOptionsOpen(false); 
+    if (openBubbles.length <= 1) setIsBubbleVisible(false);
+  };
+
+  const handleCloseBubble = (chatId) => {
+      const newBubbles = openBubbles.filter(b => b.id !== chatId);
+      setOpenBubbles(newBubbles);
+      if(activeBubbleView === chatId) {
+          if (newBubbles.length === 0) {
+              setIsBubbleVisible(false);
+              setIsBubbleExpanded(false);
+              setActiveBubbleView('inbox');
+          } else {
+              setActiveBubbleView('inbox');
+          }
+      }
+  };
+
+  const handleFileSelect = (e) => { if (e.target.files[0]) setAttachment(e.target.files[0]); };
+   
+  const handleSendMessageWrapper = async (e) => {
+    e.preventDefault();
+    if (!attachment) {
+        if (!newMessage.trim()) return;
+        await sendMessage(newMessage, replyingTo);
+        setNewMessage("");
+        setReplyingTo(null);
+    } else {
+        if (!activeChat) return;
+        setIsUploading(true);
+        try {
+            const chatId = [auth.currentUser.uid, activeChat.id].sort().join("_");
+            const storage = getStorage(auth.app);
+            const storageRef = ref(storage, `chat_attachments/${chatId}/${Date.now()}_${attachment.name}`);
+            const uploadTask = await uploadBytes(storageRef, attachment);
+            const fileUrl = await getDownloadURL(uploadTask.ref);
+            let fileType = 'file';
+            if (attachment.type.startsWith('image/')) fileType = 'image';
+            else if (attachment.type.startsWith('video/')) fileType = 'video';
+            
+             await addDoc(collection(db, "messages"), {
+                chatId, text: newMessage, senderId: auth.currentUser.uid, receiverId: activeChat.id, createdAt: serverTimestamp(), 
+                fileUrl: fileUrl || null, fileType: fileType, fileName: attachment.name,
+                replyTo: replyingTo ? { id: replyingTo.id, text: replyingTo.text, senderName: replyingTo.senderId === auth.currentUser.uid ? "You" : activeChat.name, type: replyingTo.fileType || 'text' } : null
+             });
+             
+             await setDoc(doc(db, "conversations", chatId), {
+                chatId, lastMessage: `Sent a ${fileType}`, lastTimestamp: serverTimestamp(),
+                participants: [auth.currentUser.uid, activeChat.id], [`unread_${activeChat.id}`]: increment(1)
+             }, { merge: true });
+
+             setNewMessage(""); setAttachment(null); setReplyingTo(null); if (chatFileRef.current) chatFileRef.current.value = "";
+        } catch (err) { alert("Failed to send file."); } finally { setIsUploading(false); }
+    }
+  };
+   
+  // --- EXISTING HANDLERS ---
   const handleTalentMouseEnter = (user) => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
     hoverTimerRef.current = setTimeout(() => { setHoveredTalent(user); }, 3000);
@@ -331,11 +491,8 @@ export default function EmployerDashboard() {
     } catch (err) { alert("Error saving profile: " + err.message); } 
     finally { setLoading(false); }
   };
-  
-  // --- VERIFICATION CHECK ON OPENING JOB MODAL ---
   const handleOpenJobModal = (job = null) => {
     if (!isVerified) return alert("Your account is pending verification. You cannot post jobs yet.");
-    
     if (job) {
       setEditingJobId(job.id);
       setJobForm({ title: job.title, sitio: job.sitio || "", salary: job.salary, type: job.type, description: job.description });
@@ -344,9 +501,8 @@ export default function EmployerDashboard() {
       setJobForm({ title: "", sitio: "", salary: "", type: "Full-time", description: "" });
     }
     setIsJobModalOpen(true);
-    setIsLocationDropdownOpen(false); // Reset dropdown
+    setIsLocationDropdownOpen(false); 
   };
-
   const handleSaveJob = async () => {
     if (!jobForm.title || !jobForm.salary) return alert("Title and Salary are required.");
     setLoading(true);
@@ -370,13 +526,9 @@ export default function EmployerDashboard() {
     setModalLoading(true); setModalApplicant(null); setModalJob(null); setSelectedApplication(app);
     try {
         if (!app.isViewed) updateDoc(doc(db, "applications", app.id), { isViewed: true }).catch(err => console.error(err));
-        
         if (app.applicantId) { 
             const userSnap = await getDoc(doc(db, "applicants", app.applicantId)); 
-            if (userSnap.exists()) {
-                const fetchedData = userSnap.data();
-                setModalApplicant(fetchedData); 
-            }
+            if (userSnap.exists()) { setModalApplicant(userSnap.data()); }
         }
         if (app.jobId) { const jobSnap = await getDoc(doc(db, "jobs", app.jobId)); if (jobSnap.exists()) setModalJob(jobSnap.data()); }
     } catch (err) { alert("Could not load details."); } finally { setModalLoading(false); }
@@ -395,19 +547,19 @@ export default function EmployerDashboard() {
     try { await deleteDoc(doc(db, "applications", appId)); if (selectedApplication?.id === appId) setSelectedApplication(null); } catch (err) { alert("Error deleting: " + err.message); } finally { setLoading(false); }
   };
 
-  const handleStartChatFromExternal = (userObj) => {
-    if (!isVerified) return alert("Your account must be verified to send messages.");
-    openChat(userObj);
-    setActiveTab("Messages");
-    setIsBubbleVisible(false);
-  };
-
   const displayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
 
   const filteredJobs = myPostedJobs.filter(job => job.title.toLowerCase().includes(searchTerm.toLowerCase()) || (job.sitio && job.sitio.toLowerCase().includes(searchTerm.toLowerCase())));
-  const filteredChats = conversations.filter(c => {
+  
+  // *** FIXED: ADDED OPTIONAL CHAINING TO PREVENT CRASH ON NEW CHATS ***
+ const filteredChats = conversations.filter(c => {
       const otherId = c.participants.find(p => p !== auth.currentUser.uid);
-      const name = c.names[otherId] || "User";
+      
+      // --- NEW: HIDE ADMIN CHAT FROM MESSAGES TAB ---
+      // If we know who the admin is, and this chat is with them, hide it.
+      if (adminUser && otherId === adminUser.id) return false; 
+
+      const name = c.names?.[otherId] || "User"; 
       return name.toLowerCase().includes(chatSearch.toLowerCase());
   });
 
@@ -424,7 +576,13 @@ export default function EmployerDashboard() {
   const hasNewApps = receivedApplications.some(app => app.status === 'pending' && !app.isViewed);
   const hasGlobalUnread = conversations.some(c => (c[`unread_${auth.currentUser?.uid}`] || 0) > 0);
 
-  const unreadMsgCount = conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0);
+const unreadMsgCount = conversations.reduce((acc, curr) => {
+    // If this is the admin chat, ignore its unread count for the main tab
+    const otherId = curr.participants.find(p => p !== auth.currentUser?.uid);
+    if (adminUser && otherId === adminUser.id) return acc;
+    
+    return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0);
+}, 0);
   const newAppCount = receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length;
   const totalNotifications = unreadMsgCount + newAppCount;
 
@@ -434,15 +592,34 @@ export default function EmployerDashboard() {
       {!isCollapsed && <button onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"><CameraIcon className="w-5 h-5 text-white" /></button>}
     </div>
   );
+   
+  // UI Helper for bubble avatar
+  const effectiveActiveChatUser = (isBubbleVisible && isMobile)
+    ? openBubbles.find(b => b.id === activeBubbleView)
+    : activeChat;
+
+  const MessageAvatar = ({ isMe }) => {
+    const pic = isMe ? profileImage : getAvatarUrl(effectiveActiveChatUser);
+    const initial = isMe ? (employerData.firstName?.charAt(0) || "M") : (effectiveActiveChatUser?.name?.charAt(0) || "U");
+
+    return (
+        <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[10px] font-black uppercase">
+            {pic ? <img src={pic} alt="User" className="w-full h-full object-cover" /> : initial}
+        </div>
+    );
+  };
 
   const getJobStyle = (type) => { const found = JOB_TYPES.find(j => j.id === type); if (found) return found; return { icon: <BoltIcon className="w-6 h-6"/>, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' }; };
-  
+   
   const formatTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+  const formatLastSeen = (ts) => {
+      if (!ts) return "Offline"; const date = ts.toDate(); const now = new Date(); const diffInMinutes = Math.floor((now - date) / 60000);
+      if(diffInMinutes < 1) return "just now"; if(diffInMinutes < 60) return `${diffInMinutes}m ago`; if(diffInMinutes < 1440) return `${Math.floor(diffInMinutes/60)}h ago`; return "days ago";
+  };
 
 return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
-      
-      {/* --- ADDED SHINE ANIMATION STYLE WITH HOVER & VISIBILITY IN LIGHT MODE --- */}
+       
       <style>{`
         .hide-scrollbar::-webkit-scrollbar { display: none; } 
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -486,7 +663,7 @@ return (
           animation: content-wipe 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
       `}</style>
-      
+       
       <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
       {/* --- BACKGROUND BLOBS --- */}
@@ -494,21 +671,19 @@ return (
         <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse ${darkMode ? 'bg-blue-900' : 'bg-blue-300'}`}></div>
         <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse delay-1000 ${darkMode ? 'bg-purple-900' : 'bg-purple-300'}`}></div>
       </div>
-
-      {/* --- VERIFICATION WARNING BANNER --- */}
-      {!isVerified && (
-          <div className="fixed top-0 left-0 right-0 z-[110] bg-red-500 text-white px-4 py-2 flex items-center justify-center gap-2 shadow-xl animate-in slide-in-from-top duration-500">
-              <ExclamationTriangleIcon className="w-5 h-5 animate-pulse" />
-              <p className="text-xs font-bold uppercase tracking-wide">
-                  Account {employerData.verificationStatus}. Features limited until verification.
-              </p>
+       
+      {/* FULL SCREEN IMAGE LIGHTBOX */}
+      {lightboxUrl && (
+          <div className="fixed inset-0 z-[1000] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setLightboxUrl(null)}>
+              <img src={lightboxUrl} alt="Full view" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+              <button onClick={() => setLightboxUrl(null)} className="absolute top-5 right-5 p-3 bg-white/10 rounded-full text-white hover:bg-white/20 transition-colors"><XMarkIcon className="w-6 h-6"/></button>
           </div>
       )}
 
-      {/* JOB MODAL (Using modalPanel for Solid White in Light Mode) */}
+      {/* JOB MODAL (Using Solid White in Light Mode) */}
       {isJobModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in">
-            <div className={`max-w-3xl w-full p-5 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${modalPanel}`}>
+            <div className={`max-w-3xl w-full p-5 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? glassPanel : 'bg-white border-slate-200 text-slate-900'}`}>
                 <h3 className="text-2xl font-black mb-8 uppercase tracking-widest text-center">{editingJobId ? 'Edit Listing' : 'Create Job Listing'}</h3>
                 {/* ... Job Form Inputs ... */}
                 <div className="space-y-6">
@@ -530,8 +705,6 @@ return (
                   <div className="space-y-2 relative">
                       <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Location (Sitio/Purok)</label>
                       <button onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)} className={`w-full p-4 rounded-2xl font-bold bg-transparent border-2 flex justify-between items-center outline-none focus:border-blue-500 transition-colors cursor-pointer text-left ${darkMode ? 'border-white/10 bg-slate-900' : 'border-slate-300 bg-white'}`}><span>{jobForm.sitio || "Select a location..."}</span><MapPinIcon className={`w-5 h-5 transition-transform ${isLocationDropdownOpen ? 'rotate-180' : ''} text-blue-500 pointer-events-none`} /></button>
-                      
-                      {/* UPDATED: Sleek Dropdown instead of Modal */}
                       {isLocationDropdownOpen && (
                           <div className={`absolute top-full left-0 mt-2 w-full rounded-2xl border shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${glassPanel}`}>
                               <div className="max-h-60 overflow-y-auto hide-scrollbar p-2">
@@ -565,7 +738,7 @@ return (
           </div>
         </div>
       )}
-      
+       
       {/* HEADER */}
       <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isMobile && activeTab === "Messages" && activeChat) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified ? 'top-10' : 'top-0'}`}>
             <div className="flex items-center gap-3">
@@ -602,12 +775,12 @@ return (
                              <div className="p-3 border-b border-white/5 font-black text-xs uppercase tracking-widest opacity-50">Notifications</div>
                              <div className="p-2 space-y-1">
                                  <button onClick={() => { setActiveTab("Messages"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${unreadMsgCount > 0 ? 'text-blue-500 bg-blue-500/10' : 'opacity-50'}`}>
-                                             <span>Unread Messages</span>
-                                             <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
+                                            <span>Unread Messages</span>
+                                            <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
                                  </button>
                                  <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-amber-500 bg-amber-500/10' : 'opacity-50'}`}>
-                                             <span>New Applicants</span>
-                                             <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
+                                            <span>New Applicants</span>
+                                            <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
                                  </button>
                                  {totalNotifications === 0 && <div className="text-center py-4 opacity-30 text-xs font-bold uppercase">No new notifications</div>}
                              </div>
@@ -620,7 +793,7 @@ return (
                         {profileImage ? <img src={profileImage} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">{employerData.firstName ? employerData.firstName.charAt(0) : "E"}</div>}
                     </div>
                 </div>
-                
+                 
                  <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl transition-colors ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-900 hover:bg-slate-100'}`}>
                     <Bars3BottomRightIcon className="w-7 h-7" />
                  </button>
@@ -731,16 +904,82 @@ return (
             </div>
         )}
 
-        {/* SUPPORT TAB - Simplified to just show message */}
+        {/* SUPPORT TAB - RESTORED CHAT INTERFACE */}
         {activeTab === "Support" && (
-            <div key="Support" className={`animate-content h-[calc(100vh-200px)] md:h-[calc(100vh-10rem)] flex flex-col items-center justify-center rounded-[2.5rem] overflow-hidden relative shadow-xl ${glassPanel}`}>
-                <div className="text-center p-10">
-                    <div className={`w-32 h-32 rounded-full flex items-center justify-center mb-6 mx-auto ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                        <QuestionMarkCircleIcon className="w-16 h-16 opacity-50 text-blue-500"/>
+            <div key="Support" className={`animate-content h-[calc(100vh-200px)] md:h-[calc(100vh-10rem)] flex flex-col rounded-[2.5rem] overflow-hidden relative shadow-xl ${glassPanel}`}>
+                {adminUser ? (
+                    <>
+                        <div className={`p-4 md:p-6 flex items-center justify-between border-b shrink-0 backdrop-blur-md z-10 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-200'}`}>
+                            <div className="flex items-center gap-3 md:gap-4">
+                                <div className="w-10 h-10 md:w-12 md:h-12 rounded-full overflow-hidden bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center text-white font-black text-lg md:text-xl shadow-lg">
+                                    {adminUser.profilePic ? <img src={adminUser.profilePic} alt="Admin" className="w-full h-full object-cover" /> : "A"}
+                                </div>
+                                <div>
+                                    <h3 className={`font-black text-base md:text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>{adminUser.firstName || "Admin"} {adminUser.lastName || "Support"}</h3>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Official Support</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
+                            <div className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">Secure Support Channel</div>
+                             
+                            {messages.map((msg, i) => {
+                                const isMe = msg.senderId === auth.currentUser.uid;
+                                const isSystem = msg.type === 'system';
+                                const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
+                                const hasText = msg.text && msg.text.trim().length > 0;
+                                if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
+                                return (
+                                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
+                                        {msg.replyTo && (<div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>)}
+                                        <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                            <MessageAvatar isMe={isMe} />
+                                            <div className="relative group/bubble flex flex-col gap-1">
+                                                {msg.fileUrl && (
+                                                    <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-slate-100 text-slate-900')}`}>
+                                                        {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
+                                                        {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
+                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName || "Download File"}</span></a>}
+                                                    </div>
+                                                )}
+                                                {hasText && (
+                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-slate-100 text-slate-900 rounded-bl-none'}`}>
+                                                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
+                                    </div>
+                                )
+                            })}
+                            <div ref={scrollRef}/>
+                        </div>
+
+                        <div className={`p-4 border-t shrink-0 z-20 pb-8 md:pb-4 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-300'}`}>
+                            {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-white/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : "Admin"}</span><span className="opacity-70 truncate max-w-xs">{replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
+                            {attachment && (<div className="mb-3 relative inline-block animate-in zoom-in duration-200"><div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">{attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}<span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span></div><button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button></div>)}
+                            <form onSubmit={handleSendMessageWrapper} className="flex items-end gap-3">
+                                <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
+                                <button type="button" onClick={() => chatFileRef.current.click()} className={`p-4 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                <div className={`flex-1 rounded-2xl flex items-center px-4 py-3.5 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-slate-100 border-transparent focus-within:bg-white focus-within:border-blue-300 shadow-inner'}`}><textarea value={newMessage} onChange={e=>setNewMessage(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessageWrapper(e); } }} placeholder="Type a message..." className="w-full bg-transparent outline-none text-sm font-medium resize-none max-h-24 hide-scrollbar" rows={1} /></div>
+                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 shadow-lg shadow-blue-500/20 flex items-center justify-center">{isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5 -ml-0.5 mt-0.5"/>}</button>
+                            </form>
+                        </div>
+                    </>
+                ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 p-10 select-none">
+                        <div className={`w-32 h-32 rounded-full flex items-center justify-center mb-6 ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                            <QuestionMarkCircleIcon className="w-16 h-16 opacity-20"/>
+                        </div>
+                        <h3 className="text-2xl font-black mb-2">Support Unavailable</h3>
+                        <p className="max-w-xs text-xs font-bold uppercase tracking-wide">Unable to connect to Admin. Please ensure an admin account exists with email "{ADMIN_EMAIL}"</p>
                     </div>
-                    <h3 className="text-2xl font-black mb-2">Support Chat Active</h3>
-                    <p className="max-w-xs mx-auto text-xs font-bold uppercase tracking-wide opacity-60">Check the chat window in the bottom right corner to speak with an Admin.</p>
-                </div>
+                )}
             </div>
         )}
         
@@ -748,7 +987,7 @@ return (
         {activeTab === "Discover" && (
             <div key="Discover" className="animate-content">
                 <div className="space-y-6 mb-8">
-                      {/* --- QUICK STATS (UPDATED WITH SHINE) --- */}
+                      {/* --- QUICK STATS --- */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
                         
                         {/* 1. CANDIDATES */}
@@ -832,7 +1071,7 @@ return (
                         </div>
                     </div>
                 </div>
-                
+                 
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
                     {filteredTalents.length > 0 ? filteredTalents.map(user => {
                         const pic = getAvatarUrl(user);
@@ -891,7 +1130,7 @@ return (
             </div>
         )}
 
-        {/* MANAGE LISTINGS TAB - UPDATED WITH COMPACT MOBILE CARDS & SHINE ON HOVER */}
+        {/* MANAGE LISTINGS TAB */}
         {activeTab === "Listings" && (
           <div key="Listings" className="animate-content">
             <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6 md:mb-10">
@@ -959,10 +1198,10 @@ return (
                                
                                <div className="flex gap-2">
                                    <button onClick={() => handleOpenJobModal(job)} className={`p-2 md:p-3 rounded-full transition-all duration-300 group/btn hover:scale-110 ${darkMode ? 'bg-white/5 hover:bg-blue-500 hover:text-white text-slate-400' : 'bg-slate-100 hover:bg-blue-500 hover:text-white text-slate-500'}`}>
-                                        <PencilSquareIcon className="w-4 h-4" />
+                                            <PencilSquareIcon className="w-4 h-4" />
                                    </button>
                                    <button onClick={() => handleDeleteJob(job.id)} className={`p-2 md:p-3 rounded-full transition-all duration-300 group/btn hover:scale-110 ${darkMode ? 'bg-white/5 hover:bg-red-500 hover:text-white text-slate-400' : 'bg-slate-100 hover:bg-red-500 hover:text-white text-slate-500'}`}>
-                                        <TrashIcon className="w-4 h-4" />
+                                            <TrashIcon className="w-4 h-4" />
                                    </button>
                                </div>
                           </div>
@@ -1001,15 +1240,13 @@ return (
           </div>
         )}
 
-        {/* MESSAGES TAB - FULLY OVERHAULED */}
+        {/* MESSAGES TAB - RESTORED OLD VISUALS */}
         {activeTab === "Messages" && (
-          <div key="Messages" className="animate-content h-[calc(100vh-100px)] md:h-[calc(100vh-10rem)] flex flex-col pb-2">
+          <div className="animate-in fade-in duration-700 h-[calc(100vh-100px)] md:h-[calc(100vh-2rem)] flex flex-col pb-2">
             <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0 relative">
-                
-                {/* LEFT SIDE: CHAT LIST */}
-                <div className={`w-full md:w-1/3 rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel} ${activeChat && isMobile ? 'hidden' : 'flex'}`}>
+                <div className={`${isMobile && activeChat ? 'hidden' : 'flex'} w-full md:w-72 rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
                     <div className="p-5 pb-2 shrink-0">
-                         <h2 className={`text-2xl font-black mb-4 px-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h2>
+                         {isMobile && <h2 className={`text-2xl font-black mb-4 px-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h2>}
                         <div className={`flex items-center p-1.5 rounded-2xl border ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500/50' : 'bg-white border-slate-200 focus-within:border-blue-300'}`}>
                             <div className="relative flex-1">
                                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1020,7 +1257,8 @@ return (
                     <div className="flex-1 overflow-y-auto p-3 space-y-1 hide-scrollbar">
                         {filteredChats.map(c => {
                             const otherId = c.participants.find(p => p !== auth.currentUser.uid);
-                            const name = c.names?.[otherId] || "User";
+                            // *** FIXED: Added ?. here as well for safety
+                            const name = c.names?.[otherId] || "User"; 
                             const otherPic = c.profilePics?.[otherId];
                             const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                             const isActive = activeChat?.id === otherId;
@@ -1034,59 +1272,71 @@ return (
                     </div>
                 </div>
 
-                {/* RIGHT SIDE: CHAT WINDOW (Glass Panel) */}
-                <div className={`flex-1 rounded-[2.5rem] border overflow-hidden shadow-xl flex flex-col relative ${glassPanel} ${!activeChat && isMobile ? 'hidden' : 'flex'} ${activeChat && isMobile ? 'fixed inset-0 z-[60] !rounded-none !border-0 bg-slate-950' : ''}`}>
+                <div className={`${isMobile && !activeChat ? 'hidden' : 'flex'} ${isMobile ? 'fixed inset-0 z-[60] rounded-none' : 'flex-1 rounded-[2.5rem] relative'} border flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
                     {activeChat ? (
                         <>
-                            {/* Chat Header */}
-                            <div className={`p-4 border-b flex items-center gap-4 ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-200 bg-slate-50/50'}`}>
-                                {isMobile && (
-                                    <button onClick={() => closeChat()} className="p-2 -ml-2 rounded-full hover:bg-white/10"><ArrowLeftIcon className="w-6 h-6"/></button>
-                                )}
-                                <div className="w-10 h-10 rounded-full overflow-hidden shrink-0">
-                                    {activeChat.profilePic ? <img src={activeChat.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-blue-500 flex items-center justify-center text-white font-bold">{activeChat.name?.charAt(0)}</div>}
-                                </div>
-                                <div>
-                                    <h3 className={`font-black text-lg leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{activeChat.name}</h3>
-                                    <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Active Now</p>
-                                </div>
+                            <div className={`p-4 md:p-6 flex items-center justify-between border-b shrink-0 backdrop-blur-md z-10 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-200'}`}>
+                                 <div className="flex items-center gap-3 md:gap-4">
+                                     <button onClick={()=>closeChat()} className="md:hidden p-2 -ml-2 rounded-full hover:bg-white/10"><ChevronLeftIcon className="w-6 h-6"/></button>
+                                     <div className="w-10 h-10 md:w-12 md:h-12 rounded-full overflow-hidden bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center text-white font-black text-lg md:text-xl shadow-lg">{activeChat.profilePic ? <img src={activeChat.profilePic} alt={activeChat.name} className="w-full h-full object-cover" /> : activeChat.name.charAt(0)}</div>
+                                     <div><h3 className={`font-black text-base md:text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>{activeChat.name}</h3><div className="flex items-center gap-1.5"><p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Active Now</p></div></div>
+                                 </div>
+                                 <div className="relative">
+                                    <button onClick={() => setIsChatOptionsOpen(!isChatOptionsOpen)} className={`p-3 rounded-2xl transition-colors ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-100'} ${isChatOptionsOpen ? 'bg-blue-600/10 text-blue-500' : ''}`}><EllipsisHorizontalIcon className="w-6 h-6 opacity-50"/></button>
+                                    {isChatOptionsOpen && (<div className={`absolute right-0 top-14 w-60 rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 z-50 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}><div className="p-2 space-y-1"><button onClick={handleMinimizeToBubble} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5 text-blue-400' : 'hover:bg-blue-50 text-blue-500'}`}><ChevronDownIcon className="w-4 h-4" /> Minimize to Bubble</button><div className={`h-px my-1 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}></div><button onClick={handleCloseChat} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5 text-red-400' : 'hover:bg-red-50 text-red-500'}`}><XMarkIcon className="w-4 h-4" /> Close Chat</button></div></div>)}
+                                 </div>
                             </div>
-
-                            {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar">
-                                {messages.map((msg) => {
+                            <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`} onClick={() => setIsChatOptionsOpen(false)}>
+                                {messages.map((msg, i) => {
                                     const isMe = msg.senderId === auth.currentUser.uid;
+                                    const isSystem = msg.type === 'system';
+                                    const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
+                                    const hasText = msg.text && msg.text.trim().length > 0;
+                                    if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
                                     return (
-                                        <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                            <div className={`max-w-[75%] p-4 rounded-2xl text-sm font-medium ${isMe ? 'bg-blue-600 text-white rounded-tr-none shadow-lg shadow-blue-500/20' : `${darkMode ? 'bg-white/10 text-white' : 'bg-slate-200 text-slate-800'} rounded-tl-none`}`}>
-                                                {msg.text}
+                                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
+                                            {msg.replyTo && (<div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>)}
+                                            <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                                <MessageAvatar isMe={isMe} />
+                                                <div className="relative group/bubble flex flex-col gap-1">
+                                                    {msg.fileUrl && (
+                                                        <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-slate-100 text-slate-900')}`}>
+                                                            {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
+                                                            {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
+                                                            {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName || "Download File"}</span></a>}
+                                                        </div>
+                                                    )}
+                                                    {hasText && (
+                                                        <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-slate-100 text-slate-900 rounded-bl-none'}`}>
+                                                            <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
+                                            <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
                                         </div>
-                                    );
+                                    )
                                 })}
-                                <div ref={messagesEndRef} />
+                                <div ref={scrollRef}/>
                             </div>
 
-                            {/* Chat Input */}
-                            <div className={`p-4 border-t ${darkMode ? 'border-white/5' : 'border-slate-200'}`}>
-                                <form onSubmit={handleSendMessage} className={`flex items-center gap-2 p-2 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white border-slate-300'}`}>
-                                    <input 
-                                        type="text" 
-                                        value={newMessage} 
-                                        onChange={(e) => setNewMessage(e.target.value)} 
-                                        placeholder="Type a message..." 
-                                        className={`flex-1 bg-transparent px-4 py-2 outline-none text-sm font-medium ${darkMode ? 'text-white' : 'text-slate-900'}`}
-                                    />
-                                    <button type="submit" disabled={!newMessage.trim()} className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                                        <PaperAirplaneIcon className="w-5 h-5"/>
-                                    </button>
+                            <div className={`p-4 border-t shrink-0 z-20 pb-8 md:pb-4 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-300'}`}>
+                                {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-white/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : activeChat.name}</span><span className="opacity-70 truncate max-w-xs">{replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
+                                {attachment && (<div className="mb-3 relative inline-block animate-in zoom-in duration-200"><div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">{attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}<span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span></div><button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button></div>)}
+                                <form onSubmit={handleSendMessageWrapper} className="flex items-end gap-3">
+                                    <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
+                                    <button type="button" onClick={() => chatFileRef.current.click()} className={`p-4 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                    <div className={`flex-1 rounded-2xl flex items-center px-4 py-3.5 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-slate-100 border-transparent focus-within:bg-white focus-within:border-blue-300 shadow-inner'}`}><textarea value={newMessage} onChange={e=>setNewMessage(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessageWrapper(e); } }} placeholder="Type a message..." className="w-full bg-transparent outline-none text-sm font-medium resize-none max-h-24 hide-scrollbar" rows={1} /></div>
+                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 shadow-lg shadow-blue-500/20 flex items-center justify-center">{isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5 -ml-0.5 mt-0.5"/>}</button>
                                 </form>
                             </div>
                         </>
                     ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center opacity-50">
-                            <ChatBubbleLeftRightIcon className="w-16 h-16 mb-4"/>
-                            <p className="font-black uppercase text-xs tracking-widest">Select a conversation</p>
+                        <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 p-10 select-none">
+                            <div className={`w-32 h-32 rounded-full flex items-center justify-center mb-6 animate-pulse ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                                <ChatBubbleLeftRightIcon className="w-16 h-16 opacity-20"/>
+                            </div>
+                            <h3 className="text-2xl font-black mb-2">Select a Conversation</h3>
                         </div>
                     )}
                 </div>
@@ -1095,15 +1345,15 @@ return (
         )}
       </main>
 
-      {/* APPLICANT/TALENT MODAL - UPDATED PADDING & HEIGHT FOR MOBILE FIT */}
+      {/* APPLICANT/TALENT MODAL */}
       {selectedApplication && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedApplication(null)}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
              
-             <div 
-                onClick={(e) => e.stopPropagation()}
-                className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
-             >
+            <div 
+               onClick={(e) => e.stopPropagation()}
+               className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+            >
                 <button onClick={() => setSelectedApplication(null)} className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                     <XMarkIcon className="w-5 h-5"/>
                 </button>
@@ -1115,11 +1365,10 @@ return (
                    </div>
                 ) : (
                   <>
-                    {/* UPDATED: REMOVED FRAME */}
                     <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shadow-sm mb-4 shrink-0">
                         {(modalApplicant?.profilePic || selectedApplication.applicantProfilePic) 
-                            ? <img src={modalApplicant?.profilePic || selectedApplication.applicantProfilePic} className="w-full h-full object-cover"/> 
-                            : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">?</div>}
+                           ? <img src={modalApplicant?.profilePic || selectedApplication.applicantProfilePic} className="w-full h-full object-cover"/> 
+                           : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">?</div>}
                     </div>
                     
                     <h2 className="text-2xl font-black mb-1 text-center">{selectedApplication.applicantName}</h2>
@@ -1141,7 +1390,6 @@ return (
                             <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.bio || modalApplicant?.aboutMe || "No bio information provided."}</p>
                         </div>
                         
-                        {/* Always visible Work Experience & Education */}
                         <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
                              <div className="mb-4">
                                 <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
@@ -1174,15 +1422,14 @@ return (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedTalent(null)}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
              
-             <div 
-                onClick={(e) => e.stopPropagation()}
-                className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
-             >
+            <div 
+               onClick={(e) => e.stopPropagation()}
+               className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+            >
                 <button onClick={() => setSelectedTalent(null)} className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                     <XMarkIcon className="w-5 h-5"/>
                 </button>
 
-                {/* UPDATED: REMOVED FRAME */}
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shadow-sm mb-4 shrink-0">
                     {(getAvatarUrl(selectedTalent) || selectedTalent.profilePic) 
                         ? <img src={getAvatarUrl(selectedTalent) || selectedTalent.profilePic} className="w-full h-full object-cover"/> 
@@ -1227,16 +1474,242 @@ return (
         </div>
       )}
 
-      {/* --- REPLACED ENTIRE CHAT BLOCK WITH THE NEW SYSTEM COMPONENT --- */}
-      {/* HIDE CHAT SYSTEM WHEN IN MESSAGES TAB TO PREVENT DOUBLE POPUPS */}
-      {activeTab !== "Messages" && (
-        <ChatSystem 
-            chat={chat} 
-            currentUser={auth.currentUser} 
-            darkMode={darkMode} 
-        />
+      {/* --- RESTORED: MESSENGER STYLE BUBBLE STACK (Manual Implementation, Removed ChatSystem) --- */}
+      {isBubbleVisible && (
+        isMobile ? (
+          <>
+             {!isBubbleExpanded && (
+                <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+                   <div className="relative">
+                       <button onClick={(e) => { if (!isDragging) setIsBubbleExpanded(true); }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 border-2 overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-blue-500'}`}>
+                          {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (
+                             (getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>
+                           ) : ( <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} /> )}
+                       </button>
+                       {hasGlobalUnread && activeBubbleView === 'inbox' && (<span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">!</span>)}
+                   </div>
+                </div>
+             )}
+
+             {isBubbleExpanded && (
+                <div className="fixed inset-0 z-[1000] flex flex-col bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
+                        {openBubbles.map((chat) => (
+                           <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
+                                <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${activeBubbleView === chat.id ? 'border-blue-500 scale-110' : 'border-transparent opacity-60'}`}>
+                                    {(getAvatarUrl(chat) || chat.profilePic) ? <img src={getAvatarUrl(chat) || chat.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
+                                </button>
+                                {activeBubbleView === chat.id && (<button onClick={(e) => { e.stopPropagation(); handleCloseBubble(chat.id); }} className="absolute -top-1 -right-1 bg-slate-500 text-white rounded-full p-0.5 shadow-md animate-in zoom-in"><XMarkIcon className="w-3 h-3"/></button>)}
+                           </div>
+                        ))}
+                        <div className="flex flex-col items-center gap-1 shrink-0">
+                            <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all border-2 ${activeBubbleView === 'inbox' ? 'border-blue-500 scale-110' : 'border-white dark:border-slate-700 opacity-60'} ${darkMode ? 'bg-slate-800' : 'bg-white'}`}><ChatBubbleOvalLeftEllipsisIcon className="w-7 h-7 text-blue-500" /></button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col justify-end relative" onClick={() => setIsBubbleExpanded(false)}>
+                        <div className={`w-full h-[80vh] rounded-t-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 border-t ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`} onClick={(e) => e.stopPropagation()}>
+                            {activeBubbleView === 'inbox' && (
+                                <div className="flex flex-col h-full">
+                                    <div className={`p-5 border-b flex justify-between items-center ${darkMode ? 'border-white/5 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                                        <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
+                                        <button onClick={() => setIsBubbleExpanded(false)} className="p-2 bg-slate-100 dark:bg-white/10 rounded-full"><ChevronDownIcon className="w-5 h-5 opacity-50"/></button> 
+                                    </div>
+                                    <div className="px-5 py-2">
+                                        <div className={`flex items-center p-1.5 rounded-2xl border transition-all ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
+                                            <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
+                                            <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search chats..." className="bg-transparent border-none outline-none text-xs p-2 w-full font-bold" />
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
+                                            {filteredChats.map(c => {
+                                                const otherId = c.participants.find(p => p !== auth.currentUser.uid);
+                                                const name = c.names?.[otherId] || "User";
+                                                const otherPic = c.profilePics?.[otherId];
+                                                return (
+                                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                                                            <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                                            <div className="flex-1 text-left overflow-hidden"><div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p></div>
+                                                    </button>
+                                                )
+                                            })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeBubbleView !== 'inbox' && effectiveActiveChatUser && (
+                                <>
+                                    <div className={`p-4 flex items-center justify-between border-b shrink-0 ${darkMode ? 'border-white/5 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200">
+                                                    {(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}
+                                                </div>
+                                                <div>
+                                                    <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{effectiveActiveChatUser.name}</h3>
+                                                    <p className="text-[10px] font-bold opacity-60 uppercase">Active Now</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-4 text-blue-500">
+                                                <button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button>
+                                            </div>
+                                    </div>
+
+                                    <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                            {messages.map((msg) => {
+                                                const isMe = msg.senderId === auth.currentUser.uid;
+                                                const isSystem = msg.type === 'system';
+                                                const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
+                                                const hasText = msg.text && msg.text.trim().length > 0;
+                                                if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
+                                                return (
+                                                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
+                                                        {msg.replyTo && (<div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200 rounded-br-none mr-2' : 'bg-slate-500/20 text-slate-400 rounded-bl-none ml-2'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>)}
+                                                        <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                                            <MessageAvatar isMe={isMe} />
+                                                            <div className="relative group/bubble flex flex-col gap-1">
+                                                                {msg.fileUrl && (
+                                                                    <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-slate-100 text-slate-900 border border-slate-200')}`}>
+                                                                        {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
+                                                                        {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
+                                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName || "Download File"}</span></a>}
+                                                                    </div>
+                                                                )}
+                                                                {hasText && (
+                                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-slate-100 text-slate-900 rounded-bl-none'}`}>
+                                                                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                                                                    </div>
+                                                                )}
+                                                                <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
+                                                            </div>
+                                                        </div>
+                                                        <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
+                                                    </div>
+                                                )
+                                            })}
+                                            <div ref={scrollRef}/>
+                                    </div>
+                                    <div className={`p-3 border-t shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                        {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
+                                        <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
+                                            <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
+                                            <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                            <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2 text-sm outline-none rounded-full ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-900'}`} />
+                                            <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-blue-600 disabled:opacity-30 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
+                                        </form>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+             )}
+          </>
+        ) : (
+          // DESKTOP BUBBLE VIEW
+          <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
+            <div className="pointer-events-auto">
+                <button 
+                    onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }}
+                    className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 border-2 ${darkMode ? 'bg-blue-600 border-slate-800' : 'bg-blue-600 border-white'}`}
+                >
+                    <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                    {hasGlobalUnread && (<span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">!</span>)}
+                </button>
+            </div>
+
+            {openBubbles.map((chat) => (
+                <div key={chat.id} className="pointer-events-auto relative group flex items-center gap-3">
+                    <span className="absolute right-full mr-3 px-3 py-1.5 rounded-xl bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">{chat.name}</span>
+                    <div className="relative">
+                        <button 
+                            onClick={() => { openChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); }}
+                            className="w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl overflow-hidden border-2 border-white dark:border-slate-800 transition-all hover:scale-110 active:scale-95"
+                        >
+                            {(getAvatarUrl(chat) || chat.profilePic) ? (<img src={getAvatarUrl(chat) || chat.profilePic} alt="" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className="absolute -top-1 -left-1 w-5 h-5 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-white dark:border-slate-800"><XMarkIcon className="w-3 h-3 text-slate-600 dark:text-slate-300" /></button>
+                    </div>
+                </div>
+            ))}
+             
+            {isDesktopInboxVisible && !activeChat && (
+                <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
+                    <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
+                         <div className={`p-5 border-b flex justify-between items-center ${darkMode ? 'bg-slate-900 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
+                             <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
+                             <button onClick={() => setIsDesktopInboxVisible(false)} className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg"><XMarkIcon className="w-5 h-5 opacity-50"/></button>
+                         </div>
+                         <div className="p-3 pb-0">
+                            <div className={`flex items-center p-1.5 rounded-xl border ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
+                                <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
+                                <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold" />
+                            </div>
+                         </div>
+                         <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
+                            {filteredChats.map(c => {
+                                const otherId = c.participants.find(p => p !== auth.currentUser.uid);
+                                const name = c.names?.[otherId] || "User";
+                                const otherPic = c.profilePics?.[otherId];
+                                return (
+                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setIsDesktopInboxVisible(false); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                                            <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                            <div className="flex-1 text-left overflow-hidden"><div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p></div>
+                                    </button>
+                                )
+                            })}
+                         </div>
+                    </div>
+                </div>
+            )}
+
+            {!isChatMinimized && activeChat && activeTab !== "Support" && (
+                <div className={`fixed z-[210] pointer-events-auto bottom-6 right-24`}>
+                    <div className={`w-[380px] h-[500px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border animate-in slide-in-from-right-4 duration-300 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
+                        <div className={`p-4 flex justify-between items-center border-b bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0`}>
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
+                                <div><span className="font-black text-xs uppercase block">{activeChat.name}</span><span className="text-[9px] opacity-90 font-bold block">Active Now</span></div>
+                            </div>
+                            <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className="p-1.5 hover:bg-white/20 rounded-lg"><ChevronDownIcon className="w-4 h-4"/></button><button onClick={handleCloseChat} className="p-1.5 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-4 h-4"/></button></div>
+                        </div>
+                        <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
+                            {messages.map((msg) => {
+                                const isMe = msg.senderId === auth.currentUser.uid;
+                                const isSystem = msg.type === 'system';
+                                if(isSystem) return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
+                                return (
+                                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
+                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.text}</span></div>}
+                                            <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                                <MessageAvatar isMe={isMe} />
+                                                <div className="relative group/bubble flex flex-col gap-1">
+                                                    {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                    {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-8 hover:bg-black/5' : '-right-8 hover:bg-black/5'} text-slate-400`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
+                                                </div>
+                                            </div>
+                                            <p className={`text-[8px] font-black mt-1 opacity-30 ${isMe ? 'text-right mr-10' : 'text-left ml-10'}`}>{formatTime(msg.createdAt)}</p>
+                                    </div>
+                                );
+                            })}
+                            <div ref={scrollRef}/>
+                        </div>
+                        <div className={`p-3 border-t shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                            {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
+                            <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
+                                <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
+                                <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2 text-sm outline-none rounded-full ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-900'}`} />
+                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-blue-600 disabled:opacity-30 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+          </div>
+        )
       )}
-      
+       
       {/* MOBILE BOTTOM NAV - UPDATED WITH GLOW & SHINE EFFECT */}
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${isMobile && activeTab === "Messages" && activeChat ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
         <MobileNavItem icon={<SparklesIcon className="w-6 h-6" />} active={activeTab === "Discover"} onClick={() => setActiveTab("Discover")} />
@@ -1267,7 +1740,6 @@ function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDe
 
 function NavBtn({ icon, label, active, onClick, darkMode, open, badge, badgeColor }) {
   // Use className instead of conditional rendering for shine effect
-  // The 'shine-effect' class handles the pseudo-element animation
   return (
     <button onClick={onClick} title={!open ? label : ''} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 group relative overflow-hidden ${active ? 'bg-transparent' : `${darkMode ? 'text-slate-400 hover:bg-white/10 hover:text-white' : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`} ${!open && 'lg:justify-center'}`}>
         <div className={`relative z-10 shrink-0 ${active ? 'text-blue-600 dark:text-blue-400 drop-shadow-[0_0_10px_rgba(59,130,246,0.6)]' : ''}`}>{icon}</div>
@@ -1279,7 +1751,6 @@ function NavBtn({ icon, label, active, onClick, darkMode, open, badge, badgeColo
   );
 }
 
-// --- UPDATED MOBILE NAV ITEM TO MATCH GLOW & SHINE THEME ---
 function MobileNavItem({ icon, active, onClick }) {
   return (
     <button onClick={onClick} className={`relative p-2 rounded-full transition-all duration-500 ease-out overflow-hidden ${active ? 'scale-125 text-blue-600 dark:text-blue-400 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)] dark:drop-shadow-[0_0_15px_rgba(96,165,250,0.8)] shine-effect' : 'text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-white hover:scale-110 hover:-translate-y-1'}`}>
