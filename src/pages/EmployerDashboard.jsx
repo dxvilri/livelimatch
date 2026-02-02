@@ -4,26 +4,25 @@ import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config"; 
 import { 
   collection, query, where, onSnapshot, 
-  addDoc, serverTimestamp, setDoc, doc, updateDoc, increment, deleteDoc, getDoc, getDocs, getCountFromServer
+  addDoc, serverTimestamp, setDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer 
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
+// --- HOOKS & COMPONENTS ---
+import { useChat } from "../hooks/useChat"; 
+import ChatSystem from "../components/ChatSystem"; 
 
 import { 
   BriefcaseIcon, ArrowLeftOnRectangleIcon, XMarkIcon, 
   Bars3BottomRightIcon, MapPinIcon, SunIcon, MoonIcon, 
-  ChevronLeftIcon, ChevronRightIcon, ChatBubbleLeftRightIcon,
-  MagnifyingGlassIcon, PaperAirplaneIcon, MinusIcon, EyeIcon,
-  TrashIcon, CheckCircleIcon, CameraIcon, PencilSquareIcon, 
+  ChevronRightIcon, ChatBubbleLeftRightIcon,
+  MagnifyingGlassIcon, TrashIcon, CheckCircleIcon, CameraIcon, PencilSquareIcon, 
   PlusIcon, UsersIcon, ClockIcon, UserIcon, AcademicCapIcon,
   CurrencyDollarIcon, CalendarDaysIcon, BoltIcon,
-  EllipsisHorizontalIcon, PaperClipIcon, ArrowUturnLeftIcon, 
-  PhotoIcon, DocumentIcon, ArrowsPointingOutIcon, UserCircleIcon,
-  EnvelopeIcon, PhoneIcon, SparklesIcon, FunnelIcon,
-  ChartBarIcon, SignalIcon, UserPlusIcon, PresentationChartLineIcon,
-  TrendingUpIcon, BuildingOfficeIcon, ChevronDownIcon,
-  ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon, VideoCameraIcon,
-  ShieldCheckIcon, HomeIcon, BellIcon, MegaphoneIcon,
-  QuestionMarkCircleIcon, IdentificationIcon
+  UserCircleIcon, SparklesIcon, FunnelIcon,
+  ChartBarIcon, UserPlusIcon, PresentationChartLineIcon,
+  BuildingOfficeIcon, BellIcon, QuestionMarkCircleIcon, IdentificationIcon, EyeIcon,
+  LockClosedIcon, ExclamationTriangleIcon // Added Lock Icons
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
@@ -31,7 +30,7 @@ const PUROK_LIST = [
   "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary"
 ];
 
-const ADMIN_EMAIL = "admin@livelimatch.com"; // Defined Admin Email for Support lookup
+const ADMIN_EMAIL = "admin@livelimatch.com";
 
 const JOB_TYPES = [
   { id: "Full-time", icon: <BriefcaseIcon className="w-5 h-5"/>, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20" },
@@ -40,7 +39,6 @@ const JOB_TYPES = [
   { id: "One-time", icon: <BoltIcon className="w-5 h-5"/>, color: "text-green-500", bg: "bg-green-500/10", border: "border-green-500/20" }
 ];
 
-// --- HELPER TO SAFELY GET IMAGE ---
 const getAvatarUrl = (user) => {
   if (!user) return null;
   return user.profilePic || user.photoURL || user.photoUrl || user.avatar || user.image || null;
@@ -53,30 +51,14 @@ export default function EmployerDashboard() {
   const [loading, setLoading] = useState(false); 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-  // --- NOTIFICATION STATE ---
+  // --- INITIALIZE CHAT SYSTEM ---
+  const chat = useChat(auth.currentUser, isMobile);
+  const { 
+    conversations, activeChat, openChat, 
+    setIsBubbleVisible 
+  } = chat;
+
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-
-  // --- MESSENGER BUBBLE LOGIC ---
-  const [isBubbleVisible, setIsBubbleVisible] = useState(false); 
-  const [isChatMinimized, setIsChatMinimized] = useState(false); 
-  const [openBubbles, setOpenBubbles] = useState([]); 
-  const [isDesktopInboxVisible, setIsDesktopInboxVisible] = useState(false); 
-    
-  // Mobile Bubble Specific States
-  const [isBubbleExpanded, setIsBubbleExpanded] = useState(false);
-  const [activeBubbleView, setActiveBubbleView] = useState('inbox'); 
-  const [bubblePos, setBubblePos] = useState({ x: window.innerWidth - 60, y: 150 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (isMobile && isBubbleExpanded) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "auto";
-    }
-    return () => { document.body.style.overflow = "auto"; };
-  }, [isMobile, isBubbleExpanded]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -89,7 +71,7 @@ export default function EmployerDashboard() {
     return saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches);
   });
 
-  // --- STYLES ADAPTED FROM ADMIN DASHBOARD ---
+  // --- STYLES ---
   const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
     ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' 
     : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
@@ -100,7 +82,6 @@ export default function EmployerDashboard() {
 
   const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 ${darkMode ? 'text-white' : 'text-slate-800'}`;
 
-  // Glass Button Style for Header Nav
   const glassNavBtn = `p-4 rounded-2xl transition-all duration-300 backdrop-blur-md border ${
       darkMode 
       ? 'border-white/5 text-slate-400 hover:bg-white/10 hover:text-white hover:border-white/20 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]' 
@@ -139,69 +120,45 @@ export default function EmployerDashboard() {
   const [isEditingImage, setIsEditingImage] = useState(false);
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [employerData, setEmployerData] = useState({ firstName: "", lastName: "", sitio: "", title: "Employer", aboutMe: "", workExperience: "", education: "" });
-  const [activeChat, setActiveChat] = useState(null); 
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState("");
-  const [chatStatus, setChatStatus] = useState({ isOnline: false, lastSeen: null });
-  const [isChatOptionsOpen, setIsChatOptionsOpen] = useState(false); 
-  const [conversations, setConversations] = useState([]); 
-  const [chatSearch, setChatSearch] = useState(""); 
-  const [replyingTo, setReplyingTo] = useState(null); 
-  const [attachment, setAttachment] = useState(null); 
-  const [isUploading, setIsUploading] = useState(false); 
-  const [lightboxUrl, setLightboxUrl] = useState(null);
-  const chatFileRef = useRef(null); 
-  const scrollRef = useRef(null);
-  const [adminUser, setAdminUser] = useState(null); // State for Admin user
-    
-  // -- ANALYTICS STATE --
-  const [analyticsData, setAnalyticsData] = useState({
-      totalEmployers: 0,
-      sitioStats: []
+  
+  // --- UPDATED EMPLOYER DATA STATE TO INCLUDE VERIFICATION STATUS ---
+  const [employerData, setEmployerData] = useState({ 
+      firstName: "", lastName: "", sitio: "", title: "Employer", 
+      aboutMe: "", workExperience: "", education: "", 
+      verificationStatus: "pending" // Default to pending
   });
+  
+  const [chatSearch, setChatSearch] = useState(""); 
+  const [adminUser, setAdminUser] = useState(null);
+  const [analyticsData, setAnalyticsData] = useState({ totalEmployers: 0, sitioStats: [] });
 
-  // --- EFFECTS ---
+  // --- ACCESS CONTROL CHECK ---
+  const isVerified = employerData.verificationStatus === 'verified';
 
+  // --- SCROLL LOCK EFFECT ---
   useEffect(() => {
-    if (activeTab !== "Messages" && activeTab !== "Support") {
-       setActiveChat(null);
+    if (isJobModalOpen || selectedApplication || selectedTalent || isEditingImage) {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = 'unset';
     }
-  }, [activeTab]);
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [isJobModalOpen, selectedApplication, selectedTalent, isEditingImage]);
 
-  useEffect(() => {
-    if (activeTab === "Messages" || activeTab === "Support") {
-       setIsBubbleVisible(false);
-       setIsBubbleExpanded(false);
-       setIsDesktopInboxVisible(false);
-    }
-  }, [activeTab]);
-
-  // Effect to find Admin User for Support Tab
+  // --- DATA FETCHING ---
   useEffect(() => {
       const fetchAdmin = async () => {
           let q = query(collection(db, "employers"), where("email", "==", ADMIN_EMAIL));
           let snap = await getDocs(q);
-          
-          if (snap.empty) {
-             q = query(collection(db, "applicants"), where("email", "==", ADMIN_EMAIL));
-             snap = await getDocs(q);
-          }
-
-          if (!snap.empty) {
-              const docData = snap.docs[0].data();
-              setAdminUser({ id: snap.docs[0].id, ...docData });
-          } else {
-              console.warn("Support Admin not found in database.");
-          }
+          if (snap.empty) { q = query(collection(db, "applicants"), where("email", "==", ADMIN_EMAIL)); snap = await getDocs(q); }
+          if (!snap.empty) { const docData = snap.docs[0].data(); setAdminUser({ id: snap.docs[0].id, ...docData }); }
       };
       fetchAdmin();
   }, []);
 
-  // Auto-select Admin chat when entering Support tab
   useEffect(() => {
       if (activeTab === "Support" && adminUser) {
-          setActiveChat({
+          openChat({
               id: adminUser.id,
               name: `${adminUser.firstName || 'Admin'} ${adminUser.lastName || 'Support'}`,
               profilePic: getAvatarUrl(adminUser)
@@ -261,35 +218,14 @@ export default function EmployerDashboard() {
             title: data.title || "Employer", 
             aboutMe: data.aboutMe || "",
             workExperience: data.workExperience || "",
-            education: data.education || ""
+            education: data.education || "",
+            // Capture verification status (default to pending if missing)
+            verificationStatus: data.verificationStatus || "pending" 
         }));
       }
     });
     return () => { unsubProfile(); setDoc(userRef, { isOnline: false, lastSeen: serverTimestamp() }, { merge: true }).catch(console.error); };
   }, [auth.currentUser, userData]);
-
-  const effectiveActiveChatId = (isBubbleVisible && isMobile) 
-    ? (activeBubbleView !== 'inbox' ? activeBubbleView : null) 
-    : activeChat?.id;
-
-  const effectiveActiveChatUser = (isBubbleVisible && isMobile)
-    ? openBubbles.find(b => b.id === activeBubbleView)
-    : activeChat;
-
-  useEffect(() => {
-    if (!effectiveActiveChatId) return;
-    let collectionName = "applicants";
-    if (adminUser && effectiveActiveChatId === adminUser.id) collectionName = "employers"; 
-
-    const otherUserRef = doc(db, collectionName, effectiveActiveChatId);
-    const unsubStatus = onSnapshot(otherUserRef, (docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            setChatStatus({ isOnline: data.isOnline || false, lastSeen: data.lastSeen || null });
-        }
-    });
-    return () => unsubStatus();
-  }, [effectiveActiveChatId, adminUser]);
 
   useEffect(() => {
     localStorage.setItem("theme", darkMode ? "dark" : "light");
@@ -311,64 +247,9 @@ export default function EmployerDashboard() {
       setReceivedApplications(appsData);
     });
     
-    const qConvos = query(collection(db, "conversations"), where("participants", "array-contains", auth.currentUser.uid));
-    const unsubConvos = onSnapshot(qConvos, async (snap) => {
-      const convosPromises = snap.docs.map(async (d) => {
-        const data = d.data();
-        const otherId = data.participants.find(p => p !== auth.currentUser.uid);
-        
-        let finalProfilePic = data.profilePics?.[otherId] || null;
-        let finalName = data.names?.[otherId] || "User"; 
-
-        if (otherId) {
-            try {
-                let userSnap = await getDoc(doc(db, "applicants", otherId));
-                if (!userSnap.exists()) {
-                    userSnap = await getDoc(doc(db, "employers", otherId));
-                }
-
-                if (userSnap.exists()) {
-                    const userData = userSnap.data();
-                    const freshPic = getAvatarUrl(userData);
-                    if (freshPic) finalProfilePic = freshPic;
-                    if (userData.firstName && userData.lastName) {
-                        finalName = `${userData.firstName} ${userData.lastName}`;
-                    }
-                }
-            } catch (err) { }
-        }
-        
-        return { 
-            id: d.id, 
-            ...data, 
-            profilePics: { ...data.profilePics, [otherId]: finalProfilePic },
-            names: { ...data.names, [otherId]: finalName } 
-        };
-      });
-      const convosData = await Promise.all(convosPromises);
-      convosData.sort((a, b) => (b.lastTimestamp?.seconds || 0) - (a.lastTimestamp?.seconds || 0));
-      setConversations(convosData);
-    });
-    return () => { unsubJobs(); unsubApps(); unsubConvos(); };
+    return () => { unsubJobs(); unsubApps(); };
   }, [auth.currentUser]);
 
-  useEffect(() => {
-    if (!effectiveActiveChatId || !auth.currentUser) return;
-    const chatId = [auth.currentUser.uid, effectiveActiveChatId].sort().join("_");
-    
-    if ((!isMobile && !isChatMinimized) || (isMobile && isBubbleVisible && isBubbleExpanded)) {
-       updateDoc(doc(db, "conversations", chatId), { [`unread_${auth.currentUser.uid}`]: 0 }).catch(() => {});
-    }
-
-    const qChat = query(collection(db, "messages"), where("chatId", "==", chatId));
-    const unsubChat = onSnapshot(qChat, (snap) => {
-      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      msgs.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-      setMessages(msgs);
-      setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    });
-    return () => unsubChat();
-  }, [effectiveActiveChatId, isChatMinimized, isBubbleVisible, isBubbleExpanded]); 
 
   // --- HANDLERS ---
   const handleTalentMouseEnter = (user) => {
@@ -428,7 +309,11 @@ export default function EmployerDashboard() {
     } catch (err) { alert("Error saving profile: " + err.message); } 
     finally { setLoading(false); }
   };
+  
+  // --- VERIFICATION CHECK ON OPENING JOB MODAL ---
   const handleOpenJobModal = (job = null) => {
+    if (!isVerified) return alert("Your account is pending verification. You cannot post jobs yet.");
+    
     if (job) {
       setEditingJobId(job.id);
       setJobForm({ title: job.title, sitio: job.sitio || "", salary: job.salary, type: job.type, description: job.description });
@@ -438,6 +323,7 @@ export default function EmployerDashboard() {
     }
     setIsJobModalOpen(true);
   };
+
   const handleSaveJob = async () => {
     if (!jobForm.title || !jobForm.salary) return alert("Title and Salary are required.");
     setLoading(true);
@@ -485,139 +371,24 @@ export default function EmployerDashboard() {
     setLoading(true);
     try { await deleteDoc(doc(db, "applications", appId)); if (selectedApplication?.id === appId) setSelectedApplication(null); } catch (err) { alert("Error deleting: " + err.message); } finally { setLoading(false); }
   };
-  const handleFileSelect = (e) => { if (e.target.files[0]) setAttachment(e.target.files[0]); };
-  
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if ((!newMessage.trim() && !attachment) || !effectiveActiveChatId) return;
-    const chatId = [auth.currentUser.uid, effectiveActiveChatId].sort().join("_");
-    const myDisplayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
-    let fileUrl = null, fileType = null, fileName = null;
-    setIsUploading(true);
-    try {
-      if (attachment) {
-        const storage = getStorage(auth.app);
-        const storageRef = ref(storage, `chat_attachments/${chatId}/${Date.now()}_${attachment.name}`);
-        const uploadTask = await uploadBytes(storageRef, attachment);
-        fileUrl = await getDownloadURL(uploadTask.ref);
-        fileName = attachment.name;
-        if (attachment.type.startsWith('image/')) fileType = 'image';
-        else if (attachment.type.startsWith('video/')) fileType = 'video';
-        else fileType = 'file';
-      }
-      await addDoc(collection(db, "messages"), {
-        chatId, text: newMessage, senderId: auth.currentUser.uid, receiverId: effectiveActiveChatId, createdAt: serverTimestamp(), 
-        fileUrl: fileUrl || null, fileType: fileType || 'text', fileName: fileName || null,
-        replyTo: replyingTo ? { id: replyingTo.id, text: replyingTo.text, senderName: replyingTo.senderId === auth.currentUser.uid ? "You" : effectiveActiveChatUser.name, type: replyingTo.fileType || 'text' } : null
-      });
-      await setDoc(doc(db, "conversations", chatId), {
-        chatId, lastMessage: fileType && fileType !== 'text' ? `Sent a ${fileType}` : newMessage, lastTimestamp: serverTimestamp(),
-        participants: [auth.currentUser.uid, effectiveActiveChatId], [`unread_${effectiveActiveChatId}`]: increment(1),
-        names: { [auth.currentUser.uid]: myDisplayName, [effectiveActiveChatId]: effectiveActiveChatUser.name },
-        profilePics: { [auth.currentUser.uid]: profileImage || null, [effectiveActiveChatId]: effectiveActiveChatUser.profilePic || null }
-      }, { merge: true });
-      setNewMessage(""); setAttachment(null); setReplyingTo(null); if (chatFileRef.current) chatFileRef.current.value = "";
-    } catch (err) { alert("Failed to send message."); } finally { setIsUploading(false); }
-  };
 
-  // --- MOBILE BUBBLE HANDLERS (Drag & Logic) ---
-  const handleTouchStart = (e) => {
-      setIsDragging(true);
-      const touch = e.touches[0];
-      dragOffset.current = {
-          x: touch.clientX - bubblePos.x,
-          y: touch.clientY - bubblePos.y
-      };
-  };
-
-  const handleTouchMove = (e) => {
-      if (!isDragging) return;
-      const touch = e.touches[0];
-      const bubbleSize = 56; 
-      
-      let newX = touch.clientX - dragOffset.current.x;
-      let newY = touch.clientY - dragOffset.current.y;
-
-      newY = Math.max(80, Math.min(newY, window.innerHeight - 150));
-      newX = Math.max(0, Math.min(newX, window.innerWidth - bubbleSize));
-
-      setBubblePos({ x: newX, y: newY });
-  };
-
-  const handleTouchEnd = () => {
-      setIsDragging(false);
-      const bubbleSize = 56;
-      if (bubblePos.x < window.innerWidth / 2) {
-          setBubblePos(prev => ({ ...prev, x: 0 }));
-      } else {
-          setBubblePos(prev => ({ ...prev, x: window.innerWidth - bubbleSize }));
-      }
-  };
-
-  const handleMinimizeToBubble = () => {
-    if (!activeChat) return;
-
-    setIsBubbleVisible(true);
-    setIsChatMinimized(true);
-    setIsChatOptionsOpen(false);
-    setActiveBubbleView(activeChat.id); 
-
-    if (activeChat && !openBubbles.find(b => b.id === activeChat.id)) {
-      setOpenBubbles(prev => [...prev, activeChat]);
-    }
-    setActiveChat(null);
-    setActiveTab("Discover"); 
-  };
-
+  // --- REPLACED CHAT START HANDLER WITH VERIFICATION CHECK ---
   const handleStartChatFromExternal = (userObj) => {
-    const pic = getAvatarUrl(userObj) || userObj.profilePic;
-    setActiveChat({ ...userObj, profilePic: pic });
-    setIsChatMinimized(false);
+    if (!isVerified) return alert("Your account must be verified to send messages.");
+    openChat(userObj);
     setActiveTab("Messages");
     setIsBubbleVisible(false);
-    setIsBubbleExpanded(false);
-    setIsDesktopInboxVisible(false);
   };
 
-  const handleCloseChat = () => { 
-    if (activeChat) {
-      setOpenBubbles(prev => prev.filter(b => b.id !== activeChat.id));
-    }
-    setActiveChat(null); 
-    setIsChatOptionsOpen(false); 
-    if (openBubbles.length <= 1) setIsBubbleVisible(false);
-  };
-
-  const handleCloseBubble = (chatId) => {
-      const newBubbles = openBubbles.filter(b => b.id !== chatId);
-      setOpenBubbles(newBubbles);
-      if(activeBubbleView === chatId) {
-          if (newBubbles.length === 0) {
-              setIsBubbleVisible(false);
-              setIsBubbleExpanded(false);
-              setActiveBubbleView('inbox');
-          } else {
-              setActiveBubbleView('inbox');
-          }
-      }
-  };
-
-  const handleViewProfile = () => { setIsChatOptionsOpen(false); alert(`Viewing profile for ${activeChat.name} (Feature coming soon)`); };
-  const formatTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
-  const formatDateTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
-  const formatLastSeen = (ts) => {
-      if (!ts) return "Offline"; const date = ts.toDate(); const now = new Date(); const diffInMinutes = Math.floor((now - date) / 60000);
-      if(diffInMinutes < 1) return "just now"; if(diffInMinutes < 60) return `${diffInMinutes}m ago`; if(diffInMinutes < 1440) return `${Math.floor(diffInMinutes/60)}h ago`; return "days ago";
-  };
   const displayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
 
-  // --- FILTERS & NOTIFICATIONS ---
   const filteredJobs = myPostedJobs.filter(job => job.title.toLowerCase().includes(searchTerm.toLowerCase()) || (job.sitio && job.sitio.toLowerCase().includes(searchTerm.toLowerCase())));
   const filteredChats = conversations.filter(c => {
       const otherId = c.participants.find(p => p !== auth.currentUser.uid);
       const name = c.names[otherId] || "User";
       return name.toLowerCase().includes(chatSearch.toLowerCase());
   });
+
   const filteredApps = receivedApplications.filter(app => app.applicantName.toLowerCase().includes(applicantSearch.toLowerCase()) || app.jobTitle.toLowerCase().includes(applicantSearch.toLowerCase()));
   const filteredTalents = discoverTalents.filter(user => {
     const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
@@ -631,7 +402,6 @@ export default function EmployerDashboard() {
   const hasNewApps = receivedApplications.some(app => app.status === 'pending' && !app.isViewed);
   const hasGlobalUnread = conversations.some(c => (c[`unread_${auth.currentUser?.uid}`] || 0) > 0);
 
-  // --- NOTIFICATION CALCS ---
   const unreadMsgCount = conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0);
   const newAppCount = receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length;
   const totalNotifications = unreadMsgCount + newAppCount;
@@ -643,50 +413,35 @@ export default function EmployerDashboard() {
     </div>
   );
 
-  const MessageAvatar = ({ isMe }) => {
-    const pic = isMe ? profileImage : getAvatarUrl(effectiveActiveChatUser);
-    const initial = isMe ? (employerData.firstName?.charAt(0) || "M") : (effectiveActiveChatUser?.name?.charAt(0) || "U");
-
-    return (
-        <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[10px] font-black uppercase">
-            {pic ? <img src={pic} alt="User" className="w-full h-full object-cover" /> : initial}
-        </div>
-    );
-  };
-
   const getJobStyle = (type) => { const found = JOB_TYPES.find(j => j.id === type); if (found) return found; return { icon: <BoltIcon className="w-6 h-6"/>, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' }; };
   
-  // --- BADGE HELPER ---
-  const getBadge = (tab, count) => {
-      // Logic for badges (reuse counts)
-      if (tab === "Applicants" && hasNewApps) return count > 0 ? count : 0;
-      if (tab === "Messages" && hasGlobalUnread) return count > 0 ? count : 0;
-      return 0;
-  };
+  const formatTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
 
 return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
       <style>{`.hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
       <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
-      {/* --- BACKGROUND BLOBS (ADMIN STYLE) --- */}
+      {/* --- BACKGROUND BLOBS --- */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse ${darkMode ? 'bg-blue-900' : 'bg-blue-300'}`}></div>
         <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse delay-1000 ${darkMode ? 'bg-purple-900' : 'bg-purple-300'}`}></div>
       </div>
 
-      {/* FULL SCREEN IMAGE LIGHTBOX */}
-      {lightboxUrl && (
-          <div className="fixed inset-0 z-[1000] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setLightboxUrl(null)}>
-              <img src={lightboxUrl} alt="Full view" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
-              <button onClick={() => setLightboxUrl(null)} className="absolute top-5 right-5 p-3 bg-white/10 rounded-full text-white hover:bg-white/20 transition-colors"><XMarkIcon className="w-6 h-6"/></button>
+      {/* --- VERIFICATION WARNING BANNER --- */}
+      {!isVerified && (
+          <div className="fixed top-0 left-0 right-0 z-[110] bg-red-500 text-white px-4 py-2 flex items-center justify-center gap-2 shadow-xl animate-in slide-in-from-top duration-500">
+              <ExclamationTriangleIcon className="w-5 h-5 animate-pulse" />
+              <p className="text-xs font-bold uppercase tracking-wide">
+                  Account {employerData.verificationStatus}. Features limited until verification.
+              </p>
           </div>
       )}
 
       {/* JOB MODAL (Glassmorphism) */}
       {isJobModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in">
-            <div className={`max-w-3xl w-full p-6 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar ${glassPanel}`}>
+            <div className={`max-w-3xl w-full p-5 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${glassPanel}`}>
                 <h3 className="text-2xl font-black mb-8 uppercase tracking-widest text-center">{editingJobId ? 'Edit Listing' : 'Create Job Listing'}</h3>
                 {/* ... Job Form Inputs ... */}
                 <div className="space-y-6">
@@ -695,8 +450,8 @@ return (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           {JOB_TYPES.map((type) => (
                              <button key={type.id} onClick={() => setJobForm({...jobForm, type: type.id})} className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all ${jobForm.type === type.id ? `bg-blue-600 border-blue-600 text-white shadow-lg scale-105` : `${darkMode ? 'border-white/10 hover:bg-white/5' : 'border-slate-200 hover:border-slate-400 hover:bg-slate-100'}`}`}>
-                                  <span className={jobForm.type === type.id ? 'text-white' : type.color}>{type.icon}</span>
-                                  <span className="text-[10px] font-black uppercase tracking-widest">{type.id}</span>
+                                   <span className={jobForm.type === type.id ? 'text-white' : type.color}>{type.icon}</span>
+                                   <span className="text-[10px] font-black uppercase tracking-widest">{type.id}</span>
                              </button>
                           ))}
                       </div>
@@ -711,9 +466,9 @@ return (
                       {isPurokPopupOpen && (
                           <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={() => setIsPurokPopupOpen(false)}>
                              <div className={`w-full max-sm p-6 rounded-[2rem] shadow-2xl animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border border-white/10' : 'bg-white border border-slate-300'}`} onClick={e => e.stopPropagation()}>
-                                 <h4 className="text-center font-black uppercase tracking-widest mb-6 opacity-60">Choose Location</h4>
-                                 <div className="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto hide-scrollbar">{PUROK_LIST.map(p => (<button key={p} onClick={() => { setJobForm({...jobForm, sitio: p}); setIsPurokPopupOpen(false); }} className={`p-4 rounded-xl font-bold transition-all ${jobForm.sitio === p ? 'bg-blue-600 text-white' : darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100'}`}>{p}</button>))}</div>
-                                 <button onClick={() => setIsPurokPopupOpen(false)} className="mt-6 w-full py-3 rounded-xl font-black uppercase text-[10px] tracking-widest text-red-500 border border-red-500/20 hover:bg-red-500/10">Cancel</button>
+                                  <h4 className="text-center font-black uppercase tracking-widest mb-6 opacity-60">Choose Location</h4>
+                                  <div className="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto hide-scrollbar">{PUROK_LIST.map(p => (<button key={p} onClick={() => { setJobForm({...jobForm, sitio: p}); setIsPurokPopupOpen(false); }} className={`p-4 rounded-xl font-bold transition-all ${jobForm.sitio === p ? 'bg-blue-600 text-white' : darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100'}`}>{p}</button>))}</div>
+                                  <button onClick={() => setIsPurokPopupOpen(false)} className="mt-6 w-full py-3 rounded-xl font-black uppercase text-[10px] tracking-widest text-red-500 border border-red-500/20 hover:bg-red-500/10">Cancel</button>
                              </div>
                           </div>
                       )}
@@ -740,15 +495,12 @@ return (
         </div>
       )}
       
-      {/* --- NEW MAIN FIXED HEADER --- */}
-      {/* Hides on mobile when a chat is open to prevent covering the conversation */}
-      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isMobile && activeTab === "Messages" && activeChat) ? '-translate-y-full' : 'translate-y-0'}`}>
-            {/* Logo/Title (REMOVED BADGE) */}
+      {/* HEADER */}
+      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isMobile && activeTab === "Messages" && activeChat) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified ? 'top-10' : 'top-0'}`}>
             <div className="flex items-center gap-3">
                  <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>LIVELI<span className="text-blue-500">MATCH</span></h1>
             </div>
 
-            {/* NEW CENTER NAV (DESKTOP) - REPLACED TEXT WITH ICONS WITH GLASS EFFECT AND MORE SPACING */}
             <div className="hidden lg:flex items-center gap-12">
                 <button onClick={() => setActiveTab("Discover")} className={activeTab === "Discover" ? activeGlassNavBtn : glassNavBtn}>
                     <SparklesIcon className="w-7 h-7" />
@@ -766,9 +518,7 @@ return (
                 </button>
             </div>
 
-            {/* Right Side Actions */}
             <div className="flex items-center gap-4">
-                {/* Notification Bell with Dropdown */}
                 <div className="relative">
                     <button onClick={() => setIsNotifOpen(!isNotifOpen)} className={`relative p-2 rounded-full transition-all active:scale-95 ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-slate-100 text-slate-600'}`}>
                         <BellIcon className="w-6 h-6" />
@@ -781,12 +531,12 @@ return (
                              <div className="p-3 border-b border-white/5 font-black text-xs uppercase tracking-widest opacity-50">Notifications</div>
                              <div className="p-2 space-y-1">
                                  <button onClick={() => { setActiveTab("Messages"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${unreadMsgCount > 0 ? 'text-blue-500 bg-blue-500/10' : 'opacity-50'}`}>
-                                         <span>Unread Messages</span>
-                                         <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
+                                             <span>Unread Messages</span>
+                                             <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
                                  </button>
                                  <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-amber-500 bg-amber-500/10' : 'opacity-50'}`}>
-                                         <span>New Applicants</span>
-                                         <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
+                                             <span>New Applicants</span>
+                                             <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
                                  </button>
                                  {totalNotifications === 0 && <div className="text-center py-4 opacity-30 text-xs font-bold uppercase">No new notifications</div>}
                              </div>
@@ -794,27 +544,23 @@ return (
                     )}
                 </div>
 
-                {/* Profile Pic */}
                 <div onClick={() => setActiveTab("Profile")} className="cursor-pointer group">
                     <div className={`w-10 h-10 rounded-full overflow-hidden border-2 shadow-sm transition-transform active:scale-95 ${darkMode ? 'border-slate-600 group-hover:border-white' : 'border-white group-hover:border-blue-500'}`}>
                         {profileImage ? <img src={profileImage} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">{employerData.firstName ? employerData.firstName.charAt(0) : "E"}</div>}
                     </div>
                 </div>
                 
-                {/* Hamburger (Visible on Mobile & Desktop) */}
                  <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl transition-colors ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-900 hover:bg-slate-100'}`}>
                     <Bars3BottomRightIcon className="w-7 h-7" />
                  </button>
             </div>
       </header>
 
-      {/* --- RIGHT SIDEBAR (Collapsible - CLEANED) --- */}
-      {/* INCREASED Z-INDEX TO 100 TO COVER BOTTOM NAV */}
+      {/* RIGHT SIDEBAR */}
       <aside 
         className={`fixed top-0 right-0 h-full w-64 z-[100] rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel} 
         ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}
       >
-        {/* REPLACED LIVELI MATCH Logo with Clickable Profile Card */}
         <div className="h-24 flex items-center justify-center relative mt-8 cursor-pointer" onClick={() => { setActiveTab("Profile"); setIsSidebarOpen(false); }}>
             <div className={`flex items-center gap-3 p-2 pr-4 rounded-2xl transition-all duration-300 hover:bg-white/10 group`}>
                 <ProfilePicComponent sizeClasses="w-12 h-12" isCollapsed={true} />
@@ -827,15 +573,10 @@ return (
         </div>
 
         <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
-            {/* Main Tabs Removed as requested, keeping Analytics & Profile/System actions */}
             <NavBtn active={activeTab==="Analytics"} onClick={()=>{setActiveTab("Analytics"); setIsSidebarOpen(false)}} icon={<PresentationChartLineIcon className="w-6 h-6"/>} label="Analytics" open={true} dark={darkMode} />
-            
-            {/* Added Help & Support Tab */}
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
             <NavBtn active={activeTab==="Support"} onClick={()=>{setActiveTab("Support"); setIsSidebarOpen(false)}} icon={<QuestionMarkCircleIcon className="w-6 h-6"/>} label="Help & Support" open={true} dark={darkMode} />
-
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
-
             <NavBtn active={activeTab==="Profile"} onClick={()=>{setActiveTab("Profile"); setIsSidebarOpen(false)}} icon={<UserCircleIcon className="w-6 h-6"/>} label="Profile" open={true} dark={darkMode} />
         </nav>
 
@@ -858,12 +599,9 @@ return (
         </div>
       </aside>
 
-      {/* --- MAIN CONTENT (ADDED TOP PADDING FOR FIXED HEADER) --- */}
-      {/* Logic to remove padding if chat is active on mobile so it uses full screen */}
+      {/* --- MAIN CONTENT --- */}
       <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] p-4 lg:p-8 ${(isMobile && activeTab === "Messages" && activeChat) ? 'pt-0' : 'pt-24 lg:pt-28'}`}>
         
-        {/* Floating Header (Kept as Page Title Sub-header) */}
-        {/* Hides on Support tab on mobile to give full screen chat feel */}
         {!(isMobile && (activeTab === "Support" || activeChat)) && (
         <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 rounded-2xl ${glassPanel}`}>
             <div className="flex items-center gap-4">
@@ -884,8 +622,6 @@ return (
         </header>
         )}
 
-        {/* ... (Rest of Profile, Support, Discover, Analytics, Listings Logic unchanged) ... */}
-        
         {/* PROFILE TAB */}
         {activeTab === "Profile" && (
             <div className="animate-in fade-in duration-700 space-y-6">
@@ -924,83 +660,16 @@ return (
             </div>
         )}
 
-        {/* SUPPORT TAB Dedicated Support Chat View */}
+        {/* SUPPORT TAB - Simplified to just show message */}
         {activeTab === "Support" && (
-            <div className={`animate-in fade-in duration-700 h-[calc(100vh-200px)] md:h-[calc(100vh-10rem)] flex flex-col rounded-[2.5rem] overflow-hidden relative shadow-xl ${glassPanel}`}>
-                {adminUser ? (
-                    <>
-                         <div className={`p-4 md:p-6 flex items-center justify-between border-b shrink-0 backdrop-blur-md z-10 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-200'}`}>
-                             <div className="flex items-center gap-3 md:gap-4">
-                                 <div className="w-10 h-10 md:w-12 md:h-12 rounded-full overflow-hidden bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center text-white font-black text-lg md:text-xl shadow-lg">
-                                     {adminUser.profilePic ? <img src={adminUser.profilePic} alt="Admin" className="w-full h-full object-cover" /> : "A"}
-                                 </div>
-                                 <div>
-                                     <h3 className={`font-black text-base md:text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>{adminUser.firstName || "Admin"} {adminUser.lastName || "Support"}</h3>
-                                     <div className="flex items-center gap-1.5">
-                                         <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
-                                         <p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Official Support</p>
-                                     </div>
-                                 </div>
-                             </div>
-                         </div>
-
-                         <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
-                            {/* System Welcome Message */}
-                            <div className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">Secure Support Channel</div>
-                            
-                            {messages.map((msg, i) => {
-                                const isMe = msg.senderId === auth.currentUser.uid;
-                                const isSystem = msg.type === 'system';
-                                const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
-                                const hasText = msg.text && msg.text.trim().length > 0;
-                                if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
-                                return (
-                                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                        {msg.replyTo && (<div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>)}
-                                        <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                            <MessageAvatar isMe={isMe} />
-                                            <div className="relative group/bubble flex flex-col gap-1">
-                                                {msg.fileUrl && (
-                                                    <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-slate-100 text-slate-900')}`}>
-                                                        {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
-                                                        {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
-                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName || "Download File"}</span></a>}
-                                                    </div>
-                                                )}
-                                                {hasText && (
-                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-slate-100 text-slate-900 rounded-bl-none'}`}>
-                                                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
-                                    </div>
-                                )
-                            })}
-                            <div ref={scrollRef}/>
-                         </div>
-
-                         <div className={`p-4 border-t shrink-0 z-20 pb-8 md:pb-4 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-300'}`}>
-                            {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-white/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : "Admin"}</span><span className="opacity-70 truncate max-w-xs">{replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
-                            {attachment && (<div className="mb-3 relative inline-block animate-in zoom-in duration-200"><div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">{attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}<span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span></div><button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button></div>)}
-                            <form onSubmit={handleSendMessage} className="flex items-end gap-3">
-                                <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
-                                <button type="button" onClick={() => chatFileRef.current.click()} className={`p-4 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900'}`}><PaperClipIcon className="w-5 h-5"/></button>
-                                <div className={`flex-1 rounded-2xl flex items-center px-4 py-3.5 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-slate-100 border-transparent focus-within:bg-white focus-within:border-blue-300 shadow-inner'}`}><textarea value={newMessage} onChange={e=>setNewMessage(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }} placeholder="Type a message..." className="w-full bg-transparent outline-none text-sm font-medium resize-none max-h-24 hide-scrollbar" rows={1} /></div>
-                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 shadow-lg shadow-blue-500/20 flex items-center justify-center">{isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5 -ml-0.5 mt-0.5"/>}</button>
-                            </form>
-                         </div>
-                    </>
-                ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 p-10 select-none">
-                        <div className={`w-32 h-32 rounded-full flex items-center justify-center mb-6 ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                            <QuestionMarkCircleIcon className="w-16 h-16 opacity-20"/>
-                        </div>
-                        <h3 className="text-2xl font-black mb-2">Support Unavailable</h3>
-                        <p className="max-w-xs text-xs font-bold uppercase tracking-wide">Unable to connect to Admin. Please ensure an admin account exists with email "{ADMIN_EMAIL}"</p>
+            <div className={`animate-in fade-in duration-700 h-[calc(100vh-200px)] md:h-[calc(100vh-10rem)] flex flex-col items-center justify-center rounded-[2.5rem] overflow-hidden relative shadow-xl ${glassPanel}`}>
+                <div className="text-center p-10">
+                    <div className={`w-32 h-32 rounded-full flex items-center justify-center mb-6 mx-auto ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                        <QuestionMarkCircleIcon className="w-16 h-16 opacity-50 text-blue-500"/>
                     </div>
-                )}
+                    <h3 className="text-2xl font-black mb-2">Support Chat Active</h3>
+                    <p className="max-w-xs mx-auto text-xs font-bold uppercase tracking-wide opacity-60">Check the chat window in the bottom right corner to speak with an Admin.</p>
+                </div>
             </div>
         )}
         
@@ -1008,43 +677,71 @@ return (
         {activeTab === "Discover" && (
             <div className="animate-in fade-in duration-700">
                 <div className="space-y-6 mb-8">
-                      {/* --- QUICK STATS (UPDATED FOR MOBILE FIT) --- */}
+                      {/* --- QUICK STATS (UPDATED: Uniform in Light Mode, Varied in Dark Mode) --- */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
                         
                         {/* 1. CANDIDATES */}
-                        <div onClick={() => setActiveTab("Discover")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20' : 'bg-blue-50/40 border-white/60 hover:bg-blue-100/50 shadow-lg shadow-blue-500/5'}`}>
+                        <div 
+                            onClick={() => setActiveTab("Discover")} 
+                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer 
+                            ${darkMode 
+                                ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' 
+                                : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'
+                            }`}
+                        >
                             <div className="relative z-10">
-                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{discoverTalents.length}</h3>
-                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-600'}`}>Candidates</p>
+                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{discoverTalents.length}</h3>
+                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>Candidates</p>
                             </div>
-                            <UsersIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-600'}`}/>
+                            <UsersIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
                         {/* 2. LISTINGS */}
-                        <div onClick={() => setActiveTab("Listings")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20' : 'bg-purple-50/40 border-white/60 hover:bg-purple-100/50 shadow-lg shadow-purple-500/5'}`}>
+                        <div 
+                            onClick={() => setActiveTab("Listings")} 
+                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer 
+                            ${darkMode 
+                                ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' 
+                                : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'
+                            }`}
+                        >
                             <div className="relative z-10">
-                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-purple-900'}`}>{myPostedJobs.length}</h3>
-                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-purple-600'}`}>Listings</p>
+                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{myPostedJobs.length}</h3>
+                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-blue-800'}`}>Listings</p>
                             </div>
-                            <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-purple-600'}`}/>
+                            <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
                         {/* 3. PENDING */}
-                        <div onClick={() => setActiveTab("Applicants")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20' : 'bg-amber-50/40 border-white/60 hover:bg-amber-100/50 shadow-lg shadow-amber-500/5'}`}>
+                        <div 
+                            onClick={() => setActiveTab("Applicants")} 
+                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer 
+                            ${darkMode 
+                                ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' 
+                                : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'
+                            }`}
+                        >
                             <div className="relative z-10">
-                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-amber-900'}`}>{receivedApplications.filter(a => a.status === 'pending').length}</h3>
-                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-amber-600'}`}>Pending</p>
+                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{receivedApplications.filter(a => a.status === 'pending').length}</h3>
+                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>Pending</p>
                             </div>
-                            <ClockIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-amber-600'}`}/>
+                            <ClockIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
                         {/* 4. UNREAD MSGS */}
-                        <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] border overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer backdrop-blur-xl ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20' : 'bg-pink-50/40 border-white/60 hover:bg-pink-100/50 shadow-lg shadow-pink-500/5'}`}>
+                        <div 
+                            onClick={() => setActiveTab("Messages")} 
+                            className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer 
+                            ${darkMode 
+                                ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' 
+                                : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'
+                            }`}
+                        >
                             <div className="relative z-10">
-                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-pink-900'}`}>{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser.uid}`] || 0), 0)}</h3>
-                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-pink-600'}`}>Unread Msgs</p>
+                                <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{unreadMsgCount}</h3>
+                                <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-blue-800'}`}>Unread Msgs</p>
                             </div>
-                            <ChatBubbleLeftRightIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-pink-600'}`}/>
+                            <ChatBubbleLeftRightIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
                       </div>
 
@@ -1123,10 +820,9 @@ return (
             </div>
         )}
 
-        {/* MANAGE LISTINGS TAB (UPDATED CARD STYLE) */}
+        {/* MANAGE LISTINGS TAB */}
         {activeTab === "Listings" && (
           <div className="animate-in fade-in duration-700">
-            {/* UPDATED: Combined Search and Button Row for alignment */}
             <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
                 <div className={`flex items-center p-2 rounded-2xl border shadow-sm w-full md:max-w-md ${glassPanel}`}>
                     <div className="relative flex-1">
@@ -1145,13 +841,11 @@ return (
                 const style = getJobStyle(job.type);
                 return (
                   <div key={job.id} className={`group relative p-5 ${glassCard} overflow-hidden`}>
-                      {/* Background Icon - Reduced scale for mobile so it doesn't obscure text */}
                       <div className={`absolute -right-4 -top-4 p-6 opacity-[0.03] transition-transform group-hover:scale-110 group-hover:opacity-[0.05] select-none pointer-events-none transform rotate-12 ${darkMode ? 'text-white' : 'text-black'}`}>
                           {style.icon && <div className="scale-[2.5] md:scale-[4]">{style.icon}</div>}
                       </div>
 
                       <div className="relative z-10 flex flex-col h-full">
-                          {/* Top Header: Badge & Status */}
                           <div className="flex justify-between items-start mb-3">
                                <div className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border ${style.bg} ${style.border}`}>
                                    <span className={`${style.color} scale-75`}>{style.icon}</span>
@@ -1161,8 +855,6 @@ return (
                                    <span className="flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
                                </div>
                           </div>
-
-                          {/* Title & Location */}
                           <div className="mb-4">
                               <h3 className={`text-lg font-black leading-tight mb-1.5 line-clamp-2 select-none cursor-default ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
                               <div className="flex items-center gap-1.5 text-slate-400 select-none">
@@ -1170,8 +862,6 @@ return (
                                   <p className="text-[10px] font-bold uppercase tracking-wide opacity-70 truncate">{job.sitio || "No Location"}</p>
                               </div>
                           </div>
-
-                          {/* Salary Section */}
                           <div className="mb-6 select-none cursor-default">
                                <div className={`inline-flex items-center gap-3 px-3 py-2 rounded-xl border ${darkMode ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-300'}`}>
                                    <CurrencyDollarIcon className="w-4 h-4 text-green-500" />
@@ -1181,8 +871,6 @@ return (
                                    </div>
                                </div>
                           </div>
-
-                          {/* Bottom Actions - Kept as row on mobile for better fit */}
                           <div className="mt-auto flex items-center justify-between gap-3 pt-4 border-t border-dashed border-slate-500/20">
                                <div className="flex items-center gap-2 select-none cursor-default shrink-0">
                                    <div className="flex -space-x-1.5">
@@ -1195,7 +883,6 @@ return (
                                        <span className="text-[7px] font-bold uppercase tracking-widest text-slate-400">Apps</span>
                                    </div>
                                </div>
-
                                <div className="flex gap-2">
                                    <button onClick={() => handleOpenJobModal(job)} className={`p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                                         <PencilSquareIcon className="w-4 h-4" />
@@ -1233,17 +920,17 @@ return (
           </div>
         )}
 
-        {/* MESSAGES TAB */}
+        {/* MESSAGES TAB - NOW USES DATA FROM THE HOOK */}
         {activeTab === "Messages" && (
           <div className="animate-in fade-in duration-700 h-[calc(100vh-100px)] md:h-[calc(100vh-2rem)] flex flex-col pb-2">
             <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0 relative">
-                <div className={`${isMobile && activeChat ? 'hidden' : 'flex'} w-full md:w-72 rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
+                <div className={`w-full rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
                     <div className="p-5 pb-2 shrink-0">
                          {isMobile && <h2 className={`text-2xl font-black mb-4 px-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h2>}
                         <div className={`flex items-center p-1.5 rounded-2xl border ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500/50' : 'bg-white border-slate-200 focus-within:border-blue-300'}`}>
                             <div className="relative flex-1">
                                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input placeholder="Search..." value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} className="w-full bg-transparent pl-9 pr-4 py-1.5 outline-none font-bold text-xs" />
+                                <input placeholder="Search chats..." value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} className="w-full bg-transparent pl-9 pr-4 py-1.5 outline-none font-bold text-xs" />
                             </div>
                         </div>
                     </div>
@@ -1255,7 +942,7 @@ return (
                             const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                             const isActive = activeChat?.id === otherId;
                             return (
-                                <button key={c.chatId} onClick={() => setActiveChat({ id: otherId, name, profilePic: otherPic })} className={`w-full p-4 rounded-[1.5rem] flex items-center gap-4 transition-all ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-200 text-slate-600'}`}>
+                                <button key={c.chatId} onClick={() => openChat({ id: otherId, name, profilePic: otherPic })} className={`w-full p-4 rounded-[1.5rem] flex items-center gap-4 transition-all ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-200 text-slate-600'}`}>
                                     <div className={`relative w-12 h-12 rounded-full flex items-center justify-center text-lg font-black shrink-0 overflow-hidden ${!isActive ? (darkMode ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-600') : 'bg-white/20 text-white'}`}>{otherPic ? <img src={otherPic} alt={name} className="w-full h-full object-cover" /> : name.charAt(0)}</div>
                                     <div className="flex-1 text-left overflow-hidden"><div className="flex justify-between items-center mb-1"><span className={`font-black text-sm truncate ${isActive ? 'text-white' : darkMode ? 'text-white' : 'text-slate-900'}`}>{name}</span>{unread > 0 && <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm border border-white/20"></span>}</div><div className="flex justify-between items-center"><span className={`text-xs truncate max-w-[85%] font-medium ${isActive ? 'text-blue-100' : 'opacity-60'}`}>{c.lastMessage}</span><span className={`text-[9px] font-bold ${isActive ? 'text-blue-100' : 'opacity-40'}`}>{formatTime(c.lastTimestamp)}</span></div></div>
                                 </button>
@@ -1263,82 +950,24 @@ return (
                         })}
                     </div>
                 </div>
-
-                <div className={`${isMobile && !activeChat ? 'hidden' : 'flex'} ${isMobile ? 'fixed inset-0 z-[60] rounded-none' : 'flex-1 rounded-[2.5rem] relative'} border flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
-                    {activeChat ? (
-                        <>
-                            <div className={`p-4 md:p-6 flex items-center justify-between border-b shrink-0 backdrop-blur-md z-10 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-200'}`}>
-                                 <div className="flex items-center gap-3 md:gap-4">
-                                     <button onClick={()=>setActiveChat(null)} className="md:hidden p-2 -ml-2 rounded-full hover:bg-white/10"><ChevronLeftIcon className="w-6 h-6"/></button>
-                                     <div className="w-10 h-10 md:w-12 md:h-12 rounded-full overflow-hidden bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center text-white font-black text-lg md:text-xl shadow-lg">{activeChat.profilePic ? <img src={activeChat.profilePic} alt={activeChat.name} className="w-full h-full object-cover" /> : activeChat.name.charAt(0)}</div>
-                                     <div><h3 className={`font-black text-base md:text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>{activeChat.name}</h3><div className="flex items-center gap-1.5">{chatStatus.isOnline ? (<><span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span><p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Active Now</p></>) : (<p className="text-[10px] font-bold uppercase tracking-widest opacity-50">{chatStatus.lastSeen ? `Last seen ${formatLastSeen(chatStatus.lastSeen)}` : 'Offline'}</p>)}</div></div>
-                                 </div>
-                                 <div className="relative">
-                                    <button onClick={() => setIsChatOptionsOpen(!isChatOptionsOpen)} className={`p-3 rounded-2xl transition-colors ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-100'} ${isChatOptionsOpen ? 'bg-blue-600/10 text-blue-500' : ''}`}><EllipsisHorizontalIcon className="w-6 h-6 opacity-50"/></button>
-                                    {isChatOptionsOpen && (<div className={`absolute right-0 top-14 w-60 rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 z-50 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}><div className="p-2 space-y-1"><button onClick={handleMinimizeToBubble} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5 text-blue-400' : 'hover:bg-blue-50 text-blue-500'}`}><ChevronDownIcon className="w-4 h-4" /> Minimize to Bubble</button><button onClick={handleViewProfile} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-50 text-slate-500'}`}><UserCircleIcon className="w-4 h-4" /> View Profile</button><div className={`h-px my-1 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}></div><button onClick={handleCloseChat} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5 text-red-400' : 'hover:bg-red-50 text-red-500'}`}><XMarkIcon className="w-4 h-4" /> Close Chat</button></div></div>)}
-                                 </div>
-                            </div>
-                            <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`} onClick={() => setIsChatOptionsOpen(false)}>
-                                {messages.map((msg, i) => {
-                                    const isMe = msg.senderId === auth.currentUser.uid;
-                                    const isSystem = msg.type === 'system';
-                                    const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
-                                    const hasText = msg.text && msg.text.trim().length > 0;
-                                    if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
-                                    return (
-                                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                            {msg.replyTo && (<div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>)}
-                                            <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                <MessageAvatar isMe={isMe} />
-                                                <div className="relative group/bubble flex flex-col gap-1">
-                                                    {msg.fileUrl && (
-                                                        <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-slate-100 text-slate-900')}`}>
-                                                            {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
-                                                            {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
-                                                            {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName || "Download File"}</span></a>}
-                                                        </div>
-                                                    )}
-                                                    {hasText && (
-                                                        <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-slate-100 text-slate-900 rounded-bl-none'}`}>
-                                                            <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                                                        </div>
-                                                    )}
-                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
-                                                </div>
-                                            </div>
-                                            <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
-                                        </div>
-                                    )
-                                })}
-                                <div ref={scrollRef}/>
-                            </div>
-                            <div className={`p-4 border-t shrink-0 z-20 pb-8 md:pb-4 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-300'}`}>
-                                {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-white/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : effectiveActiveChatUser.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
-                                {attachment && (<div className="mb-3 relative inline-block animate-in zoom-in duration-200"><div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">{attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}<span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span></div><button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button></div>)}
-                                <form onSubmit={handleSendMessage} className="flex items-end gap-3">
-                                    <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
-                                    <button type="button" onClick={() => chatFileRef.current.click()} className={`p-4 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900'}`}><PaperClipIcon className="w-5 h-5"/></button>
-                                    <div className={`flex-1 rounded-2xl flex items-center px-4 py-3.5 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-slate-100 border-transparent focus-within:bg-white focus-within:border-blue-300 shadow-inner'}`}><textarea value={newMessage} onChange={e=>setNewMessage(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }} placeholder="Type a message..." className="w-full bg-transparent outline-none text-sm font-medium resize-none max-h-24 hide-scrollbar" rows={1} /></div>
-                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 shadow-lg shadow-blue-500/20 flex items-center justify-center">{isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5 -ml-0.5 mt-0.5"/>}</button>
-                                </form>
-                            </div>
-                        </>
-                    ) : (<div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 p-10 select-none"><div className={`w-32 h-32 rounded-full flex items-center justify-center mb-6 animate-pulse ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}><ChatBubbleLeftRightIcon className="w-16 h-16 opacity-20"/></div><h3 className="text-2xl font-black mb-2">Select a Conversation</h3></div>)}
-                </div>
             </div>
           </div>
         )}
       </main>
 
-      {/* APPLICANT/TALENT MODAL (RE-DESIGNED to match Admin Dashboard) */}
+      {/* APPLICANT/TALENT MODAL - UPDATED PADDING & HEIGHT FOR MOBILE FIT */}
       {selectedApplication && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedApplication(null)}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
              
              <div 
                 onClick={(e) => e.stopPropagation()}
-                className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+                className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
              >
+                <button onClick={() => setSelectedApplication(null)} className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                    <XMarkIcon className="w-5 h-5"/>
+                </button>
+
                 {modalLoading ? (
                    <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
                        <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
@@ -1346,10 +975,11 @@ return (
                    </div>
                 ) : (
                   <>
-                    <div className="w-24 h-24 rounded-3xl bg-slate-200 overflow-hidden shadow-lg mb-6 border-4 border-white/10">
+                    {/* UPDATED: REMOVED FRAME */}
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shadow-sm mb-4 shrink-0">
                         {(modalApplicant?.profilePic || selectedApplication.applicantProfilePic) 
                             ? <img src={modalApplicant?.profilePic || selectedApplication.applicantProfilePic} className="w-full h-full object-cover"/> 
-                            : <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20">?</div>}
+                            : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">?</div>}
                     </div>
                     
                     <h2 className="text-2xl font-black mb-1 text-center">{selectedApplication.applicantName}</h2>
@@ -1365,14 +995,28 @@ return (
                             <IdentificationIcon className="w-5 h-5 opacity-50"/>
                             <span className="text-sm font-bold opacity-80">{modalApplicant?.contact || "No contact info provided"}</span>
                         </div>
+                        
                         <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
                             <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">About Applicant</p>
                             <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.bio || modalApplicant?.aboutMe || "No bio information provided."}</p>
                         </div>
-                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                             <p className="text-xs font-bold uppercase opacity-40 mb-2 text-purple-500">Experience</p>
-                             <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.workExperience || "None listed."}</p>
-                        </div>
+                        
+                        {(modalApplicant?.workExperience || modalApplicant?.education) && (
+                            <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                                {modalApplicant?.workExperience && (
+                                    <div className="mb-4">
+                                        <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
+                                        <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant.workExperience}</p>
+                                    </div>
+                                )}
+                                {modalApplicant?.education && (
+                                    <div>
+                                        <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
+                                        <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant.education}</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     <div className="w-full flex gap-3">
@@ -1385,10 +1029,6 @@ return (
                             <button onClick={() => { handleStartChatFromExternal({ id: selectedApplication.applicantId, name: selectedApplication.applicantName, profilePic: selectedApplication.applicantProfilePic || null }); setSelectedApplication(null); }} className="w-full py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Send Message</button>
                         )}
                     </div>
-                    
-                    <button onClick={() => setSelectedApplication(null)} className="mt-4 text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity">
-                        Close Details
-                    </button>
                   </>
                 )}
              </div>
@@ -1401,21 +1041,17 @@ return (
              
              <div 
                 onClick={(e) => e.stopPropagation()}
-                className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+                className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
              >
-                {/* Close Button Top Right */}
-                <button 
-                    onClick={() => setSelectedTalent(null)} 
-                    className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
-                >
+                <button onClick={() => setSelectedTalent(null)} className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                     <XMarkIcon className="w-5 h-5"/>
                 </button>
 
-                {/* Profile Pic */}
-                <div className="w-24 h-24 rounded-3xl bg-slate-200 overflow-hidden shadow-lg mb-6 border-4 border-white/10 shrink-0">
+                {/* UPDATED: REMOVED FRAME */}
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shadow-sm mb-4 shrink-0">
                     {(getAvatarUrl(selectedTalent) || selectedTalent.profilePic) 
                         ? <img src={getAvatarUrl(selectedTalent) || selectedTalent.profilePic} className="w-full h-full object-cover"/> 
-                        : <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20">{selectedTalent.firstName?.charAt(0)}</div>}
+                        : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">{selectedTalent.firstName?.charAt(0)}</div>}
                 </div>
                 
                 <h2 className="text-2xl font-black mb-1 text-center">{selectedTalent.firstName} {selectedTalent.lastName}</h2>
@@ -1428,7 +1064,7 @@ return (
 
                 <div className="w-full space-y-4 mb-8">
                      <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                        <EnvelopeIcon className="w-5 h-5 opacity-50"/>
+                        {selectedTalent.contact && selectedTalent.contact.startsWith('+63') ? <IdentificationIcon className="w-5 h-5 opacity-50"/> : <IdentificationIcon className="w-5 h-5 opacity-50"/>}
                         <span className="text-sm font-bold opacity-80 truncate">{selectedTalent.contact || "No contact info"}</span>
                     </div>
                     
@@ -1437,22 +1073,16 @@ return (
                         <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.bio || selectedTalent.aboutMe || "No bio provided."}</p>
                     </div>
 
-                    {(selectedTalent.workExperience || selectedTalent.education) && (
-                         <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                             {selectedTalent.workExperience && (
-                                 <div className="mb-4">
-                                    <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
-                                    <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.workExperience}</p>
-                                 </div>
-                             )}
-                             {selectedTalent.education && (
-                                 <div>
-                                    <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
-                                    <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.education}</p>
-                                 </div>
-                             )}
-                        </div>
-                    )}
+                     <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                         <div className="mb-4">
+                            <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
+                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.workExperience || "No experience listed."}</p>
+                         </div>
+                         <div>
+                            <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
+                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.education || "No education listed."}</p>
+                         </div>
+                    </div>
                 </div>
 
                 <button onClick={() => { handleStartChatFromExternal({ id: selectedTalent.id, name: `${selectedTalent.firstName} ${selectedTalent.lastName}`, profilePic: getAvatarUrl(selectedTalent) }); setSelectedTalent(null); }} className="w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform flex items-center justify-center gap-2">
@@ -1462,253 +1092,12 @@ return (
         </div>
       )}
 
-      {/* --- MESSENGER STYLE BUBBLE STACK --- */}
-      {isBubbleVisible && (
-        isMobile ? (
-          <>
-             {!isBubbleExpanded && (
-                <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-                   <div className="relative">
-                       <button onClick={(e) => { if (!isDragging) setIsBubbleExpanded(true); }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 border-2 overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-blue-500'}`}>
-                          {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (
-                             (getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>
-                          ) : ( <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} /> )}
-                       </button>
-                       {hasGlobalUnread && activeBubbleView === 'inbox' && (<span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">!</span>)}
-                   </div>
-                </div>
-             )}
-
-             {isBubbleExpanded && (
-                <div className="fixed inset-0 z-[1000] flex flex-col bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
-                        {openBubbles.map((chat) => (
-                           <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
-                                <button onClick={() => setActiveBubbleView(chat.id)} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${activeBubbleView === chat.id ? 'border-blue-500 scale-110' : 'border-transparent opacity-60'}`}>
-                                    {(getAvatarUrl(chat) || chat.profilePic) ? <img src={getAvatarUrl(chat) || chat.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
-                                </button>
-                                {activeBubbleView === chat.id && (<button onClick={(e) => { e.stopPropagation(); handleCloseBubble(chat.id); }} className="absolute -top-1 -right-1 bg-slate-500 text-white rounded-full p-0.5 shadow-md animate-in zoom-in"><XMarkIcon className="w-3 h-3"/></button>)}
-                           </div>
-                        ))}
-                        <div className="flex flex-col items-center gap-1 shrink-0">
-                            <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all border-2 ${activeBubbleView === 'inbox' ? 'border-blue-500 scale-110' : 'border-white dark:border-slate-700 opacity-60'} ${darkMode ? 'bg-slate-800' : 'bg-white'}`}><ChatBubbleOvalLeftEllipsisIcon className="w-7 h-7 text-blue-500" /></button>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 flex flex-col justify-end relative" onClick={() => setIsBubbleExpanded(false)}>
-                        <div className={`w-full h-[80vh] rounded-t-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 border-t ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`} onClick={(e) => e.stopPropagation()}>
-                            {activeBubbleView === 'inbox' && (
-                                <div className="flex flex-col h-full">
-                                    <div className={`p-5 border-b flex justify-between items-center ${darkMode ? 'border-white/5 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                                        <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
-                                        <button onClick={() => setIsBubbleExpanded(false)} className="p-2 bg-slate-100 dark:bg-white/10 rounded-full"><ChevronDownIcon className="w-5 h-5 opacity-50"/></button> 
-                                    </div>
-                                    <div className="px-5 py-2">
-                                        <div className={`flex items-center p-1.5 rounded-2xl border transition-all ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
-                                            <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
-                                            <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search chats..." className="bg-transparent border-none outline-none text-xs p-2 w-full font-bold" />
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
-                                            {filteredChats.map(c => {
-                                                const otherId = c.participants.find(p => p !== auth.currentUser.uid);
-                                                const name = c.names?.[otherId] || "User";
-                                                const otherPic = c.profilePics?.[otherId];
-                                                const unread = c[`unread_${auth.currentUser.uid}`] || 0;
-                                                return (
-                                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } setActiveBubbleView(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-4 mb-1 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                                        <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 relative">
-                                                            {otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <div className="flex items-center justify-center h-full font-bold">{name.charAt(0)}</div>}
-                                                        </div>
-                                                        <div className="flex-1 text-left overflow-hidden">
-                                                            <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[10px] opacity-40">{formatTime(c.lastTimestamp)}</span></div>
-                                                            <p className="text-xs truncate opacity-60">{c.lastMessage}</p>
-                                                        </div>
-                                                    </button>
-                                                )
-                                            })}
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeBubbleView !== 'inbox' && effectiveActiveChatUser && (
-                                <>
-                                    <div className={`p-4 flex items-center justify-between border-b shrink-0 ${darkMode ? 'border-white/5 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200">
-                                                    {(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}
-                                                </div>
-                                                <div>
-                                                    <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{effectiveActiveChatUser.name}</h3>
-                                                    <div className="flex items-center gap-1.5 mt-1">
-                                                        {chatStatus.isOnline ? <span className="w-2 h-2 rounded-full bg-green-500"></span> : null}
-                                                        <p className="text-[10px] font-bold opacity-60 uppercase">{chatStatus.isOnline ? 'Active Now' : 'Offline'}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-4 text-blue-500">
-                                                <button className="active:scale-90"><PhoneSolidIcon className="w-6 h-6"/></button>
-                                                <button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button>
-                                            </div>
-                                    </div>
-
-                                    <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                                            {messages.map((msg) => {
-                                                const isMe = msg.senderId === auth.currentUser.uid;
-                                                const isSystem = msg.type === 'system';
-                                                const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
-                                                const hasText = msg.text && msg.text.trim().length > 0;
-                                                if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
-                                                return (
-                                                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                                        {msg.replyTo && (<div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200 rounded-br-none mr-2' : 'bg-slate-500/20 text-slate-400 rounded-bl-none ml-2'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>)}
-                                                        <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                            <MessageAvatar isMe={isMe} />
-                                                            <div className="relative group/bubble flex flex-col gap-1">
-                                                                {msg.fileUrl && (
-                                                                    <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-slate-100 text-slate-900 border border-slate-200')}`}>
-                                                                        {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
-                                                                        {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
-                                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName || "Download File"}</span></a>}
-                                                                    </div>
-                                                                )}
-                                                                {hasText && (
-                                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-slate-100 text-slate-900 rounded-bl-none'}`}>
-                                                                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                                                                    </div>
-                                                                )}
-                                                                <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
-                                                            </div>
-                                                        </div>
-                                                        <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
-                                                    </div>
-                                                )
-                                            })}
-                                            <div ref={scrollRef}/>
-                                    </div>
-                                    <div className={`p-3 border-t shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                                            {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : effectiveActiveChatUser.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
-                                            {attachment && (<div className="mb-3 relative inline-block animate-in zoom-in duration-200"><div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">{attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}<span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span></div><button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button></div>)}
-                                           <form onSubmit={handleSendMessage} className={`flex gap-2 items-center`}>
-                                                <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
-                                                <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-slate-400' : 'bg-slate-100 hover:bg-slate-200 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
-                                                <div className={`flex-1 rounded-2xl flex items-center px-4 py-2 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-slate-100 border-transparent focus-within:bg-white focus-within:border-blue-300 shadow-inner'}`}><input value={newMessage} onChange={e=>setNewMessage(e.target.value)} placeholder="Message..." className="w-full bg-transparent outline-none text-sm font-medium" /></div>
-                                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
-                                           </form>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-             )}
-           </>
-        ) : (
-          // DESKTOP VIEW
-          <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
-            <div className="pointer-events-auto">
-                <button 
-                    onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }}
-                    className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 border-2 ${darkMode ? 'bg-blue-600 border-slate-800' : 'bg-blue-600 border-white'}`}
-                >
-                    <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
-                    {hasGlobalUnread && (<span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">!</span>)}
-                </button>
-            </div>
-
-            {openBubbles.map((chat) => (
-                <div key={chat.id} className="pointer-events-auto relative group flex items-center gap-3">
-                    <span className="absolute right-full mr-3 px-3 py-1.5 rounded-xl bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">{chat.name}</span>
-                    <div className="relative">
-                        <button 
-                            onClick={() => { setActiveChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); }}
-                            className="w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl overflow-hidden border-2 border-white dark:border-slate-800 transition-all hover:scale-110 active:scale-95"
-                        >
-                            {(getAvatarUrl(chat) || chat.profilePic) ? (<img src={getAvatarUrl(chat) || chat.profilePic} alt="" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className="absolute -top-1 -left-1 w-5 h-5 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-white dark:border-slate-800"><XMarkIcon className="w-3 h-3 text-slate-600 dark:text-slate-300" /></button>
-                    </div>
-                </div>
-            ))}
-            
-            {isDesktopInboxVisible && !activeChat && (
-                <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
-                    <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
-                         <div className={`p-5 border-b flex justify-between items-center ${darkMode ? 'bg-slate-900 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
-                             <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
-                             <button onClick={() => setIsDesktopInboxVisible(false)} className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg"><XMarkIcon className="w-5 h-5 opacity-50"/></button>
-                         </div>
-                         <div className="p-3 pb-0">
-                            <div className={`flex items-center p-1.5 rounded-xl border ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
-                                <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
-                                <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold" />
-                            </div>
-                         </div>
-                         <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
-                            {filteredChats.map(c => {
-                                const otherId = c.participants.find(p => p !== auth.currentUser.uid);
-                                const name = c.names?.[otherId] || "User";
-                                const otherPic = c.profilePics?.[otherId];
-                                return (
-                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } setActiveChat(userObj); setIsDesktopInboxVisible(false); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                            <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
-                                            <div className="flex-1 text-left overflow-hidden"><div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p></div>
-                                    </button>
-                                )
-                            })}
-                         </div>
-                    </div>
-                </div>
-            )}
-
-            {!isChatMinimized && activeChat && (
-                <div className={`fixed z-[210] pointer-events-auto bottom-6 right-24`}>
-                    <div className={`w-[380px] h-[500px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border animate-in slide-in-from-right-4 duration-300 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
-                        <div className={`p-4 flex justify-between items-center border-b bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0`}>
-                            <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
-                                <div><span className="font-black text-xs uppercase block">{activeChat.name}</span><span className="text-[9px] opacity-90 font-bold block">{chatStatus.isOnline ? 'Active Now' : chatStatus.lastSeen ? `Seen ${formatLastSeen(chatStatus.lastSeen)}` : 'Offline'}</span></div>
-                            </div>
-                            <div className="flex gap-1"><button onClick={() => setIsChatMinimized(true)} className="p-1.5 hover:bg-white/20 rounded-lg"><ChevronDownIcon className="w-4 h-4"/></button><button onClick={handleCloseChat} className="p-1.5 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-4 h-4"/></button></div>
-                        </div>
-                        <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
-                            {messages.map((msg) => {
-                                const isMe = msg.senderId === auth.currentUser.uid;
-                                const isSystem = msg.type === 'system';
-                                if(isSystem) return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
-                                return (
-                                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.text}</span></div>}
-                                            <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                <MessageAvatar isMe={isMe} />
-                                                <div className="relative group/bubble flex flex-col gap-1">
-                                                    {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                    {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-8 hover:bg-black/5' : '-right-8 hover:bg-black/5'} text-slate-400`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
-                                                </div>
-                                            </div>
-                                            <p className={`text-[8px] font-black mt-1 opacity-30 ${isMe ? 'text-right mr-10' : 'text-left ml-10'}`}>{formatTime(msg.createdAt)}</p>
-                                    </div>
-                                );
-                            })}
-                            <div ref={scrollRef}/>
-                        </div>
-                        <div className={`p-3 border-t shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                            {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                            {attachment && <div className="mb-2 px-3 py-2 bg-blue-500/10 rounded-xl flex justify-between items-center text-[10px] font-bold"><span className="text-blue-500 truncate max-w-[200px]">{attachment.name}</span><button onClick={() => setAttachment(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                            <form onSubmit={handleSendMessage} className={`flex gap-2 items-center`}>
-                                <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
-                                <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
-                                <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2 text-sm outline-none rounded-full ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-900'}`} />
-                                <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-blue-600 disabled:opacity-30 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            )}
-          </div>
-        )
-      )}
+      {/* --- REPLACED ENTIRE CHAT BLOCK WITH THE NEW SYSTEM COMPONENT --- */}
+      <ChatSystem 
+          chat={chat} 
+          currentUser={auth.currentUser} 
+          darkMode={darkMode} 
+      />
       
       {/* MOBILE BOTTOM NAV */}
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${isMobile && activeTab === "Messages" && activeChat ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
