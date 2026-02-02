@@ -173,18 +173,15 @@ export default function EmployerDashboard() {
   useEffect(() => {
       const fetchAdmin = async () => {
           try {
-            // 1. Try 'admins' collection first (Priority)
             let q = query(collection(db, "admins"), where("email", "==", ADMIN_EMAIL));
             let snap = await getDocs(q);
              
             if (!snap.empty) {
                 const docData = snap.docs[0].data();
-                // Ensure we tag this user as being in the 'admins' collection for useChat to know
                 setAdminUser({ id: snap.docs[0].id, collection: 'admins', ...docData });
                 return;
             }
 
-            // 2. Try 'employers' (Fallback)
             q = query(collection(db, "employers"), where("email", "==", ADMIN_EMAIL));
             snap = await getDocs(q);
             if (!snap.empty) { 
@@ -193,7 +190,6 @@ export default function EmployerDashboard() {
                 return;
             }
 
-            // 3. Try 'applicants' (Fallback)
             q = query(collection(db, "applicants"), where("email", "==", ADMIN_EMAIL)); 
             snap = await getDocs(q);
             if (!snap.empty) { 
@@ -202,14 +198,13 @@ export default function EmployerDashboard() {
                 return;
             }
 
-            // 4. Virtual Fallback if absolutely no record found
             console.warn("Admin not found in DB, using virtual fallback.");
             setAdminUser({ 
                 id: "livelimatch_admin_support", 
                 firstName: "Livelimatch", 
                 lastName: "Support", 
                 email: ADMIN_EMAIL,
-                collection: 'admins' // Assume admins for fallback
+                collection: 'admins' 
             });
 
           } catch (e) {
@@ -221,7 +216,6 @@ export default function EmployerDashboard() {
 
   useEffect(() => {
       if (activeTab === "Support" && adminUser) {
-          // Pass the collection so useChat knows where to listen for status
           openChat({
               id: adminUser.id,
               name: `${adminUser.firstName || 'Admin'} ${adminUser.lastName || 'Support'}`,
@@ -551,11 +545,10 @@ export default function EmployerDashboard() {
 
   const filteredJobs = myPostedJobs.filter(job => job.title.toLowerCase().includes(searchTerm.toLowerCase()) || (job.sitio && job.sitio.toLowerCase().includes(searchTerm.toLowerCase())));
   
-  // *** FIXED: ADDED OPTIONAL CHAINING TO PREVENT CRASH ON NEW CHATS ***
- const filteredChats = conversations.filter(c => {
+  // *** FIXED: HIDE ADMIN CHAT AND PREVENT CRASH ***
+  const filteredChats = conversations.filter(c => {
       const otherId = c.participants.find(p => p !== auth.currentUser.uid);
       
-      // --- NEW: HIDE ADMIN CHAT FROM MESSAGES TAB ---
       // If we know who the admin is, and this chat is with them, hide it.
       if (adminUser && otherId === adminUser.id) return false; 
 
@@ -576,13 +569,14 @@ export default function EmployerDashboard() {
   const hasNewApps = receivedApplications.some(app => app.status === 'pending' && !app.isViewed);
   const hasGlobalUnread = conversations.some(c => (c[`unread_${auth.currentUser?.uid}`] || 0) > 0);
 
-const unreadMsgCount = conversations.reduce((acc, curr) => {
+  const unreadMsgCount = conversations.reduce((acc, curr) => {
     // If this is the admin chat, ignore its unread count for the main tab
     const otherId = curr.participants.find(p => p !== auth.currentUser?.uid);
     if (adminUser && otherId === adminUser.id) return acc;
     
     return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0);
-}, 0);
+  }, 0);
+
   const newAppCount = receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length;
   const totalNotifications = unreadMsgCount + newAppCount;
 
@@ -620,6 +614,15 @@ const unreadMsgCount = conversations.reduce((acc, curr) => {
 return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
        
+      {/* --- ADDED: WARNING BANNER --- */}
+      {!isVerified && (
+        <div className={`fixed top-0 left-0 right-0 h-10 z-[60] flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-white shadow-lg ${employerData.verificationStatus === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`}>
+            {employerData.verificationStatus === 'rejected' 
+              ? "Account Verification Rejected. Please update your profile." 
+              : "Account Pending Verification. Some features are limited."}
+        </div>
+      )}
+
       <style>{`
         .hide-scrollbar::-webkit-scrollbar { display: none; } 
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
