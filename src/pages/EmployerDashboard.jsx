@@ -22,7 +22,7 @@ import {
   UserCircleIcon, SparklesIcon, FunnelIcon,
   ChartBarIcon, UserPlusIcon, PresentationChartLineIcon,
   BuildingOfficeIcon, BellIcon, QuestionMarkCircleIcon, IdentificationIcon, EyeIcon,
-  LockClosedIcon, ExclamationTriangleIcon 
+  LockClosedIcon, ExclamationTriangleIcon, PaperAirplaneIcon, ArrowLeftIcon 
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
@@ -54,17 +54,26 @@ export default function EmployerDashboard() {
   // --- INITIALIZE CHAT SYSTEM ---
   const chat = useChat(auth.currentUser, isMobile);
   const { 
-    conversations, activeChat, openChat, 
+    conversations, activeChat, openChat, closeChat, sendMessage, messages, 
     setIsBubbleVisible 
   } = chat;
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  
+  // Chat Input State
+  const [newMessage, setNewMessage] = useState("");
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+  
+  // Auto-scroll to bottom of chat
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, activeTab]);
         
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("theme");
@@ -120,7 +129,7 @@ export default function EmployerDashboard() {
   const [modalLoading, setModalLoading] = useState(false);
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
-  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
+  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false); 
   const [jobForm, setJobForm] = useState({ title: "", sitio: "", salary: "", type: "Full-time", description: "" });
   const [profileImage, setProfileImage] = useState(null);
   const [imgScale, setImgScale] = useState(1);
@@ -258,6 +267,13 @@ export default function EmployerDashboard() {
 
 
   // --- HANDLERS ---
+  const handleSendMessage = async (e) => {
+      e.preventDefault();
+      if (!newMessage.trim() || !activeChat) return;
+      await sendMessage(newMessage);
+      setNewMessage("");
+  };
+
   const handleTalentMouseEnter = (user) => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
     hoverTimerRef.current = setTimeout(() => { setHoveredTalent(user); }, 3000);
@@ -985,17 +1001,19 @@ return (
           </div>
         )}
 
-        {/* MESSAGES TAB - NOW USES DATA FROM THE HOOK */}
+        {/* MESSAGES TAB - FULLY OVERHAULED */}
         {activeTab === "Messages" && (
-          <div key="Messages" className="animate-content h-[calc(100vh-100px)] md:h-[calc(100vh-2rem)] flex flex-col pb-2">
+          <div key="Messages" className="animate-content h-[calc(100vh-100px)] md:h-[calc(100vh-10rem)] flex flex-col pb-2">
             <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0 relative">
-                <div className={`w-full rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
+                
+                {/* LEFT SIDE: CHAT LIST */}
+                <div className={`w-full md:w-1/3 rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel} ${activeChat && isMobile ? 'hidden' : 'flex'}`}>
                     <div className="p-5 pb-2 shrink-0">
-                         {isMobile && <h2 className={`text-2xl font-black mb-4 px-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h2>}
+                         <h2 className={`text-2xl font-black mb-4 px-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h2>
                         <div className={`flex items-center p-1.5 rounded-2xl border ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500/50' : 'bg-white border-slate-200 focus-within:border-blue-300'}`}>
                             <div className="relative flex-1">
                                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input placeholder="Search chats..." value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} className="w-full bg-transparent pl-9 pr-4 py-1.5 outline-none font-bold text-xs" />
+                                <input placeholder="Search..." value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} className="w-full bg-transparent pl-9 pr-4 py-1.5 outline-none font-bold text-xs" />
                             </div>
                         </div>
                     </div>
@@ -1014,6 +1032,63 @@ return (
                             )
                         })}
                     </div>
+                </div>
+
+                {/* RIGHT SIDE: CHAT WINDOW (Glass Panel) */}
+                <div className={`flex-1 rounded-[2.5rem] border overflow-hidden shadow-xl flex flex-col relative ${glassPanel} ${!activeChat && isMobile ? 'hidden' : 'flex'} ${activeChat && isMobile ? 'fixed inset-0 z-[60] !rounded-none !border-0 bg-slate-950' : ''}`}>
+                    {activeChat ? (
+                        <>
+                            {/* Chat Header */}
+                            <div className={`p-4 border-b flex items-center gap-4 ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-200 bg-slate-50/50'}`}>
+                                {isMobile && (
+                                    <button onClick={() => closeChat()} className="p-2 -ml-2 rounded-full hover:bg-white/10"><ArrowLeftIcon className="w-6 h-6"/></button>
+                                )}
+                                <div className="w-10 h-10 rounded-full overflow-hidden shrink-0">
+                                    {activeChat.profilePic ? <img src={activeChat.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-blue-500 flex items-center justify-center text-white font-bold">{activeChat.name?.charAt(0)}</div>}
+                                </div>
+                                <div>
+                                    <h3 className={`font-black text-lg leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{activeChat.name}</h3>
+                                    <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Active Now</p>
+                                </div>
+                            </div>
+
+                            {/* Messages Area */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar">
+                                {messages.map((msg) => {
+                                    const isMe = msg.senderId === auth.currentUser.uid;
+                                    return (
+                                        <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`max-w-[75%] p-4 rounded-2xl text-sm font-medium ${isMe ? 'bg-blue-600 text-white rounded-tr-none shadow-lg shadow-blue-500/20' : `${darkMode ? 'bg-white/10 text-white' : 'bg-slate-200 text-slate-800'} rounded-tl-none`}`}>
+                                                {msg.text}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                <div ref={messagesEndRef} />
+                            </div>
+
+                            {/* Chat Input */}
+                            <div className={`p-4 border-t ${darkMode ? 'border-white/5' : 'border-slate-200'}`}>
+                                <form onSubmit={handleSendMessage} className={`flex items-center gap-2 p-2 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white border-slate-300'}`}>
+                                    <input 
+                                        type="text" 
+                                        value={newMessage} 
+                                        onChange={(e) => setNewMessage(e.target.value)} 
+                                        placeholder="Type a message..." 
+                                        className={`flex-1 bg-transparent px-4 py-2 outline-none text-sm font-medium ${darkMode ? 'text-white' : 'text-slate-900'}`}
+                                    />
+                                    <button type="submit" disabled={!newMessage.trim()} className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                                        <PaperAirplaneIcon className="w-5 h-5"/>
+                                    </button>
+                                </form>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center opacity-50">
+                            <ChatBubbleLeftRightIcon className="w-16 h-16 mb-4"/>
+                            <p className="font-black uppercase text-xs tracking-widest">Select a conversation</p>
+                        </div>
+                    )}
                 </div>
             </div>
           </div>
@@ -1153,11 +1228,14 @@ return (
       )}
 
       {/* --- REPLACED ENTIRE CHAT BLOCK WITH THE NEW SYSTEM COMPONENT --- */}
-      <ChatSystem 
-          chat={chat} 
-          currentUser={auth.currentUser} 
-          darkMode={darkMode} 
-      />
+      {/* HIDE CHAT SYSTEM WHEN IN MESSAGES TAB TO PREVENT DOUBLE POPUPS */}
+      {activeTab !== "Messages" && (
+        <ChatSystem 
+            chat={chat} 
+            currentUser={auth.currentUser} 
+            darkMode={darkMode} 
+        />
+      )}
       
       {/* MOBILE BOTTOM NAV - UPDATED WITH GLOW & SHINE EFFECT */}
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${isMobile && activeTab === "Messages" && activeChat ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
