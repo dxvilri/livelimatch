@@ -22,7 +22,7 @@ import {
   UserCircleIcon, SparklesIcon, FunnelIcon,
   ChartBarIcon, UserPlusIcon, PresentationChartLineIcon,
   BuildingOfficeIcon, BellIcon, QuestionMarkCircleIcon, IdentificationIcon, EyeIcon,
-  LockClosedIcon, ExclamationTriangleIcon // Added Lock Icons
+  LockClosedIcon, ExclamationTriangleIcon 
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
@@ -82,16 +82,17 @@ export default function EmployerDashboard() {
 
   const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 ${darkMode ? 'text-white' : 'text-slate-800'}`;
 
-  const glassNavBtn = `p-4 rounded-2xl transition-all duration-300 backdrop-blur-md border ${
+  // --- NAVIGATION STYLES (ICON ONLY + GLOW + SHINE) ---
+  const glassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out group hover:-translate-y-1 overflow-hidden ${
       darkMode 
-      ? 'border-white/5 text-slate-400 hover:bg-white/10 hover:text-white hover:border-white/20 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]' 
-      : 'border-white/40 text-slate-400 hover:bg-white/60 hover:text-blue-600 hover:border-blue-200 hover:shadow-lg'
+      ? 'text-slate-400 hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' 
+      : 'text-slate-400 hover:text-blue-500 hover:drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]'
   }`;
   
-  const activeGlassNavBtn = `p-4 rounded-2xl transition-all duration-300 backdrop-blur-md border shadow-lg scale-110 ${
+  const activeGlassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out scale-125 -translate-y-1 overflow-hidden ${
       darkMode
-      ? 'bg-blue-600/90 border-blue-500/50 text-white shadow-blue-900/50'
-      : 'bg-blue-600 border-blue-400 text-white shadow-blue-500/30'
+      ? 'text-blue-400 drop-shadow-[0_0_15px_rgba(96,165,250,0.8)]'
+      : 'text-blue-600 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)]'
   }`;
 
   const [myPostedJobs, setMyPostedJobs] = useState([]); 
@@ -121,11 +122,11 @@ export default function EmployerDashboard() {
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   
-  // --- UPDATED EMPLOYER DATA STATE TO INCLUDE VERIFICATION STATUS ---
+  // --- UPDATED EMPLOYER DATA STATE ---
   const [employerData, setEmployerData] = useState({ 
       firstName: "", lastName: "", sitio: "", title: "Employer", 
       aboutMe: "", workExperience: "", education: "", 
-      verificationStatus: "pending" // Default to pending
+      verificationStatus: "pending" 
   });
   
   const [chatSearch, setChatSearch] = useState(""); 
@@ -219,7 +220,6 @@ export default function EmployerDashboard() {
             aboutMe: data.aboutMe || "",
             workExperience: data.workExperience || "",
             education: data.education || "",
-            // Capture verification status (default to pending if missing)
             verificationStatus: data.verificationStatus || "pending" 
         }));
       }
@@ -372,7 +372,6 @@ export default function EmployerDashboard() {
     try { await deleteDoc(doc(db, "applications", appId)); if (selectedApplication?.id === appId) setSelectedApplication(null); } catch (err) { alert("Error deleting: " + err.message); } finally { setLoading(false); }
   };
 
-  // --- REPLACED CHAT START HANDLER WITH VERIFICATION CHECK ---
   const handleStartChatFromExternal = (userObj) => {
     if (!isVerified) return alert("Your account must be verified to send messages.");
     openChat(userObj);
@@ -419,7 +418,44 @@ export default function EmployerDashboard() {
 
 return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
-      <style>{`.hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
+      
+      {/* --- ADDED SHINE ANIMATION STYLE --- */}
+      <style>{`
+        .hide-scrollbar::-webkit-scrollbar { display: none; } 
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes glass-shine {
+          0% { transform: translateX(-150%) skewX(-20deg); opacity: 0; }
+          40% { opacity: 0.6; }
+          100% { transform: translateX(250%) skewX(-20deg); opacity: 0; }
+        }
+        .shine-effect::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(
+            to right, 
+            transparent 0%, 
+            rgba(255, 255, 255, 0.4) 50%, 
+            transparent 100%
+          );
+          transform: translateX(-150%);
+          animation: glass-shine 0.6s ease-out;
+          pointer-events: none;
+        }
+        
+        @keyframes content-wipe {
+          0% { opacity: 0; transform: translateY(10px) scale(0.99); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-content {
+          animation: content-wipe 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+      `}</style>
+      
       <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
       {/* --- BACKGROUND BLOBS --- */}
@@ -501,20 +537,20 @@ return (
                  <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>LIVELI<span className="text-blue-500">MATCH</span></h1>
             </div>
 
-            <div className="hidden lg:flex items-center gap-12">
-                <button onClick={() => setActiveTab("Discover")} className={activeTab === "Discover" ? activeGlassNavBtn : glassNavBtn}>
-                    <SparklesIcon className="w-7 h-7" />
+            <div className="hidden lg:flex items-center gap-24">
+                <button onClick={() => setActiveTab("Discover")} className={activeTab === "Discover" ? activeGlassNavBtn + " shine-effect" : glassNavBtn}>
+                    <SparklesIcon className="w-7 h-7 relative z-10" />
                 </button>
-                <button onClick={() => setActiveTab("Listings")} className={activeTab === "Listings" ? activeGlassNavBtn : glassNavBtn}>
-                    <BriefcaseIcon className="w-7 h-7" />
+                <button onClick={() => setActiveTab("Listings")} className={activeTab === "Listings" ? activeGlassNavBtn + " shine-effect" : glassNavBtn}>
+                    <BriefcaseIcon className="w-7 h-7 relative z-10" />
                 </button>
-                <button onClick={() => setActiveTab("Applicants")} className={`relative ${activeTab === "Applicants" ? activeGlassNavBtn : glassNavBtn}`}>
-                    <UsersIcon className="w-7 h-7" />
-                    {hasNewApps && <span className="absolute top-2 right-2 w-3 h-3 bg-amber-500 border-2 border-white rounded-full animate-pulse"></span>}
+                <button onClick={() => setActiveTab("Applicants")} className={`relative ${activeTab === "Applicants" ? activeGlassNavBtn + " shine-effect" : glassNavBtn}`}>
+                    <UsersIcon className="w-7 h-7 relative z-10" />
+                    {hasNewApps && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full animate-pulse z-20"></span>}
                 </button>
-                <button onClick={() => setActiveTab("Messages")} className={`relative ${activeTab === "Messages" ? activeGlassNavBtn : glassNavBtn}`}>
-                    <ChatBubbleLeftRightIcon className="w-7 h-7" />
-                    {hasGlobalUnread && <span className="absolute top-2 right-2 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse"></span>}
+                <button onClick={() => setActiveTab("Messages")} className={`relative ${activeTab === "Messages" ? activeGlassNavBtn + " shine-effect" : glassNavBtn}`}>
+                    <ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" />
+                    {hasGlobalUnread && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full animate-pulse z-20"></span>}
                 </button>
             </div>
 
@@ -624,7 +660,7 @@ return (
 
         {/* PROFILE TAB */}
         {activeTab === "Profile" && (
-            <div className="animate-in fade-in duration-700 space-y-6">
+            <div key="Profile" className="animate-content space-y-6">
                 <div className={`relative p-8 md:p-10 rounded-[2.5rem] border overflow-hidden ${glassPanel}`}>
                     <div className="absolute top-8 right-8 z-20">
                         <button onClick={(e) => { e.stopPropagation(); if(isEditingProfile) handleSaveProfile(); else setIsEditingProfile(true); }} className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg hover:scale-105 active:scale-95 ${isEditingProfile ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-slate-500/10 text-slate-500 hover:bg-slate-500/20'}`}>{isEditingProfile ? <>{loading ? 'Saving...' : 'Save Changes'}</> : <><PencilSquareIcon className="w-4 h-4" /> Edit Profile</>}</button>
@@ -662,7 +698,7 @@ return (
 
         {/* SUPPORT TAB - Simplified to just show message */}
         {activeTab === "Support" && (
-            <div className={`animate-in fade-in duration-700 h-[calc(100vh-200px)] md:h-[calc(100vh-10rem)] flex flex-col items-center justify-center rounded-[2.5rem] overflow-hidden relative shadow-xl ${glassPanel}`}>
+            <div key="Support" className={`animate-content h-[calc(100vh-200px)] md:h-[calc(100vh-10rem)] flex flex-col items-center justify-center rounded-[2.5rem] overflow-hidden relative shadow-xl ${glassPanel}`}>
                 <div className="text-center p-10">
                     <div className={`w-32 h-32 rounded-full flex items-center justify-center mb-6 mx-auto ${darkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                         <QuestionMarkCircleIcon className="w-16 h-16 opacity-50 text-blue-500"/>
@@ -675,7 +711,7 @@ return (
         
         {/* DISCOVER TALENT TAB */}
         {activeTab === "Discover" && (
-            <div className="animate-in fade-in duration-700">
+            <div key="Discover" className="animate-content">
                 <div className="space-y-6 mb-8">
                       {/* --- QUICK STATS (UPDATED: Uniform in Light Mode, Varied in Dark Mode) --- */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
@@ -787,7 +823,7 @@ return (
 
         {/* ANALYTICS TAB */}
         {activeTab === "Analytics" && (
-            <div className="animate-in fade-in duration-700 space-y-8">
+            <div key="Analytics" className="animate-content space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
                         <div className="absolute right-0 top-0 opacity-5 p-4 transform rotate-12"><UsersIcon className="w-32 h-32"/></div>
@@ -820,74 +856,71 @@ return (
             </div>
         )}
 
-        {/* MANAGE LISTINGS TAB */}
+        {/* MANAGE LISTINGS TAB - UPDATED WITH NEON GLOW STYLE */}
         {activeTab === "Listings" && (
-          <div className="animate-in fade-in duration-700">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
-                <div className={`flex items-center p-2 rounded-2xl border shadow-sm w-full md:max-w-md ${glassPanel}`}>
-                    <div className="relative flex-1">
-                        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                        <input type="text" placeholder="Search your listings..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={glassInput + " pl-10 pr-4 py-2 text-sm"} />
-                    </div>
+          <div key="Listings" className="animate-content">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-10">
+                <div className={`relative group flex items-center p-3 rounded-2xl border transition-all duration-300 w-full md:max-w-md ${darkMode ? 'bg-slate-900/50 border-white/10 focus-within:border-blue-500/50 focus-within:shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'bg-white/60 border-slate-200 focus-within:border-blue-400 focus-within:shadow-lg'}`}>
+                    <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 ml-2 group-focus-within:text-blue-500 transition-colors" />
+                    <input type="text" placeholder="Search your listings..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-transparent border-none outline-none text-sm font-bold ml-3 placeholder-slate-400" />
                 </div>
-                <button onClick={() => handleOpenJobModal()} className="flex items-center gap-2 px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all active:scale-95 w-full md:w-auto justify-center">
-                    <PlusIcon className="w-5 h-5" /> Post New Job
+                <button onClick={() => handleOpenJobModal()} className="flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)] transition-all active:scale-95 w-full md:w-auto justify-center group transform hover:-translate-y-1">
+                    <PlusIcon className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" /> Post New Job
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredJobs.length > 0 ? filteredJobs.map(job => {
                 const applicantCount = receivedApplications.filter(a => a.jobId === job.id).length;
                 const style = getJobStyle(job.type);
                 return (
-                  <div key={job.id} className={`group relative p-5 ${glassCard} overflow-hidden`}>
-                      <div className={`absolute -right-4 -top-4 p-6 opacity-[0.03] transition-transform group-hover:scale-110 group-hover:opacity-[0.05] select-none pointer-events-none transform rotate-12 ${darkMode ? 'text-white' : 'text-black'}`}>
-                          {style.icon && <div className="scale-[2.5] md:scale-[4]">{style.icon}</div>}
-                      </div>
+                  <div key={job.id} className={`group relative p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl shine-effect ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white/60 border-white/60 hover:border-blue-300/50'}`}>
+                      {/* Decorative Background Glow */}
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/20 to-purple-500/20 blur-[50px] rounded-full pointer-events-none -mr-10 -mt-10"></div>
 
                       <div className="relative z-10 flex flex-col h-full">
-                          <div className="flex justify-between items-start mb-3">
-                               <div className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border ${style.bg} ${style.border}`}>
-                                   <span className={`${style.color} scale-75`}>{style.icon}</span>
-                                   <span className={`text-[9px] font-black uppercase tracking-widest ${style.color}`}>{job.type}</span>
+                          <div className="flex justify-between items-start mb-6">
+                               <div className={`backdrop-blur-md px-3 py-1.5 rounded-xl border flex items-center gap-2 shadow-sm ${style.bg} ${style.border}`}>
+                                   <span className={`${style.color} scale-90`}>{style.icon}</span>
+                                   <span className={`text-[10px] font-black uppercase tracking-widest ${style.color}`}>{job.type}</span>
                                </div>
-                               <div className="flex items-center gap-1.5 mt-1">
-                                   <span className="flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
+                               <div className="relative">
+                                   <span className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></span>
+                                   <span className="relative flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]"></span>
                                </div>
                           </div>
-                          <div className="mb-4">
-                              <h3 className={`text-lg font-black leading-tight mb-1.5 line-clamp-2 select-none cursor-default ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
-                              <div className="flex items-center gap-1.5 text-slate-400 select-none">
-                                  <MapPinIcon className="w-3.5 h-3.5" />
-                                  <p className="text-[10px] font-bold uppercase tracking-wide opacity-70 truncate">{job.sitio || "No Location"}</p>
+                          
+                          <div className="mb-6 space-y-2">
+                              <h3 className={`text-xl font-black leading-tight line-clamp-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
+                              <div className="flex items-center gap-2 text-slate-400">
+                                  <MapPinIcon className="w-4 h-4 text-blue-500" />
+                                  <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">{job.sitio || "No Location"}</p>
                               </div>
                           </div>
-                          <div className="mb-6 select-none cursor-default">
-                               <div className={`inline-flex items-center gap-3 px-3 py-2 rounded-xl border ${darkMode ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-300'}`}>
-                                   <CurrencyDollarIcon className="w-4 h-4 text-green-500" />
-                                   <div>
-                                       <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 leading-none mb-0.5">Rate</p>
-                                       <p className={`text-sm font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.salary}</p>
-                                   </div>
+
+                          <div className="mb-8">
+                               <div className="flex flex-col">
+                                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Salary / Rate</p>
+                                   <p className={`text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r ${darkMode ? 'from-white to-slate-400' : 'from-slate-900 to-slate-600'}`}>₱ {job.salary}</p>
                                </div>
                           </div>
-                          <div className="mt-auto flex items-center justify-between gap-3 pt-4 border-t border-dashed border-slate-500/20">
-                               <div className="flex items-center gap-2 select-none cursor-default shrink-0">
-                                   <div className="flex -space-x-1.5">
+
+                          <div className="mt-auto pt-6 border-t border-dashed border-slate-500/20 flex items-center justify-between">
+                               <div className="flex items-center gap-3">
+                                   <div className="flex -space-x-2">
                                       {[...Array(Math.min(3, applicantCount))].map((_, i) => (
-                                          <div key={i} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-[9px] font-bold ${darkMode ? 'bg-slate-800 border-slate-900 text-white' : 'bg-slate-200 border-white text-slate-600'}`}>?</div>
+                                          <div key={i} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-[10px] font-bold shadow-lg ${darkMode ? 'bg-slate-800 border-slate-900 text-white' : 'bg-slate-100 border-white text-slate-600'}`}>?</div>
                                       ))}
+                                      {applicantCount === 0 && <div className={`w-8 h-8 rounded-full border-2 border-dashed flex items-center justify-center ${darkMode ? 'border-slate-700' : 'border-slate-300'}`}><span className="text-[10px] opacity-50">0</span></div>}
                                    </div>
-                                   <div className="flex flex-col">
-                                       <span className={`text-xs font-black leading-none ${applicantCount > 0 ? 'text-blue-500' : 'text-slate-400'}`}>{applicantCount}</span>
-                                       <span className="text-[7px] font-bold uppercase tracking-widest text-slate-400">Apps</span>
-                                   </div>
+                                   {applicantCount > 0 && <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">Applicants</span>}
                                </div>
+                               
                                <div className="flex gap-2">
-                                   <button onClick={() => handleOpenJobModal(job)} className={`p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                                   <button onClick={() => handleOpenJobModal(job)} className={`p-3 rounded-full transition-all duration-300 group/btn hover:scale-110 ${darkMode ? 'bg-white/5 hover:bg-blue-500 hover:text-white text-slate-400' : 'bg-slate-100 hover:bg-blue-500 hover:text-white text-slate-500'}`}>
                                         <PencilSquareIcon className="w-4 h-4" />
                                    </button>
-                                   <button onClick={() => handleDeleteJob(job.id)} className={`p-2 rounded-xl transition-all active:scale-90 ${darkMode ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}>
+                                   <button onClick={() => handleDeleteJob(job.id)} className={`p-3 rounded-full transition-all duration-300 group/btn hover:scale-110 ${darkMode ? 'bg-white/5 hover:bg-red-500 hover:text-white text-slate-400' : 'bg-slate-100 hover:bg-red-500 hover:text-white text-slate-500'}`}>
                                         <TrashIcon className="w-4 h-4" />
                                    </button>
                                </div>
@@ -895,14 +928,21 @@ return (
                       </div>
                   </div>
                 );
-              }) : (<div className="col-span-full text-center py-20"><p className="opacity-50 font-black uppercase text-xs tracking-[0.3em] select-none cursor-default">No jobs posted yet</p></div>)}
+              }) : (
+                <div className="col-span-full flex flex-col items-center justify-center py-32 opacity-50">
+                    <div className="w-24 h-24 rounded-full bg-slate-500/10 flex items-center justify-center mb-6 animate-pulse">
+                        <BriefcaseIcon className="w-10 h-10 text-slate-400" />
+                    </div>
+                    <p className="font-black uppercase text-xs tracking-[0.3em] text-slate-500">No jobs posted yet</p>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* APPLICANTS TAB */}
         {activeTab === "Applicants" && (
-          <div className="animate-in slide-in-from-bottom-4 duration-500 space-y-10">
+          <div key="Applicants" className="animate-content space-y-10">
             <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:w-96 ${glassPanel}`}>
                 <div className="relative flex-1">
                     <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -922,7 +962,7 @@ return (
 
         {/* MESSAGES TAB - NOW USES DATA FROM THE HOOK */}
         {activeTab === "Messages" && (
-          <div className="animate-in fade-in duration-700 h-[calc(100vh-100px)] md:h-[calc(100vh-2rem)] flex flex-col pb-2">
+          <div key="Messages" className="animate-content h-[calc(100vh-100px)] md:h-[calc(100vh-2rem)] flex flex-col pb-2">
             <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0 relative">
                 <div className={`w-full rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
                     <div className="p-5 pb-2 shrink-0">
@@ -1099,7 +1139,7 @@ return (
           darkMode={darkMode} 
       />
       
-      {/* MOBILE BOTTOM NAV */}
+      {/* MOBILE BOTTOM NAV - UPDATED WITH GLOW & SHINE EFFECT */}
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${isMobile && activeTab === "Messages" && activeChat ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
         <MobileNavItem icon={<SparklesIcon className="w-6 h-6" />} active={activeTab === "Discover"} onClick={() => setActiveTab("Discover")} />
         <MobileNavItem icon={<BriefcaseIcon className="w-6 h-6" />} active={activeTab === "Listings"} onClick={() => setActiveTab("Listings")} />
@@ -1128,13 +1168,24 @@ function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDe
 }
 
 function NavBtn({ icon, label, active, onClick, darkMode, open, badge, badgeColor }) {
+  // Use className instead of conditional rendering for shine effect
+  // The 'shine-effect' class handles the pseudo-element animation
   return (
-    <button onClick={onClick} title={!open ? label : ''} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 group relative overflow-hidden ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : `${darkMode ? 'text-slate-400 hover:bg-white/10 hover:text-white' : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`} ${!open && 'lg:justify-center'}`}><div className={`absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 bg-gradient-to-r from-transparent via-white/10 to-transparent z-0 pointer-events-none`}></div><div className="relative z-10 shrink-0">{icon}</div><span className={`relative z-10 font-bold text-xs uppercase tracking-widest whitespace-nowrap overflow-hidden transition-all duration-300 ${!open ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'}`}>{label}</span>{(badge > 0 && open) && <span className={`absolute right-3 ${badgeColor || 'bg-red-500'} text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10`}>{badge}</span>}{(badge > 0 && !open) && <span className={`hidden lg:block absolute top-2 right-2 w-2.5 h-2.5 ${badgeColor || 'bg-red-500'} rounded-full border-2 border-white dark:border-slate-900 animate-pulse z-10`}></span>}{(badge > 0 && !open) && <span className={`lg:hidden absolute right-3 ${badgeColor || 'bg-red-500'} text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10`}>{badge}</span>}</button>
+    <button onClick={onClick} title={!open ? label : ''} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 group relative overflow-hidden ${active ? 'bg-transparent' : `${darkMode ? 'text-slate-400 hover:bg-white/10 hover:text-white' : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`} ${!open && 'lg:justify-center'}`}>
+        <div className={`relative z-10 shrink-0 ${active ? 'text-blue-600 dark:text-blue-400 drop-shadow-[0_0_10px_rgba(59,130,246,0.6)]' : ''}`}>{icon}</div>
+        <span className={`relative z-10 font-bold text-xs uppercase tracking-widest whitespace-nowrap overflow-hidden transition-all duration-300 ${!open ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'} ${active ? 'text-blue-600 dark:text-blue-400' : ''}`}>{label}</span>
+        {(badge > 0 && open) && <span className={`absolute right-3 ${badgeColor || 'bg-red-500'} text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10`}>{badge}</span>}
+        {(badge > 0 && !open) && <span className={`hidden lg:block absolute top-2 right-2 w-2.5 h-2.5 ${badgeColor || 'bg-red-500'} rounded-full border-2 border-white dark:border-slate-900 animate-pulse z-10`}></span>}
+        {(badge > 0 && !open) && <span className={`lg:hidden absolute right-3 ${badgeColor || 'bg-red-500'} text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10`}>{badge}</span>}
+    </button>
   );
 }
 
+// --- UPDATED MOBILE NAV ITEM TO MATCH GLOW & SHINE THEME ---
 function MobileNavItem({ icon, active, onClick }) {
   return (
-    <button onClick={onClick} className={`p-4 rounded-2xl transition-all active:scale-95 ${active ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-100'}`}>{icon}</button>
+    <button onClick={onClick} className={`relative p-2 rounded-full transition-all duration-500 ease-out overflow-hidden ${active ? 'scale-125 text-blue-600 dark:text-blue-400 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)] dark:drop-shadow-[0_0_15px_rgba(96,165,250,0.8)] shine-effect' : 'text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-white hover:scale-110 hover:-translate-y-1'}`}>
+      <div className="relative z-10">{icon}</div>
+    </button>
   );
 }
