@@ -23,7 +23,7 @@ import {
   TrendingUpIcon, BuildingOfficeIcon, ChevronDownIcon,
   ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon, VideoCameraIcon,
   ShieldCheckIcon, HomeIcon, BellIcon, MegaphoneIcon,
-  QuestionMarkCircleIcon // Added Icon
+  QuestionMarkCircleIcon, IdentificationIcon
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
@@ -180,13 +180,10 @@ export default function EmployerDashboard() {
   // Effect to find Admin User for Support Tab
   useEffect(() => {
       const fetchAdmin = async () => {
-          // Attempt to find admin in 'employers' first (assuming admin might be an employer role)
-          // Adjust collection if Admin is stored elsewhere.
           let q = query(collection(db, "employers"), where("email", "==", ADMIN_EMAIL));
           let snap = await getDocs(q);
           
           if (snap.empty) {
-             // Fallback: check applicants or a dedicated 'admins' collection if you create one
              q = query(collection(db, "applicants"), where("email", "==", ADMIN_EMAIL));
              snap = await getDocs(q);
           }
@@ -281,9 +278,8 @@ export default function EmployerDashboard() {
 
   useEffect(() => {
     if (!effectiveActiveChatId) return;
-    // Check if chatting with Admin (who might be in employers) or Applicant
     let collectionName = "applicants";
-    if (adminUser && effectiveActiveChatId === adminUser.id) collectionName = "employers"; // Assuming admin is stored in employers
+    if (adminUser && effectiveActiveChatId === adminUser.id) collectionName = "employers"; 
 
     const otherUserRef = doc(db, collectionName, effectiveActiveChatId);
     const unsubStatus = onSnapshot(otherUserRef, (docSnap) => {
@@ -326,10 +322,8 @@ export default function EmployerDashboard() {
 
         if (otherId) {
             try {
-                // Try fetching from applicants first
                 let userSnap = await getDoc(doc(db, "applicants", otherId));
                 if (!userSnap.exists()) {
-                    // Fallback to employers (e.g. for Admin or other employers)
                     userSnap = await getDoc(doc(db, "employers", otherId));
                 }
 
@@ -467,8 +461,14 @@ export default function EmployerDashboard() {
     setModalLoading(true); setModalApplicant(null); setModalJob(null); setSelectedApplication(app);
     try {
         if (!app.isViewed) updateDoc(doc(db, "applications", app.id), { isViewed: true }).catch(err => console.error(err));
-        // CORRECTED: 'applicants'
-        if (app.applicantId) { const userSnap = await getDoc(doc(db, "applicants", app.applicantId)); if (userSnap.exists()) setModalApplicant(userSnap.data()); }
+        
+        if (app.applicantId) { 
+            const userSnap = await getDoc(doc(db, "applicants", app.applicantId)); 
+            if (userSnap.exists()) {
+                const fetchedData = userSnap.data();
+                setModalApplicant(fetchedData); 
+            }
+        }
         if (app.jobId) { const jobSnap = await getDoc(doc(db, "jobs", app.jobId)); if (jobSnap.exists()) setModalJob(jobSnap.data()); }
     } catch (err) { alert("Could not load details."); } finally { setModalLoading(false); }
   };
@@ -741,7 +741,8 @@ return (
       )}
       
       {/* --- NEW MAIN FIXED HEADER --- */}
-      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'}`}>
+      {/* Hides on mobile when a chat is open to prevent covering the conversation */}
+      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isMobile && activeTab === "Messages" && activeChat) ? '-translate-y-full' : 'translate-y-0'}`}>
             {/* Logo/Title (REMOVED BADGE) */}
             <div className="flex items-center gap-3">
                  <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>LIVELI<span className="text-blue-500">MATCH</span></h1>
@@ -808,8 +809,9 @@ return (
       </header>
 
       {/* --- RIGHT SIDEBAR (Collapsible - CLEANED) --- */}
+      {/* INCREASED Z-INDEX TO 100 TO COVER BOTTOM NAV */}
       <aside 
-        className={`fixed top-0 right-0 h-full w-64 z-50 rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel} 
+        className={`fixed top-0 right-0 h-full w-64 z-[100] rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel} 
         ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}
       >
         {/* REPLACED LIVELI MATCH Logo with Clickable Profile Card */}
@@ -857,7 +859,8 @@ return (
       </aside>
 
       {/* --- MAIN CONTENT (ADDED TOP PADDING FOR FIXED HEADER) --- */}
-      <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] p-4 lg:p-8 pt-24 lg:pt-28`}>
+      {/* Logic to remove padding if chat is active on mobile so it uses full screen */}
+      <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] p-4 lg:p-8 ${(isMobile && activeTab === "Messages" && activeChat) ? 'pt-0' : 'pt-24 lg:pt-28'}`}>
         
         {/* Floating Header (Kept as Page Title Sub-header) */}
         {/* Hides on Support tab on mobile to give full screen chat feel */}
@@ -881,6 +884,8 @@ return (
         </header>
         )}
 
+        {/* ... (Rest of Profile, Support, Discover, Analytics, Listings Logic unchanged) ... */}
+        
         {/* PROFILE TAB */}
         {activeTab === "Profile" && (
             <div className="animate-in fade-in duration-700 space-y-6">
@@ -1308,7 +1313,7 @@ return (
                                 <div ref={scrollRef}/>
                             </div>
                             <div className={`p-4 border-t shrink-0 z-20 pb-8 md:pb-4 ${darkMode?'bg-slate-900/50 border-white/5':'bg-white/50 border-slate-300'}`}>
-                                {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-white/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : effectiveActiveChatUser.name}</span><span className="opacity-70 truncate max-w-xs">{replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
+                                {replyingTo && (<div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-white/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase tracking-widest text-[9px] mb-1">Replying to {replyingTo.senderId === auth.currentUser.uid ? "Yourself" : effectiveActiveChatUser.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)} className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-full transition-colors"><XMarkIcon className="w-4 h-4"/></button></div>)}
                                 {attachment && (<div className="mb-3 relative inline-block animate-in zoom-in duration-200"><div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">{attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}<span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span></div><button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button></div>)}
                                 <form onSubmit={handleSendMessage} className="flex items-end gap-3">
                                     <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
@@ -1325,92 +1330,135 @@ return (
         )}
       </main>
 
-      {/* APPLICANT/TALENT MODALS */}
+      {/* APPLICANT/TALENT MODAL (RE-DESIGNED to match Admin Dashboard) */}
       {selectedApplication && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedApplication(null)}>
-            <div className={`max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 backdrop-blur-2xl ${darkMode ? 'bg-slate-900/80 border-white/10' : 'bg-white/80 border-white/40'}`} onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-start mb-6">
-                    <div>
-                        <h3 className="text-3xl font-black uppercase tracking-tight leading-none">{selectedApplication.applicantName}</h3>
-                        <p className="text-blue-500 font-bold uppercase tracking-widest text-xs mt-2">Applying for: {selectedApplication.jobTitle}</p>
-                    </div>
-                    <button onClick={() => setSelectedApplication(null)} className={`p-2 rounded-full ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-6 h-6"/></button>
-                </div>
-
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
+             
+             <div 
+                onClick={(e) => e.stopPropagation()}
+                className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+             >
                 {modalLoading ? (
                    <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
                        <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                       <p className="text-[10px] font-black uppercase tracking-widest">Loading Details...</p>
+                       <p className="text-[10px] font-black uppercase tracking-widest">Loading Applicant...</p>
                    </div>
                 ) : (
                   <>
-                    <div className="space-y-6 mb-8">
-                        <div className="flex gap-3 flex-wrap">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}><MapPinIcon className="w-4 h-4 text-blue-500"/> {modalApplicant?.sitio || "No Location"}</span>
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}><EnvelopeIcon className="w-4 h-4 text-purple-500"/> {modalApplicant?.email || "No Email"}</span>
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}><ClockIcon className="w-4 h-4 text-amber-500"/> {formatDateTime(selectedApplication.appliedAt)}</span>
+                    <div className="w-24 h-24 rounded-3xl bg-slate-200 overflow-hidden shadow-lg mb-6 border-4 border-white/10">
+                        {(modalApplicant?.profilePic || selectedApplication.applicantProfilePic) 
+                            ? <img src={modalApplicant?.profilePic || selectedApplication.applicantProfilePic} className="w-full h-full object-cover"/> 
+                            : <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20">?</div>}
+                    </div>
+                    
+                    <h2 className="text-2xl font-black mb-1 text-center">{selectedApplication.applicantName}</h2>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{modalApplicant?.title || "Applicant"}</p>
+
+                    <div className="flex gap-2 mb-6 flex-wrap justify-center">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{modalApplicant?.sitio || "No Location"}</span>
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-blue-500/10 text-blue-500`}>Applying for: {selectedApplication.jobTitle}</span>
+                    </div>
+
+                    <div className="w-full space-y-4 mb-8">
+                        <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                            <IdentificationIcon className="w-5 h-5 opacity-50"/>
+                            <span className="text-sm font-bold opacity-80">{modalApplicant?.contact || "No contact info provided"}</span>
                         </div>
-                        <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
-                            <h4 className="text-xs font-black uppercase tracking-widest opacity-50 mb-3">Applicant Bio</h4>
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{modalApplicant?.bio || modalApplicant?.aboutMe || "No bio information provided."}</p>
+                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                            <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">About Applicant</p>
+                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.bio || modalApplicant?.aboutMe || "No bio information provided."}</p>
                         </div>
-                        <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
-                            <h4 className="text-xs font-black uppercase tracking-widest opacity-50 mb-3">Experience & Education</h4>
-                            <div className="space-y-4">
-                                <div><p className="text-[10px] font-black uppercase text-blue-500 mb-1">Work History</p><p className="text-sm opacity-80">{modalApplicant?.workExperience || "None listed."}</p></div>
-                                <div><p className="text-[10px] font-black uppercase text-purple-500 mb-1">Education</p><p className="text-sm opacity-80">{modalApplicant?.education || "None listed."}</p></div>
-                            </div>
+                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                             <p className="text-xs font-bold uppercase opacity-40 mb-2 text-purple-500">Experience</p>
+                             <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.workExperience || "None listed."}</p>
                         </div>
                     </div>
-                    <div className="flex gap-4">
+
+                    <div className="w-full flex gap-3">
                         {selectedApplication.status === 'pending' ? (
                             <>
-                                <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">Reject</button>
-                                <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Accept Applicant</button>
+                                <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">Reject</button>
+                                <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Accept</button>
                             </>
                         ) : (
-                            <button onClick={() => { handleStartChatFromExternal({ id: selectedApplication.applicantId, name: selectedApplication.applicantName, profilePic: selectedApplication.applicantProfilePic || null }); setSelectedApplication(null); }} className="w-full py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Send Message</button>
+                            <button onClick={() => { handleStartChatFromExternal({ id: selectedApplication.applicantId, name: selectedApplication.applicantName, profilePic: selectedApplication.applicantProfilePic || null }); setSelectedApplication(null); }} className="w-full py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Send Message</button>
                         )}
                     </div>
+                    
+                    <button onClick={() => setSelectedApplication(null)} className="mt-4 text-[10px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity">
+                        Close Details
+                    </button>
                   </>
                 )}
-            </div>
+             </div>
         </div>
       )}
 
       {selectedTalent && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedTalent(null)}>
-            <div className={`max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 backdrop-blur-2xl ${darkMode ? 'bg-slate-900/80 border-white/10' : 'bg-white/80 border-white/40'}`} onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-start mb-6">
-                    <div>
-                        <h3 className="text-3xl font-black uppercase tracking-tight leading-none">{selectedTalent.firstName} {selectedTalent.lastName}</h3>
-                        <p className="text-blue-500 font-bold uppercase tracking-widest text-xs mt-2">{selectedTalent.title || "Applicant"}</p>
-                    </div>
-                    <button onClick={() => setSelectedTalent(null)} className={`p-2 rounded-full ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-6 h-6"/></button>
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
+             
+             <div 
+                onClick={(e) => e.stopPropagation()}
+                className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+             >
+                {/* Close Button Top Right */}
+                <button 
+                    onClick={() => setSelectedTalent(null)} 
+                    className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
+                >
+                    <XMarkIcon className="w-5 h-5"/>
+                </button>
+
+                {/* Profile Pic */}
+                <div className="w-24 h-24 rounded-3xl bg-slate-200 overflow-hidden shadow-lg mb-6 border-4 border-white/10 shrink-0">
+                    {(getAvatarUrl(selectedTalent) || selectedTalent.profilePic) 
+                        ? <img src={getAvatarUrl(selectedTalent) || selectedTalent.profilePic} className="w-full h-full object-cover"/> 
+                        : <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20">{selectedTalent.firstName?.charAt(0)}</div>}
                 </div>
-                <div className="space-y-6 mb-8">
-                    <div className="flex gap-3 flex-wrap">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}><MapPinIcon className="w-4 h-4 text-blue-500"/> {selectedTalent.sitio || "No Location"}</span>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}><EnvelopeIcon className="w-4 h-4 text-purple-500"/> {selectedTalent.contact || "No Email"}</span>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}><UserIcon className="w-4 h-4 text-amber-500"/> {selectedTalent.isOnline ? "Available Now" : "Currently Offline"}</span>
+                
+                <h2 className="text-2xl font-black mb-1 text-center">{selectedTalent.firstName} {selectedTalent.lastName}</h2>
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{selectedTalent.title || "Applicant"}</p>
+
+                <div className="flex gap-2 mb-6 flex-wrap justify-center">
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedTalent.sitio || "No Location"}</span>
+                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedTalent.isOnline ? "Online" : "Offline"}</span>
+                </div>
+
+                <div className="w-full space-y-4 mb-8">
+                     <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                        <EnvelopeIcon className="w-5 h-5 opacity-50"/>
+                        <span className="text-sm font-bold opacity-80 truncate">{selectedTalent.contact || "No contact info"}</span>
                     </div>
-                    <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
-                        <h4 className="text-xs font-black uppercase tracking-widest opacity-50 mb-3">Professional Bio</h4>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedTalent.bio || selectedTalent.aboutMe || "No bio information provided."}</p>
+                    
+                    <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                        <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">About Candidate</p>
+                        <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.bio || selectedTalent.aboutMe || "No bio provided."}</p>
                     </div>
-                    <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
-                        <h4 className="text-xs font-black uppercase tracking-widest opacity-50 mb-3">Experience & Education</h4>
-                        <div className="space-y-4">
-                            <div><p className="text-[10px] font-black uppercase text-blue-500 mb-1">Work History</p><p className="text-sm opacity-80">{selectedTalent.workExperience || "None listed."}</p></div>
-                            <div><p className="text-[10px] font-black uppercase text-purple-500 mb-1">Education</p><p className="text-sm opacity-80">{selectedTalent.education || "None listed."}</p></div>
+
+                    {(selectedTalent.workExperience || selectedTalent.education) && (
+                         <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                             {selectedTalent.workExperience && (
+                                 <div className="mb-4">
+                                    <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
+                                    <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.workExperience}</p>
+                                 </div>
+                             )}
+                             {selectedTalent.education && (
+                                 <div>
+                                    <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
+                                    <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.education}</p>
+                                 </div>
+                             )}
                         </div>
-                    </div>
+                    )}
                 </div>
-                <div className="flex gap-4">
-                    <button onClick={() => setSelectedTalent(null)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">Close</button>
-                    <button onClick={() => { handleStartChatFromExternal({ id: selectedTalent.id, name: `${selectedTalent.firstName} ${selectedTalent.lastName}`, profilePic: selectedTalent.profilePic || null }); setSelectedTalent(null); }} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Start Conversation</button>
-                </div>
-            </div>
+
+                <button onClick={() => { handleStartChatFromExternal({ id: selectedTalent.id, name: `${selectedTalent.firstName} ${selectedTalent.lastName}`, profilePic: getAvatarUrl(selectedTalent) }); setSelectedTalent(null); }} className="w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform flex items-center justify-center gap-2">
+                    <ChatBubbleLeftRightIcon className="w-4 h-4"/> Start Conversation
+                </button>
+             </div>
         </div>
       )}
 
