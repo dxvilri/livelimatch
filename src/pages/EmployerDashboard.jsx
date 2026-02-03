@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config"; 
 import { 
-  collection, query, where, onSnapshot, 
+  collection, query, where, onSnapshot, orderBy,
   addDoc, serverTimestamp, setDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer, increment, arrayUnion
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -25,7 +25,8 @@ import {
   ChartBarIcon, UserPlusIcon, PresentationChartLineIcon,
   BuildingOfficeIcon, ChevronDownIcon,
   ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon,
-  BellIcon, QuestionMarkCircleIcon, IdentificationIcon, LockClosedIcon
+  BellIcon, QuestionMarkCircleIcon, IdentificationIcon, LockClosedIcon,
+  MegaphoneIcon // --- IMPORTED ---
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
@@ -72,7 +73,7 @@ export default function EmployerDashboard() {
   const [bubblePos, setBubblePos] = useState({ x: window.innerWidth - 60, y: 150 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
-   
+    
   // --- INTEGRATED CHAT HOOK ---
   const chat = useChat(auth.currentUser, isMobile);
   const { 
@@ -92,12 +93,13 @@ export default function EmployerDashboard() {
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [adminUser, setAdminUser] = useState(null);
-   
+    
   // --- EMPLOYER SPECIFIC STATES ---
+  const [announcements, setAnnouncements] = useState([]); // --- ADDED STATE ---
   const [myPostedJobs, setMyPostedJobs] = useState([]); 
   const [receivedApplications, setReceivedApplications] = useState([]); 
   const [searchTerm, setSearchTerm] = useState("");
-    
+     
   // -- DISCOVER TALENT STATES --
   const [discoverTalents, setDiscoverTalents] = useState([]);
   const [talentSearch, setTalentSearch] = useState("");
@@ -120,7 +122,7 @@ export default function EmployerDashboard() {
   const [isEditingImage, setIsEditingImage] = useState(false);
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-   
+    
   const [employerData, setEmployerData] = useState({ 
       firstName: "", lastName: "", sitio: "", title: "Employer", 
       aboutMe: "", workExperience: "", education: "", 
@@ -140,13 +142,13 @@ export default function EmployerDashboard() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-   
+    
   useEffect(() => {
     if (isMobile && isBubbleExpanded) { document.body.style.overflow = "hidden"; } 
     else { document.body.style.overflow = "auto"; }
     return () => { document.body.style.overflow = "auto"; };
   }, [isMobile, isBubbleExpanded]);
-   
+    
   useEffect(() => {
     if (messages.length > 0) {
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -206,7 +208,7 @@ export default function EmployerDashboard() {
           try {
             let q = query(collection(db, "admins"), where("email", "==", ADMIN_EMAIL));
             let snap = await getDocs(q);
-             
+              
             if (!snap.empty) {
                 const docData = snap.docs[0].data();
                 setAdminUser({ id: snap.docs[0].id, collection: 'admins', ...docData });
@@ -236,13 +238,13 @@ export default function EmployerDashboard() {
                 const talents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 const validTalents = talents.filter(t => t.firstName || t.lastName);
                 setDiscoverTalents(validTalents);
-                 
+                  
                 const empSnapshot = await getCountFromServer(collection(db, "employers"));
                 setAnalyticsData(prev => ({...prev, totalEmployers: empSnapshot.data().count}));
 
                 const jobsSnapshot = await getDocs(collection(db, "jobs"));
                 const allJobs = jobsSnapshot.docs.map(d => d.data());
-                 
+                  
                 const stats = {};
                 allJobs.forEach(job => {
                     if(job.sitio) {
@@ -252,7 +254,7 @@ export default function EmployerDashboard() {
                 const sortedStats = Object.entries(stats)
                     .map(([name, count]) => ({ name, count }))
                     .sort((a,b) => b.count - a.count);
-                 
+                  
                 setAnalyticsData(prev => ({...prev, sitioStats: sortedStats}));
 
             } catch (err) { console.error("Error fetching data", err); }
@@ -294,19 +296,30 @@ export default function EmployerDashboard() {
 
   useEffect(() => {
     if (!auth.currentUser) return;
+    
+    // Jobs Listener
     const qJobs = query(collection(db, "jobs"), where("employerId", "==", auth.currentUser.uid));
     const unsubJobs = onSnapshot(qJobs, (snap) => {
       const jobsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       jobsData.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setMyPostedJobs(jobsData);
     });
+
+    // Applications Listener
     const qApps = query(collection(db, "applications"), where("employerId", "==", auth.currentUser.uid));
     const unsubApps = onSnapshot(qApps, (snap) => {
       const appsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       appsData.sort((a, b) => (b.appliedAt?.seconds || 0) - (a.appliedAt?.seconds || 0));
       setReceivedApplications(appsData);
     });
-    return () => { unsubJobs(); unsubApps(); };
+
+    // --- ADDED: Announcements Listener ---
+    const qAnnouncements = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
+    const unsubAnnouncements = onSnapshot(qAnnouncements, (snap) => {
+       setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => { unsubJobs(); unsubApps(); unsubAnnouncements(); };
   }, [auth.currentUser]);
 
   // --- HANDLERS ---
@@ -383,7 +396,7 @@ export default function EmployerDashboard() {
   };
 
   const handleFileSelect = (e) => { if (e.target.files[0]) setAttachment(e.target.files[0]); };
-   
+    
   const handleSendMessageWrapper = async (e) => {
     e.preventDefault();
     if (!attachment) {
@@ -492,7 +505,7 @@ export default function EmployerDashboard() {
           </button>
       </div>
   );
-   
+    
   // --- EXISTING HANDLERS ---
   const handleTalentMouseEnter = (user) => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
@@ -610,7 +623,7 @@ export default function EmployerDashboard() {
   const displayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
 
   const filteredJobs = myPostedJobs.filter(job => job.title.toLowerCase().includes(searchTerm.toLowerCase()) || (job.sitio && job.sitio.toLowerCase().includes(searchTerm.toLowerCase())));
-  
+   
   const filteredChats = conversations.filter(c => {
       const otherId = c.participants.find(p => p !== auth.currentUser.uid);
       if (adminUser && otherId === adminUser.id) return false; 
@@ -636,7 +649,7 @@ export default function EmployerDashboard() {
     if (adminUser && otherId === adminUser.id) return acc;
     return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0);
   }, 0);
-  
+   
   const newAppCount = receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length;
   const totalNotifications = unreadMsgCount + newAppCount;
 
@@ -646,7 +659,7 @@ export default function EmployerDashboard() {
       {!isCollapsed && <button onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"><CameraIcon className="w-5 h-5 text-white" /></button>}
     </div>
   );
-   
+    
   const effectiveActiveChatUser = (isBubbleVisible && isMobile)
     ? openBubbles.find(b => b.id === activeBubbleView)
     : activeChat;
@@ -663,7 +676,7 @@ export default function EmployerDashboard() {
   };
 
   const getJobStyle = (type) => { const found = JOB_TYPES.find(j => j.id === type); if (found) return found; return { icon: <BoltIcon className="w-6 h-6"/>, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' }; };
-   
+    
   const formatTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
   const formatLastSeen = (ts) => {
       if (!ts) return "Offline"; const date = ts.toDate(); const now = new Date(); const diffInMinutes = Math.floor((now - date) / 60000);
@@ -672,7 +685,7 @@ export default function EmployerDashboard() {
 
 return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
-       
+        
        {/* --- ADDED: WARNING BANNER --- */}
       {!isVerified && (
         <div className={`fixed top-0 left-0 right-0 h-10 z-[60] flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-white shadow-lg ${employerData.verificationStatus === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`}>
@@ -725,7 +738,7 @@ return (
           animation: content-wipe 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
       `}</style>
-       
+        
       <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
       {/* --- BACKGROUND BLOBS --- */}
@@ -733,7 +746,7 @@ return (
         <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse ${darkMode ? 'bg-blue-900' : 'bg-blue-300'}`}></div>
         <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse delay-1000 ${darkMode ? 'bg-purple-900' : 'bg-purple-300'}`}></div>
       </div>
-       
+        
       {/* FULL SCREEN IMAGE LIGHTBOX */}
       {lightboxUrl && (
           <div className="fixed inset-0 z-[1000] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setLightboxUrl(null)}>
@@ -754,8 +767,8 @@ return (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           {JOB_TYPES.map((type) => (
                              <button key={type.id} onClick={() => setJobForm({...jobForm, type: type.id})} className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all ${jobForm.type === type.id ? `bg-blue-600 border-blue-600 text-white shadow-lg scale-105` : `${darkMode ? 'border-white/10 hover:bg-white/5' : 'border-slate-200 hover:border-slate-400 hover:bg-slate-100'}`}`}>
-                                   <span className={jobForm.type === type.id ? 'text-white' : type.color}>{type.icon}</span>
-                                   <span className="text-[10px] font-black uppercase tracking-widest">{type.id}</span>
+                                    <span className={jobForm.type === type.id ? 'text-white' : type.color}>{type.icon}</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest">{type.id}</span>
                              </button>
                           ))}
                       </div>
@@ -800,7 +813,7 @@ return (
           </div>
         </div>
       )}
-       
+        
       {/* HEADER */}
       <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isFullScreenPage) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified && !isFullScreenPage ? 'top-10' : 'top-0'}`}>
             <div className="flex items-center gap-3">
@@ -837,12 +850,12 @@ return (
                              <div className="p-3 border-b border-white/5 font-black text-xs uppercase tracking-widest opacity-50">Notifications</div>
                              <div className="p-2 space-y-1">
                                  <button onClick={() => { setActiveTab("Messages"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${unreadMsgCount > 0 ? 'text-blue-500 bg-blue-500/10' : 'opacity-50'}`}>
-                                            <span>Unread Messages</span>
-                                            <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
+                                                 <span>Unread Messages</span>
+                                                 <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
                                  </button>
                                  <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-amber-500 bg-amber-500/10' : 'opacity-50'}`}>
-                                            <span>New Applicants</span>
-                                            <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
+                                                 <span>New Applicants</span>
+                                                 <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
                                  </button>
                                  {totalNotifications === 0 && <div className="text-center py-4 opacity-30 text-xs font-bold uppercase">No new notifications</div>}
                              </div>
@@ -855,7 +868,7 @@ return (
                         {profileImage ? <img src={profileImage} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">{employerData.firstName ? employerData.firstName.charAt(0) : "E"}</div>}
                     </div>
                 </div>
-                 
+                  
                  <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl transition-colors ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-900 hover:bg-slate-100'}`}>
                     <Bars3BottomRightIcon className="w-7 h-7" />
                  </button>
@@ -884,6 +897,8 @@ return (
             ) : (
                 <NavBtn active={false} onClick={()=>{}} icon={<LockClosedIcon className="w-6 h-6 text-slate-500"/>} label="Analytics Locked" open={true} dark={darkMode} />
             )}
+            <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
+            <NavBtn active={activeTab==="Announcements"} onClick={()=>{setActiveTab("Announcements"); setIsSidebarOpen(false)}} icon={<MegaphoneIcon className="w-6 h-6"/>} label="Announcements" open={true} dark={darkMode} />
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
             <NavBtn active={activeTab==="Support"} onClick={()=>{setActiveTab("Support"); setIsSidebarOpen(false)}} icon={<QuestionMarkCircleIcon className="w-6 h-6"/>} label="Help & Support" open={true} dark={darkMode} />
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
@@ -923,6 +938,7 @@ return (
                     {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Analytics" && <PresentationChartLineIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500"/>}
+                    {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6 text-blue-500"/>}
                 </div>
                 <div>
                     <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeTab === "Profile" ? "Profile" : activeTab === "Support" ? "Help & Support" : activeTab}</h2>
@@ -1025,8 +1041,8 @@ return (
 
         {/* SUPPORT TAB (Always accessible, Updated UI for Image) */}
         {activeTab === "Support" && (
-            <div key="Support" className={`animate-content flex flex-col overflow-hidden relative shadow-xl ${glassPanel} 
-             ${isMobile ? 'h-[calc(100dvh)] rounded-none border-x-0 border-t-0 border-b-0' : 'h-[calc(100vh-10rem)] rounded-[2.5rem]'}`}>
+            <div key="Support" className={`animate-content flex flex-col overflow-hidden shadow-xl ${glassPanel} 
+             ${isMobile ? 'fixed inset-0 z-[60] rounded-none' : 'relative h-[calc(100vh-10rem)] rounded-[2.5rem]'}`}>
                 
                 {/* Header for Support Tab */}
                 <div className="p-4 border-b border-gray-500/10 flex justify-between items-center bg-white/5 backdrop-blur-sm z-10">
@@ -1104,10 +1120,45 @@ return (
         )}
 
         {/* RESTRICTED TABS */}
-        {!isVerified && activeTab !== "Support" && activeTab !== "Profile" && (
+        {!isVerified && activeTab !== "Support" && activeTab !== "Profile" && activeTab !== "Announcements" && (
              <RestrictedView />
         )}
         
+        {/* ANNOUNCEMENTS TAB */}
+        {activeTab === "Announcements" && (
+            <div key="Announcements" className="animate-content space-y-6">
+                <div className={`p-6 lg:p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel} min-h-[50vh]`}>
+                    <div className="flex items-center gap-3 mb-6 lg:mb-8">
+                        <MegaphoneIcon className="w-8 h-8 text-pink-500" />
+                        <div>
+                            <h3 className={`font-black text-2xl uppercase tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>Announcements</h3>
+                            <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">Updates from Admin</p>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        {announcements.length === 0 ? (
+                            <div className="text-center py-20 opacity-50 flex flex-col items-center">
+                                <MegaphoneIcon className="w-16 h-16 mb-4 opacity-20"/>
+                                <p className="font-bold uppercase tracking-widest text-xs">No announcements yet</p>
+                            </div>
+                        ) : (
+                            announcements.map(ann => (
+                                <div key={ann.id} className={`p-6 rounded-3xl border relative overflow-hidden group transition-all hover:-translate-y-1 ${darkMode ? 'bg-slate-800/40 border-white/5' : 'bg-white/40 border-slate-200'}`}>
+                                     <div className="absolute top-0 left-0 w-1.5 h-full bg-pink-500"></div>
+                                     <div className="flex justify-between items-start mb-3 pl-2">
+                                        <h4 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>{ann.title}</h4>
+                                        <span className="text-[10px] font-bold uppercase bg-black/5 dark:bg-white/5 px-2 py-1 rounded opacity-50">{ann.date}</span>
+                                     </div>
+                                     <p className={`text-sm pl-2 leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{ann.body}</p>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* NORMAL TABS (Only show content if verified) */}
         {isVerified && activeTab === "Discover" && (
             <div key="Discover" className="animate-content">
@@ -1229,7 +1280,7 @@ return (
 
         {isVerified && activeTab === "Listings" && (
           <div key="Listings" className="animate-content">
-             {/* ... Listings Content (Keep as is) ... */}
+              {/* ... Listings Content (Keep as is) ... */}
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6 md:mb-10">
                 <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:max-w-md ${glassPanel}`}>
                     <div className="relative flex-1">
@@ -1319,7 +1370,7 @@ return (
 
         {isVerified && activeTab === "Applicants" && (
           <div key="Applicants" className="animate-content space-y-10">
-             {/* ... Applicants Content (Keep as is) ... */}
+              {/* ... Applicants Content (Keep as is) ... */}
               <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:w-96 ${glassPanel}`}>
                 <div className="relative flex-1">
                     <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1340,7 +1391,7 @@ return (
         {/* MESSAGES TAB */}
         {isVerified && activeTab === "Messages" && (
           <div className="animate-in fade-in duration-700 h-[calc(100vh-100px)] md:h-[calc(100vh-2rem)] flex flex-col pb-2">
-             <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0 relative">
+              <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0 relative">
                 <div className={`${isMobile && activeChat ? 'hidden' : 'flex'} w-full md:w-72 rounded-[2.5rem] border md:flex flex-col overflow-hidden shadow-xl ${glassPanel}`}>
                     <div className="p-5 pb-2 shrink-0">
                          {isMobile && <h2 className={`text-2xl font-black mb-4 px-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h2>}
@@ -1446,7 +1497,7 @@ return (
       {selectedApplication && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedApplication(null)}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
-             
+              
             <div 
                onClick={(e) => e.stopPropagation()}
                className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
@@ -1467,7 +1518,7 @@ return (
                            ? <img src={modalApplicant?.profilePic || selectedApplication.applicantProfilePic} className="w-full h-full object-cover"/> 
                            : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">?</div>}
                     </div>
-                    
+                     
                     <h2 className="text-2xl font-black mb-1 text-center">{selectedApplication.applicantName}</h2>
                     <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{modalApplicant?.title || "Applicant"}</p>
 
@@ -1518,7 +1569,7 @@ return (
       {selectedTalent && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedTalent(null)}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
-             
+              
             <div 
                onClick={(e) => e.stopPropagation()}
                className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
@@ -1532,7 +1583,7 @@ return (
                         ? <img src={getAvatarUrl(selectedTalent) || selectedTalent.profilePic} className="w-full h-full object-cover"/> 
                         : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">{selectedTalent.firstName?.charAt(0)}</div>}
                 </div>
-                
+                 
                 <h2 className="text-2xl font-black mb-1 text-center">{selectedTalent.firstName} {selectedTalent.lastName}</h2>
                 <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{selectedTalent.title || "Applicant"}</p>
 
@@ -1625,8 +1676,8 @@ return (
                                                 const otherPic = c.profilePics?.[otherId];
                                                 return (
                                                     <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                                            <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
-                                                            <div className="flex-1 text-left overflow-hidden"><div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p></div>
+                                                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                                        <div className="flex-1 text-left overflow-hidden"><div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p></div>
                                                     </button>
                                                 )
                                             })}

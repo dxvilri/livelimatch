@@ -90,7 +90,12 @@ export default function AdminDashboard() {
         setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => { unsubApplicants(); unsubEmployers(); unsubJobs(); unsubTickets(); };
+    // 5. Announcements (Real-time)
+    const unsubAnnouncements = onSnapshot(query(collection(db, "announcements"), orderBy("createdAt", "desc")), (snap) => {
+        setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => { unsubApplicants(); unsubEmployers(); unsubJobs(); unsubTickets(); unsubAnnouncements(); };
   }, []);
 
   // --- DERIVED STATE ---
@@ -143,19 +148,22 @@ export default function AdminDashboard() {
     if(confirm("Permanently delete this job?")) await deleteDoc(doc(db, "jobs", jobId));
   };
 
-  const handlePostAnnouncement = (e) => {
+  const handlePostAnnouncement = async (e) => {
     e.preventDefault();
-    const newAnnounce = {
-        id: Date.now(),
-        title: announceTitle,
-        body: announceBody,
-        date: new Date().toLocaleDateString(),
-        author: "Admin"
-    };
-    setAnnouncements([newAnnounce, ...announcements]);
-    setAnnounceTitle("");
-    setAnnounceBody("");
-    alert("Announcement Posted!");
+    try {
+        await addDoc(collection(db, "announcements"), {
+            title: announceTitle,
+            body: announceBody,
+            date: new Date().toLocaleDateString(),
+            createdAt: serverTimestamp(),
+            author: "Admin"
+        });
+        setAnnounceTitle("");
+        setAnnounceBody("");
+        alert("Announcement Posted!");
+    } catch (err) {
+        alert("Error posting announcement: " + err.message);
+    }
   };
 
   const handleSendReply = async (e) => {
