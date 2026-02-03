@@ -148,6 +148,31 @@ export default function AdminDashboard() {
     if(confirm("Permanently delete this job?")) await deleteDoc(doc(db, "jobs", jobId));
   };
 
+  // --- NEW: DELETE ANNOUNCEMENT FUNCTION ---
+  const handleDeleteAnnouncement = async (annId) => {
+    if(confirm("Are you sure you want to delete this announcement?")) {
+        try {
+            await deleteDoc(doc(db, "announcements", annId));
+        } catch(err) {
+            alert("Error deleting: " + err.message);
+        }
+    }
+  };
+
+  // --- NEW: DELETE TICKET FUNCTION ---
+  const handleDeleteTicket = async (ticketId) => {
+    if(confirm("Delete this support ticket permanently? This cannot be undone.")) {
+        try {
+            await deleteDoc(doc(db, "support_tickets", ticketId));
+            if(selectedTicket && selectedTicket.id === ticketId) {
+                setSelectedTicket(null);
+            }
+        } catch(err) {
+            alert("Error deleting ticket: " + err.message);
+        }
+    }
+  };
+
   const handlePostAnnouncement = async (e) => {
     e.preventDefault();
     try {
@@ -207,8 +232,7 @@ export default function AdminDashboard() {
     cawayanResidents: "3,176"
   };
 
-  // --- FIXED CHART CALCULATIONS ---
-  // Ensure these are treated as numbers
+  // --- CHART CALCULATIONS ---
   const vApps = Number(stats.verifiedApplicants || 0);
   const vEmps = Number(stats.verifiedEmployers || 0);
   const maxChartVal = Math.max(vApps, vEmps, 1);
@@ -416,7 +440,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Analytics Bar Chart - FIXED */}
+                    {/* Analytics Bar Chart */}
                     <div className={`lg:col-span-2 p-6 lg:p-8 rounded-3xl ${glassPanel} flex flex-col justify-between`}>
                         <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                             <div className="flex items-center gap-3">
@@ -436,35 +460,18 @@ export default function AdminDashboard() {
 
                         {/* CSS Chart Container */}
                         <div className="flex h-40 lg:h-48 items-end gap-8 lg:gap-12 px-4 border-b border-gray-500/10 pb-2">
-                            
-                            {/* Applicant Bar (Blue) */}
                             <div className="flex-1 flex flex-col justify-end group h-full">
                                 <div className="flex flex-col justify-end h-full">
-                                    <div className={`text-center font-bold text-lg mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
-                                        {vApps}
-                                    </div>
-                                    <div 
-                                        style={{ height: `${applicantHeight}%`, minHeight: '4px' }} 
-                                        className={`w-full rounded-t-xl relative overflow-hidden transition-all duration-500 ${vApps > 0 ? 'bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)]' : 'bg-slate-200 dark:bg-slate-800 opacity-20'}`}
-                                    >
-                                    </div>
+                                    <div className={`text-center font-bold text-lg mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>{vApps}</div>
+                                    <div style={{ height: `${applicantHeight}%`, minHeight: '4px' }} className={`w-full rounded-t-xl relative overflow-hidden transition-all duration-500 ${vApps > 0 ? 'bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)]' : 'bg-slate-200 dark:bg-slate-800 opacity-20'}`}></div>
                                 </div>
                             </div>
-
-                            {/* Employer Bar (Purple) */}
                             <div className="flex-1 flex flex-col justify-end group h-full">
                                 <div className="flex flex-col justify-end h-full">
-                                    <div className={`text-center font-bold text-lg mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
-                                        {vEmps}
-                                    </div>
-                                    <div 
-                                        style={{ height: `${employerHeight}%`, minHeight: '4px' }} 
-                                        className={`w-full rounded-t-xl relative overflow-hidden transition-all duration-500 ${vEmps > 0 ? 'bg-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.4)]' : 'bg-slate-200 dark:bg-slate-800 opacity-20'}`}
-                                    >
-                                    </div>
+                                    <div className={`text-center font-bold text-lg mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>{vEmps}</div>
+                                    <div style={{ height: `${employerHeight}%`, minHeight: '4px' }} className={`w-full rounded-t-xl relative overflow-hidden transition-all duration-500 ${vEmps > 0 ? 'bg-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.4)]' : 'bg-slate-200 dark:bg-slate-800 opacity-20'}`}></div>
                                 </div>
                             </div>
-
                         </div>
                     </div>
 
@@ -475,7 +482,6 @@ export default function AdminDashboard() {
                         </div>
                         <div className="space-y-5">
                              {PUROK_LIST.map(purok => {
-                                // Count both Applicants AND Employers
                                 const count = [...applicants, ...employers].filter(u => u.verificationStatus === 'verified' && u.sitio === purok).length;
                                 const total = stats.verifiedApplicants + stats.verifiedEmployers || 1;
                                 const percent = (count / total) * 100;
@@ -517,7 +523,7 @@ export default function AdminDashboard() {
                                 <div 
                                     key={t.id} 
                                     onClick={() => setSelectedTicket(t)}
-                                    className={`p-4 rounded-xl cursor-pointer transition-all border ${selectedTicket?.id === t.id ? 'bg-blue-500/10 border-blue-500' : `border-transparent hover:bg-black/5 dark:hover:bg-white/5`}`}
+                                    className={`p-4 rounded-xl cursor-pointer transition-all border group relative ${selectedTicket?.id === t.id ? 'bg-blue-500/10 border-blue-500' : `border-transparent hover:bg-black/5 dark:hover:bg-white/5`}`}
                                 >
                                     <div className="flex justify-between items-start mb-1">
                                         <h4 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-slate-800'}`}>{t.user || "User"}</h4>
@@ -527,6 +533,18 @@ export default function AdminDashboard() {
                                     <p className="text-xs opacity-50 truncate">
                                         {t.messages && t.messages.length > 0 ? t.messages[t.messages.length - 1].text : 'No messages'}
                                     </p>
+                                    
+                                    {/* DELETE TICKET BUTTON (LIST ITEM) */}
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteTicket(t.id);
+                                        }}
+                                        className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                        title="Delete Ticket"
+                                    >
+                                        <TrashIcon className="w-3 h-3"/>
+                                    </button>
                                 </div>
                             ))}
                         </div>
@@ -547,7 +565,21 @@ export default function AdminDashboard() {
                                         <p className="text-xs opacity-50 font-bold uppercase">{selectedTicket.type}</p>
                                     </div>
                                 </div>
-                                <button onClick={()=>setSelectedTicket(null)} className="lg:hidden p-2"><XMarkIcon className="w-6 h-6"/></button>
+                                <div className="flex items-center gap-2">
+                                    {/* === DELETE TICKET BUTTON (HEADER) === */}
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteTicket(selectedTicket.id);
+                                        }}
+                                        className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                                        title="Delete Ticket"
+                                    >
+                                        <TrashIcon className="w-5 h-5"/>
+                                    </button>
+
+                                    <button onClick={()=>setSelectedTicket(null)} className="lg:hidden p-2"><XMarkIcon className="w-6 h-6"/></button>
+                                </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
@@ -628,7 +660,6 @@ export default function AdminDashboard() {
                     <h3 className={`font-bold text-xl px-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Recent Announcements</h3>
                     {announcements.length === 0 ? (
                         <div className={`p-12 rounded-3xl border-dashed border-2 flex flex-col items-center justify-center ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
-                            {/* Fixed Dark Mode Icon/Text */}
                             <MegaphoneIcon className={`w-12 h-12 mb-2 ${darkMode ? 'text-white opacity-20' : 'text-black opacity-20'}`}/>
                             <p className={`font-bold ${darkMode ? 'text-white opacity-40' : 'text-black opacity-40'}`}>No announcements yet.</p>
                         </div>
@@ -637,8 +668,22 @@ export default function AdminDashboard() {
                             <div key={ann.id} className={`p-6 rounded-2xl relative overflow-hidden group ${glassCard}`}>
                                 <div className="absolute top-0 left-0 w-1 h-full bg-pink-500"></div>
                                 <div className="flex justify-between items-start mb-2 pl-2">
-                                    <h4 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>{ann.title}</h4>
-                                    <span className="text-[10px] font-bold opacity-40 uppercase bg-black/5 dark:bg-white/5 px-2 py-1 rounded">{ann.date}</span>
+                                    <div className="flex-1 pr-4">
+                                        <h4 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>{ann.title}</h4>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-[10px] font-bold opacity-40 uppercase bg-black/5 dark:bg-white/5 px-2 py-1 rounded">{ann.date}</span>
+                                        
+                                        {/* === DELETE ANNOUNCEMENT BUTTON === */}
+                                        <button 
+                                            onClick={() => handleDeleteAnnouncement(ann.id)}
+                                            className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                                            title="Delete Announcement"
+                                        >
+                                            <TrashIcon className="w-5 h-5"/>
+                                        </button>
+                                    </div>
                                 </div>
                                 <p className="text-sm opacity-70 pl-2 leading-relaxed whitespace-pre-wrap">{ann.body}</p>
                             </div>
@@ -648,24 +693,12 @@ export default function AdminDashboard() {
              </div>
         )}
 
-        {/* TAB CONTENT: VERIFICATIONS (With Rejected Sub-Tab) */}
+        {/* TAB CONTENT: VERIFICATIONS */}
         {activeTab === "Verifications" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                
-                {/* SUB-TABS (Pending | Rejected) */}
                 <div className="flex gap-4 mb-6 border-b border-gray-500/10 pb-2">
-                    <button 
-                        onClick={()=>setVerificationSubTab("pending")}
-                        className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "pending" ? 'text-blue-500 border-b-2 border-blue-500' : 'opacity-40 hover:opacity-100'}`}
-                    >
-                        Pending Requests ({pendingVerifications.length})
-                    </button>
-                    <button 
-                        onClick={()=>setVerificationSubTab("rejected")}
-                        className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "rejected" ? 'text-red-500 border-b-2 border-red-500' : 'opacity-40 hover:opacity-100'}`}
-                    >
-                        Rejected History ({rejectedUsers.length})
-                    </button>
+                    <button onClick={()=>setVerificationSubTab("pending")} className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "pending" ? 'text-blue-500 border-b-2 border-blue-500' : 'opacity-40 hover:opacity-100'}`}>Pending Requests ({pendingVerifications.length})</button>
+                    <button onClick={()=>setVerificationSubTab("rejected")} className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "rejected" ? 'text-red-500 border-b-2 border-red-500' : 'opacity-40 hover:opacity-100'}`}>Rejected History ({rejectedUsers.length})</button>
                 </div>
 
                 {verificationSubTab === "pending" ? (
@@ -688,11 +721,7 @@ export default function AdminDashboard() {
                                             <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${user.type === 'employer' ? 'bg-purple-500/20 text-purple-500' : 'bg-blue-500/20 text-blue-500'}`}>{user.type}</span>
                                         </div>
                                         <p className="text-xs font-bold opacity-50 mt-1 flex items-center gap-1"><MapPinIcon className="w-3 h-3"/> {user.sitio || "No address"}</p>
-                                        
-                                        <button 
-                                            onClick={() => setSelectedProof(user.residencyProofUrl || user.businessPermitUrl)}
-                                            className={`mt-4 w-full py-2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold border transition-all ${darkMode ? 'border-white/10 hover:bg-white/5' : 'border-black/5 hover:bg-black/5'}`}
-                                        >
+                                        <button onClick={() => setSelectedProof(user.residencyProofUrl || user.businessPermitUrl)} className={`mt-4 w-full py-2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold border transition-all ${darkMode ? 'border-white/10 hover:bg-white/5' : 'border-black/5 hover:bg-black/5'}`}>
                                             <EyeIcon className="w-4 h-4"/> View ID / Proof
                                         </button>
                                     </div>
@@ -705,7 +734,6 @@ export default function AdminDashboard() {
                         ))}
                     </div>
                 ) : (
-                    // REJECTED VIEW
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
                         {rejectedUsers.length === 0 && (
                              <div className={`col-span-full py-20 flex flex-col items-center justify-center rounded-3xl ${glassPanel} border-dashed`}>
@@ -719,10 +747,7 @@ export default function AdminDashboard() {
                                      <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>{user.firstName} {user.lastName} <span className="text-xs font-normal opacity-50">({user.type})</span></h3>
                                      <span className="text-[10px] font-bold uppercase bg-red-500 text-white px-2 py-1 rounded">Rejected</span>
                                  </div>
-                                 <button 
-                                    onClick={() => handleVerifyUser(user, 'pending')}
-                                    className="w-full py-2 rounded-xl border border-blue-500/30 text-blue-500 hover:bg-blue-500 hover:text-white transition-all font-bold text-xs uppercase flex items-center justify-center gap-2"
-                                 >
+                                 <button onClick={() => handleVerifyUser(user, 'pending')} className="w-full py-2 rounded-xl border border-blue-500/30 text-blue-500 hover:bg-blue-500 hover:text-white transition-all font-bold text-xs uppercase flex items-center justify-center gap-2">
                                     <ArrowPathIcon className="w-4 h-4"/> Restore to Pending
                                  </button>
                             </div>
@@ -738,20 +763,12 @@ export default function AdminDashboard() {
                 <div className={`p-2 rounded-2xl flex flex-col md:flex-row items-center justify-between ${glassPanel} gap-4 md:gap-0`}>
                     <div className="flex items-center gap-3 px-4 flex-1 w-full md:w-auto">
                         <MagnifyingGlassIcon className="w-5 h-5 opacity-50"/>
-                        <input 
-                            type="text" 
-                            placeholder={`Search in ${activeTab}...`} 
-                            className={glassInput}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                        <input type="text" placeholder={`Search in ${activeTab}...`} className={glassInput} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
                     {activeTab !== "Jobs" && (
                         <div className={`flex items-center gap-2 px-4 w-full md:w-auto border-t md:border-t-0 md:border-l pt-2 md:pt-0 ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
                             <FunnelIcon className="w-4 h-4 opacity-50"/>
-                            <select 
-                                className={`bg-transparent border-none outline-none text-xs font-bold cursor-pointer uppercase tracking-wide w-full md:w-auto ${darkMode ? 'text-white' : 'text-slate-800'}`}
-                                onChange={(e) => setSitioFilter(e.target.value)}
-                            >
+                            <select className={`bg-transparent border-none outline-none text-xs font-bold cursor-pointer uppercase tracking-wide w-full md:w-auto ${darkMode ? 'text-white' : 'text-slate-800'}`} onChange={(e) => setSitioFilter(e.target.value)}>
                                 <option value="">All Sitios</option>
                                 {PUROK_LIST.map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
@@ -766,18 +783,11 @@ export default function AdminDashboard() {
                             return item.verificationStatus === 'verified' && (!sitioFilter || item.sitio === sitioFilter);
                         })
                         .map(item => (
-                            <div 
-                                key={item.id} 
-                                // Click Handler for Details
-                                onClick={() => { if(activeTab !== "Jobs") setSelectedUserDetail(item) }}
-                                className={`p-6 ${glassCard} ${activeTab !== "Jobs" ? 'cursor-pointer' : ''}`}
-                            >
+                            <div key={item.id} onClick={() => { if(activeTab !== "Jobs") setSelectedUserDetail(item) }} className={`p-6 ${glassCard} ${activeTab !== "Jobs" ? 'cursor-pointer' : ''}`}>
                                 {activeTab === "Jobs" ? (
                                     <>
                                         <div className="flex justify-between items-start mb-4">
-                                            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
-                                                <BriefcaseIcon className="w-6 h-6"/>
-                                            </div>
+                                            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500"><BriefcaseIcon className="w-6 h-6"/></div>
                                             <button onClick={() => handleDeleteJob(item.id)} className="text-slate-400 hover:text-red-500 transition-colors"><TrashIcon className="w-5 h-5"/></button>
                                         </div>
                                         <h4 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>{item.title}</h4>
@@ -794,14 +804,9 @@ export default function AdminDashboard() {
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <h4 className={`font-bold text-sm truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>{item.firstName} {item.lastName}</h4>
-                                            <div className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold border truncate ${PUROK_STYLES[item.sitio] || 'bg-slate-100 text-slate-500'}`}>
-                                                {item.sitio}
-                                            </div>
+                                            <div className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold border truncate ${PUROK_STYLES[item.sitio] || 'bg-slate-100 text-slate-500'}`}>{item.sitio}</div>
                                         </div>
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); handleVerifyUser(item, 'rejected'); }} 
-                                            className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all"
-                                        >
+                                        <button onClick={(e) => { e.stopPropagation(); handleVerifyUser(item, 'rejected'); }} className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all">
                                             <XMarkIcon className="w-5 h-5"/>
                                         </button>
                                     </div>
@@ -828,29 +833,20 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* --- USER DETAIL CARD MODAL (UPDATED) --- */}
+      {/* --- USER DETAIL CARD MODAL --- */}
       {selectedUserDetail && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedUserDetail(null)}>
              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
-             
-             <div 
-                onClick={(e) => e.stopPropagation()}
-                className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
-             >
+             <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}>
                 <div className="w-24 h-24 rounded-3xl bg-slate-200 overflow-hidden shadow-lg mb-6">
-                    {selectedUserDetail.profilePic 
-                        ? <img src={selectedUserDetail.profilePic} className="w-full h-full object-cover"/> 
-                        : <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20">?</div>}
+                    {selectedUserDetail.profilePic ? <img src={selectedUserDetail.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20">?</div>}
                 </div>
-                
                 <h2 className="text-2xl font-black mb-1">{selectedUserDetail.firstName} {selectedUserDetail.lastName}</h2>
                 <div className="flex gap-2 mb-6">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-blue-500/10 text-blue-500`}>{selectedUserDetail.type}</span>
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10' : 'border-black/10'}`}>{selectedUserDetail.sitio}</span>
                 </div>
-
                 <div className="w-full space-y-4">
-                    {/* Updated to fetch CONTACT info */}
                     <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
                         <IdentificationIcon className="w-5 h-5 opacity-50"/>
                         <span className="text-sm font-bold opacity-80">{selectedUserDetail.contact || "No contact info provided"}</span>
@@ -862,10 +858,7 @@ export default function AdminDashboard() {
                         </div>
                     )}
                 </div>
-
-                <button onClick={() => setSelectedUserDetail(null)} className="mt-8 px-8 py-3 rounded-xl font-bold text-xs uppercase tracking-widest border border-current opacity-50 hover:opacity-100 transition-opacity">
-                    Close Details
-                </button>
+                <button onClick={() => setSelectedUserDetail(null)} className="mt-8 px-8 py-3 rounded-xl font-bold text-xs uppercase tracking-widest border border-current opacity-50 hover:opacity-100 transition-opacity">Close Details</button>
              </div>
         </div>
       )}
