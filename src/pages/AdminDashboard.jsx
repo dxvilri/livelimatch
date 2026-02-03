@@ -73,9 +73,9 @@ export default function AdminDashboard() {
 
   // --- DATA FETCHING ---
   useEffect(() => {
-    // 1. Users
-    const unsubApplicants = onSnapshot(collection(db, "users"), (snap) => 
-      setApplicants(snap.docs.map(d => ({ id: d.id, type: 'applicant', ...d.data() }))));
+    // 1. Applicants
+    const unsubApplicants = onSnapshot(collection(db, "applicants"), (snap) => 
+    setApplicants(snap.docs.map(d => ({ id: d.id, type: 'applicant', ...d.data() }))));
     
     // 2. Employers
     const unsubEmployers = onSnapshot(collection(db, "employers"), (snap) => 
@@ -125,7 +125,7 @@ export default function AdminDashboard() {
 
   // --- ACTIONS ---
   const handleVerifyUser = async (user, actionType) => {
-    const collectionName = user.type === 'employer' ? 'employers' : 'users';
+    const collectionName = user.type === 'employer' ? 'employers' : 'applicants';
     const isApprove = actionType === 'verified';
     
     let confirmMsg = "";
