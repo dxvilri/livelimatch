@@ -136,6 +136,8 @@ export default function EmployerDashboard() {
     
   // --- EMPLOYER SPECIFIC STATES ---
   const [announcements, setAnnouncements] = useState([]);
+  const [lastReadAnnouncementId, setLastReadAnnouncementId] = useState(localStorage.getItem("lastReadAnnounce")); // Track read announcement
+
   const [myPostedJobs, setMyPostedJobs] = useState([]); 
   const [receivedApplications, setReceivedApplications] = useState([]); 
   const [searchTerm, setSearchTerm] = useState("");
@@ -771,6 +773,14 @@ export default function EmployerDashboard() {
     setLoading(true);
     try { await deleteDoc(doc(db, "applications", appId)); if (selectedApplication?.id === appId) setSelectedApplication(null); } catch (err) { alert("Error deleting: " + err.message); } finally { setLoading(false); }
   };
+  
+  // Mark announcement as read
+  const handleViewAnnouncement = (annId) => {
+     setActiveTab("Announcements");
+     setIsNotifOpen(false);
+     setLastReadAnnouncementId(annId);
+     localStorage.setItem("lastReadAnnounce", annId);
+  };
 
   const displayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
 
@@ -803,7 +813,12 @@ export default function EmployerDashboard() {
   }, 0);
    
   const newAppCount = receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length;
-  const totalNotifications = unreadMsgCount + newAppCount;
+  
+  // Announcement Notification Logic
+  const latestAnnouncement = announcements.length > 0 ? announcements[0] : null;
+  const hasNewAnnouncement = latestAnnouncement && latestAnnouncement.id !== lastReadAnnouncementId;
+  
+  const totalNotifications = unreadMsgCount + newAppCount + (hasNewAnnouncement ? 1 : 0);
 
   const ProfilePicComponent = ({ sizeClasses = "w-12 h-12", isCollapsed = false }) => (
     <div className={`relative group shrink-0 ${sizeClasses} rounded-2xl overflow-hidden shadow-lg border select-none ${darkMode ? 'border-white/10 bg-slate-800' : 'border-slate-200 bg-slate-100'}`}>
@@ -979,7 +994,7 @@ return (
                 </button>
                 <button onClick={() => isVerified && setActiveTab("Messages")} className={`relative ${activeTab === "Messages" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                      {isVerified ? <ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
-                    {isVerified && hasGlobalUnread && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full animate-pulse z-20"></span>}
+                    {isVerified && hasGlobalUnread && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-2 border-white dark:border-slate-900 z-20">{unreadMsgCount}</span>}
                 </button>
             </div>
 
@@ -992,9 +1007,18 @@ return (
                         )}
                     </button>
                     {isNotifOpen && isVerified && (
-                        <div className={`absolute right-0 top-12 w-64 rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'}`}>
+                        <div className={`fixed top-20 left-1/2 -translate-x-1/2 w-[90%] md:absolute md:translate-x-0 md:top-12 md:right-0 md:w-80 md:left-auto rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 z-[100] ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'}`}>
                              <div className="p-3 border-b border-white/5 font-black text-xs uppercase tracking-widest opacity-50">Notifications</div>
                              <div className="p-2 space-y-1">
+                                 {latestAnnouncement && (
+                                     <button onClick={() => handleViewAnnouncement(latestAnnouncement.id)} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${hasNewAnnouncement ? 'text-pink-500 bg-pink-500/10' : 'opacity-50'}`}>
+                                          <div className="flex flex-col overflow-hidden mr-2">
+                                              <span className="text-[10px] uppercase tracking-wider opacity-70">Announcement</span>
+                                              <span className="truncate">{latestAnnouncement.title}</span>
+                                          </div>
+                                          {hasNewAnnouncement && <span className="bg-pink-500 w-2 h-2 rounded-full shrink-0"></span>}
+                                     </button>
+                                 )}
                                  <button onClick={() => { setActiveTab("Messages"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${unreadMsgCount > 0 ? 'text-blue-500 bg-blue-500/10' : 'opacity-50'}`}>
                                                  <span>Unread Messages</span>
                                                  <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
@@ -1442,7 +1466,7 @@ return (
                         return (
                             <div key={user.id} onClick={() => setSelectedTalent(user)} onMouseEnter={() => handleTalentMouseEnter(user)} onMouseLeave={handleTalentMouseLeave} className={`group relative p-4 md:p-5 ${glassCard} flex flex-col items-center text-center cursor-pointer`}>
                                 <div className="absolute top-3 right-3 md:top-4 md:right-4 z-10"><span className={`flex h-2.5 w-2.5 rounded-full ${user.isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'} shadow-sm`}></span></div>
-                                <div className="w-14 h-14 md:w-16 md:h-16 mb-3 md:mb-4 rounded-[1rem] md:rounded-[1.5rem] overflow-hidden shadow-lg border-2 border-slate-100 dark:border-slate-800">
+                                <div className="w-14 h-14 md:w-16 md:h-16 mb-3 md:mb-4 rounded-[1rem] md:rounded-[1.5rem] overflow-hidden">
                                     {pic ? <img src={pic} alt={user.firstName} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-lg font-black">{user.firstName ? user.firstName.charAt(0) : "U"}</div>}
                                 </div>
                                 <h3 className={`text-xs md:text-sm font-black mb-0.5 truncate w-full ${darkMode ? 'text-white' : 'text-slate-900'}`}>{user.firstName} {user.lastName}</h3>
@@ -1928,7 +1952,7 @@ return (
              {!isBubbleExpanded && (
                 <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                    <div className="relative">
-                       <button onClick={(e) => { if (!isDragging) setIsBubbleExpanded(true); }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 border-2 overflow-hidden ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-blue-500'}`}>
+                       <button onClick={(e) => { if (!isDragging) setIsBubbleExpanded(true); }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
                           {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (
                              (getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>
                            ) : ( <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} /> )}
@@ -2047,7 +2071,7 @@ return (
             <div className="pointer-events-auto">
                 <button 
                     onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }}
-                    className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 border-2 ${darkMode ? 'bg-blue-600 border-slate-800' : 'bg-blue-600 border-white'}`}
+                    className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden ${darkMode ? 'bg-blue-600' : 'bg-blue-600'}`}
                 >
                     <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
                     {hasGlobalUnread && (<span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">!</span>)}
@@ -2059,7 +2083,7 @@ return (
                     <div className="relative">
                         <button 
                             onClick={() => { openChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); }}
-                            className="w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl overflow-hidden border-2 border-white dark:border-slate-800 transition-all hover:scale-110 active:scale-95"
+                            className="w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl overflow-hidden transition-all hover:scale-110 active:scale-95"
                         >
                             {(getAvatarUrl(chat) || chat.profilePic) ? (<img src={getAvatarUrl(chat) || chat.profilePic} alt="" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
                         </button>
