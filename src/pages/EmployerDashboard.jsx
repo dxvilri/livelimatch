@@ -26,7 +26,7 @@ import {
   BuildingOfficeIcon, ChevronDownIcon,
   ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon,
   BellIcon, QuestionMarkCircleIcon, IdentificationIcon, LockClosedIcon,
-  MegaphoneIcon, CpuChipIcon, TagIcon
+  MegaphoneIcon, CpuChipIcon, TagIcon, StarIcon as StarIconSolid
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
@@ -58,35 +58,12 @@ const getAvatarUrl = (user) => {
 };
 
 // --- BOT KNOWLEDGE BASE ---
-const BOT_RESPONSES = [
-    { 
-      keywords: ["hello", "hi", "hey", "kamusta", "gandang", "morning", "afternoon", "evening"], 
-      response: "Hello! I am the LiveliMatch automated assistant. How can I help you today? (Kamusta! Ako ang assistant ng LiveliMatch. Paano ako makakatulong?)" 
-    },
-    { 
-      keywords: ["verify", "verification", "verified", "badge", "check", "veripikasyon", "blue mark", "permit", "id"], 
-      response: "To verify your account, please upload a valid Business Permit, Certificate of Residency, Proof of Billing with Address or Government ID in your Profile settings. Admins review this daily. (Para ma-verify, mag-upload ng valid ID, Certificate of Residency, Proof of Billing with Address o Business Permit sa Profile settings.)" 
-    },
-    { 
-      keywords: ["job", "post", "listing", "create", "gawa", "trabaho", "hire"], 
-      response: "You can post a new job by going to the 'Listings' tab and clicking 'Post New Job'. (Pumunta sa 'Listings' tab at i-click ang 'Post New Job' para makagawa ng hiring listing.)" 
-    },
-    { 
-      keywords: ["delete", "remove", "trash", "bura", "tanggalin", "cancel"], 
-      response: "To delete a job or application, click the Trash icon next to the item. This cannot be undone. (I-click ang Trash icon para burahin ang job o application. Hindi na ito maibabalik kapag nabura na.)" 
-    },
-    { 
-      keywords: ["applicant", "candidate", "tao", "aplikante", "hire"], 
-      response: "Check the 'Applicants' tab to see who applied to your jobs. You can Accept or Reject them there. (Tingnan ang 'Applicants' tab para makita ang mga nag-apply. Pwede mo silang i-Accept o Reject doon.)" 
-    },
-    { 
-      keywords: ["message", "chat", "usap", "contact"], 
-      response: "You can chat with applicants once you accept their application or by clicking 'Message' on their profile in the Discover tab. (Pwede mo i-chat ang applicant kapag na-accept mo na sila, o sa pamamagitan ng 'Message' button sa Discover tab.)" 
-    },
-    { 
-      keywords: ["thank", "salamat", "ty"], 
-      response: "You're welcome! Let me know if you need anything else. (Walang anuman! Sabihin mo lang kung may kailangan ka pa.)" 
-    }
+const BOT_FAQ = [
+    { id: 1, question: "How do I verify my account?", answer: "To verify your account, please upload a valid Business Permit, Certificate of Residency, Proof of Billing with Address or Government ID in your Profile settings. Admins review this daily." },
+    { id: 2, question: "How to post a job?", answer: "You can post a new job by going to the 'Listings' tab and clicking 'Post New Job' button." },
+    { id: 3, question: "How to delete a job?", answer: "To delete a job, click the Trash icon next to the item in your Listings tab. This action cannot be undone." },
+    { id: 4, question: "Where can I see applicants?", answer: "Go to the 'Applicants' tab to see who applied. You can view their profile, then Accept or Reject them." },
+    { id: 5, question: "How to chat with applicants?", answer: "You can chat with applicants once you accept their application, or by clicking the 'Message' button on their profile in the Discover tab." },
 ];
 
 // Helper to split text by newline for the resume view
@@ -165,6 +142,18 @@ export default function EmployerDashboard() {
   const [myPostedJobs, setMyPostedJobs] = useState([]); 
   const [receivedApplications, setReceivedApplications] = useState([]); 
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentAnnounceIndex, setCurrentAnnounceIndex] = useState(0);
+
+  useEffect(() => {
+    if (announcements.length > 1) {
+        const interval = setInterval(() => {
+            setCurrentAnnounceIndex(prev => (prev + 1) % announcements.length);
+        }, 5000); // Switch every 5 seconds
+        return () => clearInterval(interval);
+    }
+  }, [announcements.length]);
+
+  const displayAnnouncement = announcements[currentAnnounceIndex];
      
   // -- DISCOVER TALENT STATES --
   const [discoverTalents, setDiscoverTalents] = useState([]);
@@ -207,6 +196,8 @@ export default function EmployerDashboard() {
       verificationStatus: "pending" 
   });
   const [analyticsData, setAnalyticsData] = useState({ totalEmployers: 0, sitioStats: [] });
+  const [reviews, setReviews] = useState([]); // <--- ADD THIS
+  const [averageRating, setAverageRating] = useState(0); // <--- ADD THIS
 
   const isVerified = employerData.verificationStatus === 'verified';
 
@@ -347,8 +338,9 @@ export default function EmployerDashboard() {
     }
   }, [activeTab]);
 
-   useEffect(() => {
-     if(activeTab === "Discover" || activeTab === "Analytics") {
+  useEffect(() => {
+     if(activeTab === "Discover") {
+        // ... (Keep existing Discover logic for talents) ...
         const fetchTalents = async () => {
             try {
                 const q = query(collection(db, "applicants"));
@@ -356,28 +348,31 @@ export default function EmployerDashboard() {
                 const talents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 const validTalents = talents.filter(t => t.firstName || t.lastName);
                 setDiscoverTalents(validTalents);
-                  
-                const empSnapshot = await getCountFromServer(collection(db, "employers"));
-                setAnalyticsData(prev => ({...prev, totalEmployers: empSnapshot.data().count}));
-
-                const jobsSnapshot = await getDocs(collection(db, "jobs"));
-                const allJobs = jobsSnapshot.docs.map(d => d.data());
-                  
-                const stats = {};
-                allJobs.forEach(job => {
-                    if(job.sitio) {
-                        stats[job.sitio] = (stats[job.sitio] || 0) + 1;
-                    }
-                });
-                const sortedStats = Object.entries(stats)
-                    .map(([name, count]) => ({ name, count }))
-                    .sort((a,b) => b.count - a.count);
-                  
-                setAnalyticsData(prev => ({...prev, sitioStats: sortedStats}));
-
-            } catch (err) { console.error("Error fetching data", err); }
+            } catch (err) { console.error("Error fetching talents", err); }
         };
         fetchTalents();
+     }
+
+     // --- NEW RATINGS FETCHER ---
+     if(activeTab === "Ratings") {
+         const fetchReviews = () => {
+             const q = query(collection(db, "reviews"), where("employerId", "==", auth.currentUser.uid), orderBy("createdAt", "desc"));
+             const unsub = onSnapshot(q, (snap) => {
+                 const revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                 setReviews(revs);
+                 
+                 // Compute Average
+                 if(revs.length > 0) {
+                     const total = revs.reduce((acc, curr) => acc + (Number(curr.rating) || 0), 0);
+                     setAverageRating((total / revs.length).toFixed(1));
+                 } else {
+                     setAverageRating(0);
+                 }
+             });
+             return unsub;
+         };
+         const unsubReviews = fetchReviews();
+         return () => unsubReviews && unsubReviews();
      }
    }, [activeTab]);
 
@@ -555,35 +550,39 @@ export default function EmployerDashboard() {
       if (e.target.files[0]) setSupportAttachment(e.target.files[0]);
   };
 
-  const simulateBotResponse = async (userText, ticketId) => {
-      setIsBotTyping(true);
-      const lowerText = userText.toLowerCase();
-      let botResponseText = "Thank you for your message. An admin will review it shortly.";
+  const handleSendFAQ = async (faq) => {
+      const userMsg = { sender: 'user', text: faq.question, timestamp: new Date() };
+      const botMsg = { sender: 'admin', text: `🤖 ${faq.answer}`, timestamp: new Date() };
       
-      const foundMatch = BOT_RESPONSES.find(item => item.keywords.some(k => lowerText.includes(k)));
-      if(foundMatch) {
-          botResponseText = foundMatch.response;
-      }
-
-      setTimeout(async () => {
-          try {
-              const ticketRef = doc(db, "support_tickets", ticketId);
-              const botMessage = {
-                  sender: 'admin', 
-                  text: `🤖 [Auto-Reply]: ${botResponseText}`,
-                  timestamp: new Date()
-              };
-              
-              await updateDoc(ticketRef, {
-                  messages: arrayUnion(botMessage),
-                  lastUpdated: serverTimestamp()
+      try {
+          if (activeSupportTicket) {
+               if(activeSupportTicket.status === 'closed') {
+                   alert("This ticket is closed. Please start a new one."); 
+                   return;
+               }
+               await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), {
+                  messages: arrayUnion(userMsg, botMsg),
+                  lastUpdated: serverTimestamp(),
+                  status: 'open'
               });
-          } catch(err) {
-              console.error("Bot failed to reply", err);
-          } finally {
-              setIsBotTyping(false);
+          } else {
+              const ticketIdString = Math.floor(1000 + Math.random() * 9000).toString();
+              const newTicketRef = await addDoc(collection(db, "support_tickets"), {
+                  ticketId: ticketIdString,
+                  user: `${employerData.firstName} ${employerData.lastName}`,
+                  userId: auth.currentUser.uid,
+                  type: 'Employer',
+                  status: 'open',
+                  lastUpdated: serverTimestamp(),
+                  messages: [userMsg, botMsg]
+              });
+              setLastTicketCreatedAt(Date.now());
+              const newTicketSnap = await getDoc(newTicketRef);
+              setActiveSupportTicket({ id: newTicketRef.id, ...newTicketSnap.data() });
           }
-      }, 1500);
+      } catch (err) {
+          console.error("Error sending FAQ:", err);
+      }
   };
 
   const handleSendSupportMessage = async (e) => {
@@ -599,7 +598,6 @@ export default function EmployerDashboard() {
       }
 
       setIsSupportUploading(true);
-      const currentMessageText = ticketMessage; 
       try {
           let imageUrl = null;
           if (supportAttachment) {
@@ -622,7 +620,7 @@ export default function EmployerDashboard() {
                   lastUpdated: serverTimestamp(),
                   status: 'open' 
               });
-              simulateBotResponse(currentMessageText, activeSupportTicket.id);
+              // Removed simulateBotResponse(ticketMessage) - Manual messages now just go to admin
           } else {
               const ticketIdString = Math.floor(1000 + Math.random() * 9000).toString();
               const newTicketRef = await addDoc(collection(db, "support_tickets"), {
@@ -638,7 +636,6 @@ export default function EmployerDashboard() {
               setLastTicketCreatedAt(now);
               const newTicketSnap = await getDoc(newTicketRef);
               setActiveSupportTicket({ id: newTicketRef.id, ...newTicketSnap.data() });
-              simulateBotResponse(currentMessageText, newTicketRef.id);
           }
 
           setTicketMessage("");
@@ -651,7 +648,7 @@ export default function EmployerDashboard() {
           setIsSupportUploading(false);
       }
   };
-
+  
   const handleCloseSupportTicket = async (ticketId) => {
       if(!confirm("Close this support request? You can still view it in your history, but you will be able to start a new request.")) return;
       try {
@@ -1141,9 +1138,9 @@ return (
 
         <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
             {isVerified ? (
-                <NavBtn active={activeTab==="Analytics"} onClick={()=>{setActiveTab("Analytics"); setIsSidebarOpen(false)}} icon={<PresentationChartLineIcon className="w-6 h-6"/>} label="Analytics" open={true} dark={darkMode} />
+                <NavBtn active={activeTab==="Ratings"} onClick={()=>{setActiveTab("Ratings"); setIsSidebarOpen(false)}} icon={<StarIconSolid className="w-6 h-6"/>} label="Ratings" open={true} dark={darkMode} />
             ) : (
-                <NavBtn active={false} onClick={()=>{}} icon={<LockClosedIcon className="w-6 h-6 text-slate-500"/>} label="Analytics Locked" open={true} dark={darkMode} />
+                <NavBtn active={false} onClick={()=>{}} icon={<LockClosedIcon className="w-6 h-6 text-slate-500"/>} label="Ratings Locked" open={true} dark={darkMode} />
             )}
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
             <NavBtn active={activeTab==="Announcements"} onClick={()=>{setActiveTab("Announcements"); setIsSidebarOpen(false)}} icon={<MegaphoneIcon className="w-6 h-6"/>} label="Announcements" open={true} dark={darkMode} />
@@ -1183,7 +1180,7 @@ return (
                     {activeTab === "Applicants" && <UsersIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Messages" && <ChatBubbleLeftRightIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6 text-blue-500"/>}
-                    {activeTab === "Analytics" && <PresentationChartLineIcon className="w-6 h-6 text-blue-500"/>}
+                    {activeTab === "Ratings" && <StarIconSolid className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6 text-blue-500"/>}
                 </div>
@@ -1217,9 +1214,10 @@ return (
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className={`col-span-1 lg:col-span-2 p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
+                    {/* PROFESSIONAL SUMMARY */}
+                    <div className={`col-span-1 lg:col-span-2 p-8 rounded-[2.5rem] relative overflow-hidden flex flex-col ${glassPanel}`}>
                          <div className="absolute top-0 left-0 w-2 h-full bg-blue-500/20"></div>
-                        <div className="flex items-center gap-3 mb-6">
+                        <div className="flex items-center gap-3 mb-6 shrink-0">
                             <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500"><UserIcon className="w-5 h-5" /></div>
                             <h3 className={`font-black uppercase tracking-[0.2em] text-sm ${darkMode ? 'text-white' : 'text-slate-800'}`}>Professional Summary</h3>
                         </div>
@@ -1237,59 +1235,126 @@ return (
                         )}
                     </div>
 
-                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
+                    {/* EXPERIENCE SECTION */}
+                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden flex flex-col h-[28rem] ${glassPanel}`}>
                         <div className="absolute top-0 left-0 w-2 h-full bg-amber-500/20"></div>
-                        <div className="flex items-center gap-3 mb-6">
+                        <div className="flex items-center gap-3 mb-6 shrink-0">
                             <div className="p-2 bg-amber-500/10 rounded-xl text-amber-500"><BriefcaseIcon className="w-5 h-5" /></div>
                             <h3 className={`font-black uppercase tracking-[0.2em] text-sm ${darkMode ? 'text-white' : 'text-slate-800'}`}>Experience</h3>
                         </div>
-                        {isEditingProfile ? (
-                            <textarea 
-                                value={employerData.workExperience} 
-                                onChange={(e) => setEmployerData({...employerData, workExperience: e.target.value})} 
-                                placeholder="Enter each experience on a new line..." 
-                                className={`w-full h-64 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text focus:ring-2 ring-amber-500/50 ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} 
-                            />
-                        ) : (
-                            <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 space-y-8 pb-2">
-                                {employerData.workExperience ? splitByNewLine(employerData.workExperience).map((line, i) => (
-                                    <div key={i} className="relative pl-6">
-                                        <span className="absolute -left-[5px] top-2 w-2.5 h-2.5 rounded-full bg-amber-500 ring-4 ring-white dark:ring-slate-900/50"></span>
-                                        <p className={`text-sm font-bold leading-relaxed ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{line}</p>
-                                    </div>
-                                )) : <div className="pl-6 text-sm opacity-50 italic">No experience listed.</div>}
-                            </div>
-                        )}
+                        
+                        {/* Scrollable Container */}
+                        <div className="overflow-y-auto no-scrollbar flex-1 pr-2">
+                            {isEditingProfile ? (
+                                <div className="space-y-3">
+                                    {(() => {
+                                        const expLines = employerData.workExperience ? employerData.workExperience.split('\n') : [''];
+                                        return expLines.map((line, i) => (
+                                            <div key={i} className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 w-full">
+                                                <span className={`text-[10px] font-black uppercase tracking-widest shrink-0 w-16 text-right ${darkMode ? 'text-amber-500' : 'text-amber-600'}`}>Work at</span>
+                                                <input
+                                                    type="text"
+                                                    value={line}
+                                                    placeholder="Company Name / Role..."
+                                                    autoFocus={i === expLines.length - 1 && expLines.length > 1}
+                                                    className={`w-full min-w-0 p-3 rounded-xl text-sm bg-transparent border outline-none focus:border-amber-500 transition-colors ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`}
+                                                    onChange={(e) => {
+                                                        const newLines = [...expLines];
+                                                        newLines[i] = e.target.value;
+                                                        setEmployerData({...employerData, workExperience: newLines.join('\n')});
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            const newLines = [...expLines];
+                                                            newLines.splice(i + 1, 0, ""); 
+                                                            setEmployerData({...employerData, workExperience: newLines.join('\n')});
+                                                        }
+                                                        if (e.key === 'Backspace' && line === '' && expLines.length > 1) {
+                                                            e.preventDefault();
+                                                            const newLines = [...expLines];
+                                                            newLines.splice(i, 1);
+                                                            setEmployerData({...employerData, workExperience: newLines.join('\n')});
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                        ));
+                                    })()}
+                                    <p className="text-[9px] text-center opacity-40 uppercase font-bold pt-2">Press Enter to add new experience</p>
+                                </div>
+                            ) : (
+                                <div className="relative border-l border-slate-200/60 dark:border-slate-700/60 ml-3 space-y-6 pb-2">
+                                    {employerData.workExperience ? splitByNewLine(employerData.workExperience).map((line, i) => (
+                                        <div key={i} className="relative pl-6">
+                                            {/* Removed ring-4 class here */}
+                                            <span className="absolute -left-[4.5px] top-2 w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                                            <div className="flex flex-col">
+                                                <span className={`text-[9px] font-black uppercase tracking-widest mb-0.5 opacity-60 ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}>Work at</span>
+                                                <p className={`text-sm font-bold leading-relaxed break-words whitespace-pre-wrap ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{line}</p>
+                                            </div>
+                                        </div>
+                                    )) : <div className="pl-6 text-sm opacity-50 italic">No experience listed.</div>}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
+                    {/* EDUCATION SECTION */}
+                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden flex flex-col h-[28rem] ${glassPanel}`}>
                         <div className="absolute top-0 left-0 w-2 h-full bg-purple-500/20"></div>
-                        <div className="flex items-center gap-3 mb-6">
+                        <div className="flex items-center gap-3 mb-6 shrink-0">
                             <div className="p-2 bg-purple-500/10 rounded-xl text-purple-500"><AcademicCapIcon className="w-5 h-5" /></div>
                             <h3 className={`font-black uppercase tracking-[0.2em] text-sm ${darkMode ? 'text-white' : 'text-slate-800'}`}>Education</h3>
                         </div>
-                        {isEditingProfile ? (
-                            <textarea 
-                                value={employerData.education} 
-                                onChange={(e) => setEmployerData({...employerData, education: e.target.value})} 
-                                placeholder="Enter each education level on a new line (Primary, Secondary, Tertiary...)" 
-                                className={`w-full h-64 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text focus:ring-2 ring-purple-500/50 ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} 
-                            />
-                        ) : (
-                            <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 space-y-8 pb-2">
-                                {employerData.education ? splitByNewLine(employerData.education).map((line, i) => (
-                                    <div key={i} className="relative pl-6">
-                                        <span className="absolute -left-[5px] top-2 w-2.5 h-2.5 rounded-full bg-purple-500 ring-4 ring-white dark:ring-slate-900/50"></span>
-                                        <div className="flex flex-col">
-                                            <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
-                                                {EDUCATION_LABELS[i] || "Additional Education"}
-                                            </span>
-                                            <p className={`text-sm font-bold leading-relaxed ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{line}</p>
-                                        </div>
-                                    </div>
-                                )) : <div className="pl-6 text-sm opacity-50 italic">No education listed.</div>}
-                            </div>
-                        )}
+                        
+                        {/* Scrollable Container */}
+                        <div className="overflow-y-auto no-scrollbar flex-1 pr-2">
+                            {isEditingProfile ? (
+                                <div className="space-y-4">
+                                    {(() => {
+                                        const labels = ["Primary School", "Secondary School", "College Graduated at"];
+                                        const eduLines = employerData.education ? employerData.education.split('\n') : ['', '', ''];
+                                        
+                                        return labels.map((label, i) => (
+                                            <div key={i} className="space-y-1 w-full">
+                                                <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{label}</label>
+                                                <input
+                                                    type="text"
+                                                    value={eduLines[i] || ''}
+                                                    placeholder={`Enter ${label}...`}
+                                                    className={`w-full min-w-0 p-3 rounded-xl text-sm bg-transparent border outline-none focus:border-purple-500 transition-colors ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`}
+                                                    onChange={(e) => {
+                                                        const newLines = [...eduLines];
+                                                        while (newLines.length <= i) newLines.push("");
+                                                        newLines[i] = e.target.value;
+                                                        setEmployerData({...employerData, education: newLines.join('\n')});
+                                                    }}
+                                                />
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                            ) : (
+                                <div className="relative border-l border-slate-200/60 dark:border-slate-700/60 ml-3 space-y-6 pb-2">
+                                    {employerData.education ? splitByNewLine(employerData.education).map((line, i) => {
+                                        const labels = ["Primary School", "Secondary School", "College Graduated at"];
+                                        return (
+                                            <div key={i} className="relative pl-6">
+                                                {/* Removed ring-4 class here */}
+                                                <span className="absolute -left-[4.5px] top-2 w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                                                <div className="flex flex-col">
+                                                    <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                                                        {labels[i] || "Additional Education"}
+                                                    </span>
+                                                    <p className={`text-sm font-bold leading-relaxed break-words whitespace-pre-wrap ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{line}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    }) : <div className="pl-6 text-sm opacity-50 italic">No education listed.</div>}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1298,6 +1363,7 @@ return (
         {activeTab === "Support" && (
             <div key="Support" className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (isSupportOpen ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
                 
+                {/* LEFT COLUMN: TICKET LIST */}
                 <div className={`lg:col-span-1 rounded-[2.5rem] overflow-hidden flex flex-col ${glassPanel} ${(isMobile && isSupportOpen) ? 'hidden' : 'flex'} ${isMobile ? 'h-full mb-4' : 'h-full'}`}>
                     <div className="p-4 md:p-6 border-b border-gray-500/10 flex justify-between items-center">
                         <div>
@@ -1350,6 +1416,7 @@ return (
                     </div>
                 </div>
 
+                {/* RIGHT COLUMN: CHAT INTERFACE (UPDATED WITH FAQ CHIPS) */}
                 <div className={`
                   ${isMobile && isSupportOpen ? 'fixed inset-0 z-[60] rounded-none border-0' : 'lg:col-span-2 rounded-[2.5rem] border flex flex-col overflow-hidden relative'}
                   ${(isMobile && !isSupportOpen) ? 'hidden' : 'flex flex-col'} 
@@ -1373,7 +1440,7 @@ return (
                                 </h4>
                                 <p className="text-xs opacity-50 font-bold uppercase flex items-center gap-1">
                                     <span className="w-2 h-2 rounded-full bg-green-500"></span> 
-                                    Admin & Bot Active
+                                    Support Online
                                 </p>
                             </div>
                         </div>
@@ -1434,6 +1501,20 @@ return (
                             </div>
                         ) : (
                             <>
+                                {/* --- NEW INTEGRATED FAQ CHIPS --- */}
+                                <div className="flex gap-2 overflow-x-auto pb-3 mb-2 hide-scrollbar">
+                                    {BOT_FAQ.map((faq) => (
+                                        <button 
+                                            key={faq.id} 
+                                            onClick={() => handleSendFAQ(faq)}
+                                            className={`shrink-0 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap border ${darkMode ? 'bg-slate-800 border-white/10 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-600'}`}
+                                        >
+                                            {faq.question}
+                                        </button>
+                                    ))}
+                                </div>
+                                {/* ------------------------------- */}
+
                                 {supportAttachment && (
                                     <div className="mb-2 p-2 bg-blue-500/10 rounded-lg flex items-center justify-between animate-in zoom-in-95">
                                         <span className="text-xs text-blue-500 truncate max-w-[200px] font-bold">{supportAttachment.name}</span>
@@ -1538,23 +1619,28 @@ return (
                         </div>
                       </div>
 
-                    {/* --- FILTER BAR (Responsive) --- */}
-                    <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full lg:max-w-4xl gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
+                   {/* --- FILTER BAR (Responsive) --- */}
+                    <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
                         
-                        {/* SEARCH BAR */}
-                        <div className="relative flex-1 w-full lg:min-w-[120px]">
+                        {/* SEARCH BAR 
+                            Now set to 'flex-1' so it grows to take up the most space.
+                        */}
+                        <div className="relative w-full lg:flex-1 min-w-0">
                             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input type="text" placeholder="Search name or skill..." value={talentSearch} onChange={(e) => setTalentSearch(e.target.value)} className={glassInput + " pl-9 pr-4 py-2.5"} />
                         </div>
                         
                         <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
                         
-                        {/* SITIO FILTER (Custom Dropdown) */}
-                        <div className="relative w-full lg:w-auto lg:min-w-[224px]">
-                            <button onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} className={`w-full lg:w-56 flex items-center justify-between pl-3 pr-2 py-2.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
-                                <div className="flex items-center gap-2">
-                                    <MapPinIcon className="w-4 h-4 text-blue-500" />
-                                    <span>{talentSitioFilter || "All Locations"}</span>
+                        {/* SITIO FILTER */}
+                        <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
+                            <button onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
+                                <div className="flex items-center gap-3">
+                                    {/* Icon with Background */}
+                                    <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+                                        <MapPinIcon className="w-4 h-4" />
+                                    </div>
+                                    <span className="truncate">{talentSitioFilter || "All Locations"}</span>
                                 </div>
                                 <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}>
                                     <ChevronDownIcon className={`w-3 h-3 transition-transform ${isSitioDropdownOpen ? 'rotate-180' : ''}`}/>
@@ -1574,18 +1660,21 @@ return (
                                          ))}
                                      </div>
                                 </div>
-                             )}
-                             {isSitioDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsSitioDropdownOpen(false)}></div>}
+                            )}
+                            {isSitioDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsSitioDropdownOpen(false)}></div>}
                         </div>
 
                         <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
 
-                        {/* CATEGORY FILTER (Custom Dropdown) */}
-                        <div className="relative w-full lg:w-auto lg:min-w-[224px]">
-                             <button onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} className={`w-full lg:w-56 flex items-center justify-between pl-3 pr-2 py-2.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
-                                <div className="flex items-center gap-2">
-                                    <TagIcon className="w-4 h-4 text-purple-500" />
-                                    <span>{talentCategoryFilter ? JOB_CATEGORIES.find(c => c.id === talentCategoryFilter)?.label : "All Categories"}</span>
+                        {/* CATEGORY FILTER */}
+                        <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
+                             <button onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
+                                <div className="flex items-center gap-3">
+                                    {/* Icon with Background */}
+                                    <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
+                                        <TagIcon className="w-4 h-4" />
+                                    </div>
+                                    <span className="truncate">{talentCategoryFilter ? JOB_CATEGORIES.find(c => c.id === talentCategoryFilter)?.label : "All Categories"}</span>
                                 </div>
                                 <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}>
                                     <ChevronDownIcon className={`w-3 h-3 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`}/>
@@ -1602,7 +1691,6 @@ return (
                                              <button key={c.id} onClick={() => { setTalentCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors group ${talentCategoryFilter === c.id ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
                                                  <div className="flex flex-col">
                                                      <span className="text-xs font-bold block">{c.label}</span>
-                                                     {/* MINI INFO PER ITEM */}
                                                      <span className={`text-[9px] mt-0.5 font-medium truncate ${talentCategoryFilter === c.id ? 'text-white/70' : 'opacity-50'}`}>
                                                          {c.examples}
                                                      </span>
@@ -1611,11 +1699,42 @@ return (
                                          ))}
                                      </div>
                                 </div>
-                             )}
-                             
-                             {/* Overlay to close dropdown when clicking outside */}
+                            )}
                              {isCategoryDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsCategoryDropdownOpen(false)}></div>}
                         </div>
+
+                        {/* ANNOUNCEMENT NOTICE 
+                            Now swapped to be compact (w-64) instead of flex-grow.
+                        */}
+                        {displayAnnouncement && (
+                            <>
+                                <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+                                <button
+                                    onClick={() => handleViewAnnouncement(displayAnnouncement.id)}
+                                    className={`
+                                        flex items-center gap-3 px-3 py-2 rounded-xl transition-all group overflow-hidden text-left relative 
+                                        w-full lg:w-64 shrink-0
+                                        ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}
+                                    `}
+                                >
+                                     {/* Red Dot Indicator (Optional) */}
+                                     {displayAnnouncement.id !== lastReadAnnouncementId && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-pink-500 animate-ping"></span>}
+
+                                     {/* Icon: Static Pink Color */}
+                                     <div className={`p-1.5 rounded-lg shrink-0 bg-pink-500/10 text-pink-500`}>
+                                        <MegaphoneIcon className="w-4 h-4"/>
+                                    </div>
+                                    
+                                    {/* Text Container */}
+                                    <div className="flex flex-col overflow-hidden min-w-0 flex-1 animate-in fade-in slide-in-from-bottom-1 duration-500 key={displayAnnouncement.id}">
+                                        <span className="text-[9px] font-black uppercase tracking-wider text-pink-500 leading-none mb-0.5 whitespace-nowrap">Heads Up</span>
+                                        <span className={`text-[11px] font-bold truncate leading-tight ${darkMode ? 'text-white' : 'text-slate-700'}`}>
+                                            {displayAnnouncement.title}
+                                        </span>
+                                    </div>
+                                </button>
+                            </>
+                        )}
 
                     </div>
                 </div>
@@ -1642,36 +1761,77 @@ return (
             </div>
         )}
 
-        {isVerified && activeTab === "Analytics" && (
-            <div key="Analytics" className="animate-content space-y-8">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
-                        <div className="absolute right-0 top-0 opacity-5 p-4 transform rotate-12"><UsersIcon className="w-32 h-32"/></div>
-                        <div className="relative z-10">
-                            <div className="p-3 bg-blue-500/10 text-blue-500 rounded-xl inline-block mb-4"><UserPlusIcon className="w-8 h-8"/></div>
-                            <h3 className="text-4xl font-black mb-1">{discoverTalents.length}</h3>
-                            <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Total Applicants Registered</p>
-                        </div>
-                    </div>
-                      <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
-                        <div className="absolute right-0 top-0 opacity-5 p-4 transform rotate-12"><BuildingOfficeIcon className="w-32 h-32"/></div>
-                        <div className="relative z-10">
-                            <div className="p-3 bg-purple-500/10 text-purple-500 rounded-xl inline-block mb-4"><BriefcaseIcon className="w-8 h-8"/></div>
-                            <h3 className="text-4xl font-black mb-1">{analyticsData.totalEmployers || "15+"}</h3>
-                            <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Total Employers Using Platform</p>
-                        </div>
-                    </div>
-                </div>
-                <div className={`p-8 rounded-[2.5rem] ${glassPanel}`}>
-                    <div className="flex items-center gap-3 mb-8"><ChartBarIcon className="w-6 h-6 text-green-500" /><h3 className="font-black text-lg uppercase tracking-wider">Sitios with Highest Job Opportunities</h3></div>
-                    <div className="space-y-4">
-                        {analyticsData.sitioStats.length > 0 ? analyticsData.sitioStats.map((item, index) => (
-                            <div key={item.name} className="relative">
-                                <div className="flex justify-between items-end mb-1 text-xs font-bold opacity-80"><span>{item.name}</span><span>{item.count} Jobs</span></div>
-                                <div className={`w-full h-4 rounded-full overflow-hidden ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}><div style={{ width: `${(item.count / analyticsData.sitioStats[0].count) * 100}%` }} className={`h-full rounded-full ${index === 0 ? 'bg-green-500' : index === 1 ? 'bg-blue-500' : 'bg-slate-400'}`}></div></div>
+        {isVerified && activeTab === "Ratings" && (
+            <div key="Ratings" className="animate-content space-y-6">
+                
+                {/* 1. OVERALL RATING CARD */}
+                <div className={`p-8 md:p-12 rounded-[2.5rem] relative overflow-hidden flex flex-col items-center justify-center text-center ${glassPanel}`}>
+                    <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600"></div>
+                    
+                    <h3 className={`text-xs font-black uppercase tracking-[0.3em] mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Overall Reputation</h3>
+                    
+                    <div className="flex items-center justify-center gap-6 mb-4">
+                        <span className={`text-7xl md:text-8xl font-black tracking-tighter ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                            {averageRating || "0.0"}
+                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                            <div className="flex text-amber-400 gap-1">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                    <StarIconSolid key={star} className={`w-6 h-6 md:w-8 md:h-8 ${star <= Math.round(averageRating) ? 'text-amber-400 drop-shadow-md' : 'text-slate-300 dark:text-slate-700'}`} />
+                                ))}
                             </div>
-                        )) : (<div className="text-center py-10 opacity-50 font-black text-xs uppercase tracking-widest">No job data available yet</div>)}
+                            <span className="text-xs font-bold opacity-50 uppercase tracking-widest">{reviews.length} Total Reviews</span>
+                        </div>
                     </div>
+                    
+                    <p className="text-xs opacity-40 max-w-md mx-auto">
+                        Ratings are based on feedback from applicants you have interacted with or hired.
+                    </p>
+                </div>
+
+                {/* 2. REVIEWS LIST */}
+                <div className="grid grid-cols-1 gap-6">
+                    <div className="flex items-center gap-3 mb-2 px-2">
+                        <div className="p-2 bg-amber-500/10 rounded-xl text-amber-500"><StarIconSolid className="w-5 h-5"/></div>
+                        <h3 className={`font-black uppercase tracking-[0.2em] text-sm ${darkMode ? 'text-white' : 'text-slate-800'}`}>Recent Feedback</h3>
+                    </div>
+
+                    {reviews.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {reviews.map((rev) => (
+                                <div key={rev.id} className={`p-6 rounded-[2rem] border relative group transition-all hover:-translate-y-1 ${darkMode ? 'bg-slate-800/40 border-white/5' : 'bg-white border-slate-200 shadow-sm'}`}>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden">
+                                                {rev.applicantPic ? <img src={rev.applicantPic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center font-bold text-slate-500">{rev.applicantName?.charAt(0)}</div>}
+                                            </div>
+                                            <div>
+                                                <h4 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-slate-900'}`}>{rev.applicantName || "Anonymous"}</h4>
+                                                <p className="text-[9px] font-bold opacity-40 uppercase">{rev.createdAt ? formatTime(rev.createdAt) : 'Just now'}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex bg-amber-500/10 px-2 py-1 rounded-lg">
+                                            {[1,2,3,4,5].map(s => (
+                                                <StarIconSolid key={s} className={`w-3 h-3 ${s <= rev.rating ? 'text-amber-500' : 'text-amber-500/20'}`} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <span className="absolute -top-2 -left-1 text-4xl font-serif opacity-10">“</span>
+                                        <p className={`text-sm leading-relaxed pl-4 relative z-10 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                                            {rev.comment || "No comment provided."}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="py-20 text-center flex flex-col items-center opacity-40">
+                            <StarIconSolid className="w-16 h-16 text-slate-300 mb-4"/>
+                            <p className="font-bold uppercase text-xs tracking-widest">No reviews yet</p>
+                            <p className="text-[10px] mt-2">Feedback will appear here once applicants rate you.</p>
+                        </div>
+                    )}
                 </div>
             </div>
         )}
@@ -1982,65 +2142,69 @@ return (
               
             <div 
                onClick={(e) => e.stopPropagation()}
-               className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+               className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 items-center md:items-start overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
             >
-                <button onClick={() => setSelectedApplication(null)} className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                <button onClick={() => setSelectedApplication(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                     <XMarkIcon className="w-5 h-5"/>
                 </button>
 
                 {modalLoading ? (
-                   <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
+                   <div className="w-full flex flex-col items-center justify-center py-20 gap-4 opacity-50">
                        <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
                        <p className="text-[10px] font-black uppercase tracking-widest">Loading Applicant...</p>
                    </div>
                 ) : (
                   <>
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shadow-sm mb-4 shrink-0">
-                        {(modalApplicant?.profilePic || selectedApplication.applicantProfilePic) 
-                           ? <img src={modalApplicant?.profilePic || selectedApplication.applicantProfilePic} className="w-full h-full object-cover"/> 
-                           : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">?</div>}
-                    </div>
-                     
-                    <h2 className="text-2xl font-black mb-1 text-center">{selectedApplication.applicantName}</h2>
-                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{modalApplicant?.title || "Applicant"}</p>
-
-                    <div className="flex gap-2 mb-6 flex-wrap justify-center">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{modalApplicant?.sitio || "No Location"}</span>
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-blue-500/10 text-blue-500`}>Applying for: {selectedApplication.jobTitle}</span>
-                    </div>
-
-                    <div className="w-full space-y-4 mb-8">
-                        <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                            <IdentificationIcon className="w-5 h-5 opacity-50"/>
-                            <span className="text-sm font-bold opacity-80">{modalApplicant?.contact || "No contact info provided"}</span>
+                    <div className="flex flex-col items-center md:w-1/3 md:shrink-0 w-full">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-40 md:h-40 rounded-full md:rounded-[2rem] overflow-hidden shadow-sm mb-4 shrink-0 transition-all duration-300">
+                            {(modalApplicant?.profilePic || selectedApplication.applicantProfilePic) 
+                               ? <img src={modalApplicant?.profilePic || selectedApplication.applicantProfilePic} className="w-full h-full object-cover"/> 
+                               : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">?</div>}
                         </div>
-                        
-                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                            <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">About Applicant</p>
-                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.bio || modalApplicant?.aboutMe || "No bio information provided."}</p>
-                        </div>
-                        
-                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                             <div className="mb-4">
-                                <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
-                                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.workExperience || "No experience listed."}</p>
-                             </div>
-                             <div>
-                                <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
-                                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.education || "No education listed."}</p>
-                             </div>
+                         
+                        <h2 className="text-2xl font-black mb-1 text-center">{selectedApplication.applicantName}</h2>
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{modalApplicant?.title || "Applicant"}</p>
+
+                        <div className="flex gap-2 mb-6 flex-wrap justify-center">
+                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{modalApplicant?.sitio || "No Location"}</span>
+                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-blue-500/10 text-blue-500`}>Applying for: {selectedApplication.jobTitle}</span>
                         </div>
                     </div>
 
-                    <div className="w-full flex gap-3">
-                        {selectedApplication.status === 'pending' ? (
-                            <>
-                                <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">Reject</button>
-                                <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Accept</button>
-                            </>
-                        ) : (
-                            <button onClick={() => { handleStartChatFromExternal({ id: selectedApplication.applicantId, name: selectedApplication.applicantName, profilePic: selectedApplication.applicantProfilePic || null }); setSelectedApplication(null); }} className="w-full py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all">Send Message</button>
-                        )}
+                    <div className="w-full md:w-2/3 flex flex-col h-full">
+                        <div className="space-y-4 mb-8 flex-1">
+                            <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                                <IdentificationIcon className="w-5 h-5 opacity-50"/>
+                                <span className="text-sm font-bold opacity-80">{modalApplicant?.contact || "No contact info provided"}</span>
+                            </div>
+                            
+                            <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                                <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">About Applicant</p>
+                                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.bio || modalApplicant?.aboutMe || "No bio information provided."}</p>
+                            </div>
+                            
+                            <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                                 <div className="mb-4">
+                                    <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
+                                    <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.workExperience || "No experience listed."}</p>
+                                 </div>
+                                 <div>
+                                    <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
+                                    <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{modalApplicant?.education || "No education listed."}</p>
+                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="w-full flex gap-3 mt-auto">
+                            {selectedApplication.status === 'pending' ? (
+                                <>
+                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">Reject</button>
+                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Accept</button>
+                                </>
+                            ) : (
+                                <button onClick={() => { handleStartChatFromExternal({ id: selectedApplication.applicantId, name: selectedApplication.applicantName, profilePic: selectedApplication.applicantProfilePic || null }); setSelectedApplication(null); }} className="w-full py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all">Send Message</button>
+                            )}
+                        </div>
                     </div>
                   </>
                 )}
@@ -2054,52 +2218,56 @@ return (
               
             <div 
                onClick={(e) => e.stopPropagation()}
-               className={`relative w-full max-w-md p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+               className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 items-center md:items-start overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
             >
-                <button onClick={() => setSelectedTalent(null)} className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                <button onClick={() => setSelectedTalent(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                     <XMarkIcon className="w-5 h-5"/>
                 </button>
 
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shadow-sm mb-4 shrink-0">
-                    {(getAvatarUrl(selectedTalent) || selectedTalent.profilePic) 
-                        ? <img src={getAvatarUrl(selectedTalent) || selectedTalent.profilePic} className="w-full h-full object-cover"/> 
-                        : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">{selectedTalent.firstName?.charAt(0)}</div>}
-                </div>
-                 
-                <h2 className="text-2xl font-black mb-1 text-center">{selectedTalent.firstName} {selectedTalent.lastName}</h2>
-                <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{selectedTalent.title || "Applicant"}</p>
-
-                <div className="flex gap-2 mb-6 flex-wrap justify-center">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedTalent.sitio || "No Location"}</span>
-                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedTalent.isOnline ? "Online" : "Offline"}</span>
-                </div>
-
-                <div className="w-full space-y-4 mb-8">
-                     <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                        <IdentificationIcon className="w-5 h-5 opacity-50"/>
-                        <span className="text-sm font-bold opacity-80 truncate">{selectedTalent.contact || "No contact info"}</span>
+                <div className="flex flex-col items-center md:w-1/3 md:shrink-0 w-full">
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-40 md:h-40 rounded-full md:rounded-[2rem] overflow-hidden shadow-sm mb-4 shrink-0 transition-all duration-300">
+                        {(getAvatarUrl(selectedTalent) || selectedTalent.profilePic) 
+                            ? <img src={getAvatarUrl(selectedTalent) || selectedTalent.profilePic} className="w-full h-full object-cover"/> 
+                            : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">{selectedTalent.firstName?.charAt(0)}</div>}
                     </div>
-                    
-                    <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                        <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">About Candidate</p>
-                        <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.bio || selectedTalent.aboutMe || "No bio provided."}</p>
-                    </div>
+                     
+                    <h2 className="text-2xl font-black mb-1 text-center">{selectedTalent.firstName} {selectedTalent.lastName}</h2>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{selectedTalent.title || "Applicant"}</p>
 
-                     <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                         <div className="mb-4">
-                            <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
-                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.workExperience || "No experience listed."}</p>
-                         </div>
-                         <div>
-                            <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
-                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.education || "No education listed."}</p>
-                         </div>
+                    <div className="flex gap-2 mb-6 flex-wrap justify-center">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedTalent.sitio || "No Location"}</span>
+                         <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedTalent.isOnline ? "Online" : "Offline"}</span>
                     </div>
                 </div>
 
-                <button onClick={() => { handleStartChatFromExternal({ id: selectedTalent.id, name: `${selectedTalent.firstName} ${selectedTalent.lastName}`, profilePic: getAvatarUrl(selectedTalent) }); setSelectedTalent(null); }} className="w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2">
-                    <ChatBubbleLeftRightIcon className="w-4 h-4"/> Start Conversation
-                </button>
+                <div className="w-full md:w-2/3 flex flex-col h-full">
+                    <div className="space-y-4 mb-8 flex-1">
+                         <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                            <IdentificationIcon className="w-5 h-5 opacity-50"/>
+                            <span className="text-sm font-bold opacity-80 truncate">{selectedTalent.contact || "No contact info"}</span>
+                        </div>
+                        
+                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                            <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">About Candidate</p>
+                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.bio || selectedTalent.aboutMe || "No bio provided."}</p>
+                        </div>
+
+                         <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                             <div className="mb-4">
+                                <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Experience</p>
+                                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.workExperience || "No experience listed."}</p>
+                             </div>
+                             <div>
+                                <p className="text-xs font-bold uppercase opacity-40 mb-1 text-amber-500">Education</p>
+                                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedTalent.education || "No education listed."}</p>
+                             </div>
+                        </div>
+                    </div>
+
+                    <button onClick={() => { handleStartChatFromExternal({ id: selectedTalent.id, name: `${selectedTalent.firstName} ${selectedTalent.lastName}`, profilePic: getAvatarUrl(selectedTalent) }); setSelectedTalent(null); }} className="w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 mt-auto">
+                        <ChatBubbleLeftRightIcon className="w-4 h-4"/> Start Conversation
+                    </button>
+                </div>
              </div>
         </div>
       )}
