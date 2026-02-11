@@ -26,12 +26,21 @@ import {
   BuildingOfficeIcon, ChevronDownIcon,
   ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon,
   BellIcon, QuestionMarkCircleIcon, IdentificationIcon, LockClosedIcon,
-  MegaphoneIcon, CpuChipIcon
+  MegaphoneIcon, CpuChipIcon, TagIcon
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA ---
 const PUROK_LIST = [
   "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary"
+];
+
+// --- NEW CATEGORIES ---
+const JOB_CATEGORIES = [
+    { id: "EDUCATION", label: "Education", examples: "Teachers, Tutors, Principals" },
+    { id: "AGRICULTURE", label: "Agriculture", examples: "Corn/Rice Farmers, Livestock" },
+    { id: "AUTOMOTIVE", label: "Automotive", examples: "Mechanics, Mechanical Engineering" },
+    { id: "CARPENTRY", label: "Carpentry", examples: "Carpenters, Furniture Makers" },
+    { id: "HOUSEHOLD", label: "Household Service", examples: "Maids, Caregivers, Nanny" }
 ];
 
 const ADMIN_EMAIL = "admin@livelimatch.com";
@@ -146,6 +155,7 @@ export default function EmployerDashboard() {
   const [discoverTalents, setDiscoverTalents] = useState([]);
   const [talentSearch, setTalentSearch] = useState("");
   const [talentSitioFilter, setTalentSitioFilter] = useState(""); 
+  const [talentCategoryFilter, setTalentCategoryFilter] = useState(""); // NEW: Category Filter State
   const [selectedTalent, setSelectedTalent] = useState(null); 
   const [hoveredTalent, setHoveredTalent] = useState(null); 
   const hoverTimerRef = useRef(null); 
@@ -794,11 +804,21 @@ export default function EmployerDashboard() {
   });
 
   const filteredApps = receivedApplications.filter(app => app.applicantName.toLowerCase().includes(applicantSearch.toLowerCase()) || app.jobTitle.toLowerCase().includes(applicantSearch.toLowerCase()));
+  
+  // UPDATED TALENT FILTER LOGIC INCLUDING CATEGORIES
   const filteredTalents = discoverTalents.filter(user => {
     const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
     const matchesSearch = fullName.includes(talentSearch.toLowerCase()) || (user.skills && user.skills.toLowerCase().includes(talentSearch.toLowerCase()));
     const matchesSitio = talentSitioFilter ? (user.sitio === talentSitioFilter) : true;
-    return matchesSearch && matchesSitio;
+    
+    // Check if category matches or if title/skills contain category keywords
+    const matchesCategory = talentCategoryFilter ? (
+        (user.category === talentCategoryFilter) || 
+        (user.title && user.title.toLowerCase().includes(talentCategoryFilter.toLowerCase())) ||
+        (user.skills && user.skills.toLowerCase().includes(talentCategoryFilter.toLowerCase()))
+    ) : true;
+
+    return matchesSearch && matchesSitio && matchesCategory;
   });
 
   const pendingApplications = filteredApps.filter(app => app.status === 'pending');
@@ -1444,20 +1464,50 @@ return (
                         </div>
                       </div>
 
-                    <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm max-w-2xl ${glassPanel}`}>
-                        <div className="relative flex-1 min-w-[150px]">
+                    <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:max-w-[60%] lg:max-w-4xl ${glassPanel}`}>
+                        {/* SEARCH BAR */}
+                        <div className="relative flex-1 min-w-[120px]">
                             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input type="text" placeholder="Search name or skill..." value={talentSearch} onChange={(e) => setTalentSearch(e.target.value)} className={glassInput + " pl-9 pr-4 py-2.5"} />
                         </div>
+                        
                         <div className={`w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
-                        <div className="relative min-w-[140px] md:min-w-[160px]">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10"><FunnelIcon className="w-4 h-4 text-blue-500" /></div>
+                        
+                        {/* SITIO FILTER */}
+                        <div className="relative min-w-[110px] md:min-w-[140px]">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10"><MapPinIcon className="w-4 h-4 text-blue-500" /></div>
                             <select value={talentSitioFilter} onChange={(e) => setTalentSitioFilter(e.target.value)} className={`w-full bg-transparent pl-9 pr-8 py-2.5 outline-none font-bold text-xs appearance-none cursor-pointer transition-colors relative z-0 ${darkMode ? 'text-white hover:bg-white/5' : 'text-slate-700 hover:bg-slate-50'} rounded-xl`}>
                                 <option value="" className={darkMode ? 'bg-slate-900' : 'bg-white'}>All Locations</option>
                                 {PUROK_LIST.map(p => <option key={p} value={p} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{p}</option>)}
                             </select>
                             <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}><ChevronRightIcon className="w-3 h-3 rotate-90 opacity-70"/></div></div>
                         </div>
+
+                        <div className={`w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+
+                        {/* CATEGORY FILTER */}
+                        <div className="relative min-w-[110px] md:min-w-[140px] group">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10"><TagIcon className="w-4 h-4 text-purple-500" /></div>
+                            <select value={talentCategoryFilter} onChange={(e) => setTalentCategoryFilter(e.target.value)} className={`w-full bg-transparent pl-9 pr-8 py-2.5 outline-none font-bold text-xs appearance-none cursor-pointer transition-colors relative z-0 ${darkMode ? 'text-white hover:bg-white/5' : 'text-slate-700 hover:bg-slate-50'} rounded-xl`}>
+                                <option value="" className={darkMode ? 'bg-slate-900' : 'bg-white'}>All Categories</option>
+                                {JOB_CATEGORIES.map(c => <option key={c.id} value={c.id} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{c.label}</option>)}
+                            </select>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}><ChevronRightIcon className="w-3 h-3 rotate-90 opacity-70"/></div></div>
+
+                            {/* HOVER MINI INFO / TOOLTIP */}
+                            <div className={`absolute top-full left-0 right-0 mt-2 p-3 rounded-xl shadow-xl border z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${glassPanel} bg-slate-900/90 backdrop-blur-md`}>
+                                <p className="text-[9px] font-black uppercase tracking-widest mb-1 opacity-50">Filter Examples:</p>
+                                <div className="space-y-1">
+                                    {JOB_CATEGORIES.map(c => (
+                                        <div key={c.id} className={`flex justify-between text-[10px] ${talentCategoryFilter === c.id ? 'text-purple-400 font-bold' : 'opacity-70'}`}>
+                                            <span className="font-bold">{c.label}:</span>
+                                            <span className="opacity-70 text-right truncate max-w-[120px] ml-2">{c.examples}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
