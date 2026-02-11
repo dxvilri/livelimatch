@@ -89,6 +89,21 @@ const BOT_RESPONSES = [
     }
 ];
 
+// Helper to split text by newline for the resume view
+const splitByNewLine = (text) => {
+    if (!text) return [];
+    return text.split('\n').filter(line => line.trim() !== '');
+};
+
+// Labels for Education Template
+const EDUCATION_LABELS = [
+    "Primary School",
+    "Secondary School", 
+    "Tertiary / College",
+    "Post-Graduate / Master's",
+    "Vocational / Others"
+];
+
 export default function EmployerDashboard() {
   const { userData } = useAuth(); 
   const [activeTab, setActiveTab] = useState("Discover"); 
@@ -154,8 +169,15 @@ export default function EmployerDashboard() {
   // -- DISCOVER TALENT STATES --
   const [discoverTalents, setDiscoverTalents] = useState([]);
   const [talentSearch, setTalentSearch] = useState("");
+  
+  // Filter States
   const [talentSitioFilter, setTalentSitioFilter] = useState(""); 
-  const [talentCategoryFilter, setTalentCategoryFilter] = useState(""); // NEW: Category Filter State
+  const [talentCategoryFilter, setTalentCategoryFilter] = useState(""); 
+  
+  // Custom Dropdown UI States (Discover)
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false); 
+  const [isSitioDropdownOpen, setIsSitioDropdownOpen] = useState(false); 
+
   const [selectedTalent, setSelectedTalent] = useState(null); 
   const [hoveredTalent, setHoveredTalent] = useState(null); 
   const hoverTimerRef = useRef(null); 
@@ -165,10 +187,14 @@ export default function EmployerDashboard() {
   const [modalApplicant, setModalApplicant] = useState(null); 
   const [modalJob, setModalJob] = useState(null); 
   const [modalLoading, setModalLoading] = useState(false);
+  
+  // --- JOB MODAL STATES ---
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false); 
-  const [jobForm, setJobForm] = useState({ title: "", sitio: "", salary: "", type: "Full-time", description: "" });
+  const [isJobCategoryDropdownOpen, setIsJobCategoryDropdownOpen] = useState(false); // New for Job Modal
+  const [jobForm, setJobForm] = useState({ title: "", sitio: "", salary: "", type: "Full-time", description: "", category: "" }); // Added category
+  
   const [profileImage, setProfileImage] = useState(null);
   const [imgScale, setImgScale] = useState(1);
   const [isEditingImage, setIsEditingImage] = useState(false);
@@ -732,13 +758,14 @@ export default function EmployerDashboard() {
     if (!isVerified) return alert("Your account is pending verification. You cannot post jobs yet.");
     if (job) {
       setEditingJobId(job.id);
-      setJobForm({ title: job.title, sitio: job.sitio || "", salary: job.salary, type: job.type, description: job.description });
+      setJobForm({ title: job.title, sitio: job.sitio || "", salary: job.salary, type: job.type, description: job.description, category: job.category || "" });
     } else {
       setEditingJobId(null);
-      setJobForm({ title: "", sitio: "", salary: "", type: "Full-time", description: "" });
+      setJobForm({ title: "", sitio: "", salary: "", type: "Full-time", description: "", category: "" });
     }
     setIsJobModalOpen(true);
     setIsLocationDropdownOpen(false); 
+    setIsJobCategoryDropdownOpen(false); // Reset dropdown
   };
   const handleSaveJob = async () => {
     if (!jobForm.title || !jobForm.salary) return alert("Title and Salary are required.");
@@ -960,21 +987,53 @@ return (
                     <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Job Title</label><input type="text" placeholder="e.g. Sales Associate" value={jobForm.title} onChange={e => setJobForm({...jobForm, title: e.target.value})} className={`w-full p-4 rounded-2xl font-bold bg-transparent border-2 outline-none focus:border-blue-500 transition-colors select-text ${darkMode ? 'border-white/10' : 'border-slate-300'}`} /></div>
                     <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Salary / Rate</label><div className="relative"><input type="text" placeholder="e.g. 500" value={jobForm.salary} onChange={e => setJobForm({...jobForm, salary: e.target.value})} className={`w-full p-4 pl-12 rounded-2xl font-bold bg-transparent border-2 outline-none focus:border-blue-500 transition-colors select-text ${darkMode ? 'border-white/10' : 'border-slate-300'}`} /><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black opacity-30">PHP</span></div></div>
                   </div>
-                  <div className="space-y-2 relative">
-                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Location (Sitio/Purok)</label>
-                      <button onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)} className={`w-full p-4 rounded-2xl font-bold bg-transparent border-2 flex justify-between items-center outline-none focus:border-blue-500 transition-colors cursor-pointer text-left ${darkMode ? 'border-white/10 bg-slate-900' : 'border-slate-300 bg-white'}`}><span>{jobForm.sitio || "Select a location..."}</span><MapPinIcon className={`w-5 h-5 transition-transform ${isLocationDropdownOpen ? 'rotate-180' : ''} text-blue-500 pointer-events-none`} /></button>
-                      {isLocationDropdownOpen && (
-                          <div className={`absolute top-full left-0 mt-2 w-full rounded-2xl border shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${glassPanel}`}>
-                              <div className="max-h-60 overflow-y-auto hide-scrollbar p-2">
-                                  {PUROK_LIST.map(p => (
-                                      <button key={p} onClick={() => { setJobForm({...jobForm, sitio: p}); setIsLocationDropdownOpen(false); }} className={`w-full text-left p-3 rounded-xl font-bold text-xs transition-all hover:pl-4 border-l-2 border-transparent hover:border-blue-500 ${jobForm.sitio === p ? 'bg-blue-500 text-white' : darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-blue-50 text-slate-700'}`}>
-                                          {p}
-                                      </button>
-                                  ))}
-                              </div>
-                          </div>
-                      )}
+                  
+                  {/* --- JOB CATEGORY & LOCATION ROW --- */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* LOCATION DROPDOWN (Modal) */}
+                    <div className="space-y-2 relative">
+                        <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Location (Sitio/Purok)</label>
+                        <button onClick={() => { setIsLocationDropdownOpen(!isLocationDropdownOpen); setIsJobCategoryDropdownOpen(false); }} className={`w-full p-4 rounded-2xl font-bold bg-transparent border-2 flex justify-between items-center outline-none focus:border-blue-500 transition-colors cursor-pointer text-left ${darkMode ? 'border-white/10 bg-slate-900' : 'border-slate-300 bg-white'}`}>
+                            <span>{jobForm.sitio || "Select a location..."}</span>
+                            <MapPinIcon className={`w-5 h-5 transition-transform ${isLocationDropdownOpen ? 'rotate-180' : ''} text-blue-500 pointer-events-none`} />
+                        </button>
+                        {isLocationDropdownOpen && (
+                            <div className={`absolute top-full left-0 mt-2 w-full rounded-2xl border shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                <div className="max-h-60 overflow-y-auto hide-scrollbar p-2">
+                                    {PUROK_LIST.map(p => (
+                                        <button key={p} onClick={() => { setJobForm({...jobForm, sitio: p}); setIsLocationDropdownOpen(false); }} className={`w-full text-left p-3 rounded-xl font-bold text-xs transition-all hover:pl-4 border-l-2 border-transparent hover:border-blue-500 ${jobForm.sitio === p ? 'bg-blue-500 text-white' : darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-blue-50 text-slate-700'}`}>
+                                            {p}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* CATEGORY DROPDOWN (Modal) - NEW FIELD */}
+                    <div className="space-y-2 relative">
+                        <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Job Category</label>
+                        <button onClick={() => { setIsJobCategoryDropdownOpen(!isJobCategoryDropdownOpen); setIsLocationDropdownOpen(false); }} className={`w-full p-4 rounded-2xl font-bold bg-transparent border-2 flex justify-between items-center outline-none focus:border-blue-500 transition-colors cursor-pointer text-left ${darkMode ? 'border-white/10 bg-slate-900' : 'border-slate-300 bg-white'}`}>
+                            <span>{jobForm.category ? JOB_CATEGORIES.find(c => c.id === jobForm.category)?.label : "Select a category..."}</span>
+                            <TagIcon className={`w-5 h-5 transition-transform ${isJobCategoryDropdownOpen ? 'rotate-180' : ''} text-purple-500 pointer-events-none`} />
+                        </button>
+                        {isJobCategoryDropdownOpen && (
+                            <div className={`absolute top-full left-0 mt-2 w-full rounded-2xl border shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                <div className="max-h-60 overflow-y-auto hide-scrollbar p-2">
+                                    {JOB_CATEGORIES.map(c => (
+                                        <button key={c.id} onClick={() => { setJobForm({...jobForm, category: c.id}); setIsJobCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-xl transition-all hover:pl-4 border-l-2 border-transparent hover:border-blue-500 group ${jobForm.category === c.id ? 'bg-blue-500 text-white' : darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-blue-50 text-slate-700'}`}>
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-bold">{c.label}</span>
+                                                <span className={`text-[9px] mt-0.5 opacity-60 truncate ${jobForm.category === c.id ? 'text-white/80' : ''}`}>{c.examples}</span>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                   </div>
+
                   <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Description & Requirements</label><textarea placeholder="Describe the role..." value={jobForm.description} onChange={e => setJobForm({...jobForm, description: e.target.value})} className={`w-full h-40 p-4 rounded-2xl font-medium bg-transparent border-2 resize-none outline-none focus:border-blue-500 transition-colors select-text ${darkMode ? 'border-white/10' : 'border-slate-300'}`} /></div>
                 </div>
                 <div className="flex gap-4 mt-10 border-t pt-6 border-dashed border-slate-500/20"><button onClick={() => setIsJobModalOpen(false)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">Cancel</button><button onClick={handleSaveJob} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">{loading ? 'Publishing...' : 'Publish Job Listing'}</button></div>
@@ -1188,12 +1247,17 @@ return (
                             <textarea 
                                 value={employerData.workExperience} 
                                 onChange={(e) => setEmployerData({...employerData, workExperience: e.target.value})} 
-                                placeholder="• Role at Company (Year-Year)&#10;• Key Achievement..." 
+                                placeholder="Enter each experience on a new line..." 
                                 className={`w-full h-64 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text focus:ring-2 ring-amber-500/50 ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} 
                             />
                         ) : (
-                            <div className={`text-sm leading-relaxed whitespace-pre-wrap pl-2 border-l-2 border-dashed ${darkMode ? 'text-slate-400 border-white/10' : 'text-slate-600 border-slate-300'}`}>
-                                {employerData.workExperience ? employerData.workExperience : <span className="opacity-50 italic">No experience listed.</span>}
+                            <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 space-y-8 pb-2">
+                                {employerData.workExperience ? splitByNewLine(employerData.workExperience).map((line, i) => (
+                                    <div key={i} className="relative pl-6">
+                                        <span className="absolute -left-[5px] top-2 w-2.5 h-2.5 rounded-full bg-amber-500 ring-4 ring-white dark:ring-slate-900/50"></span>
+                                        <p className={`text-sm font-bold leading-relaxed ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{line}</p>
+                                    </div>
+                                )) : <div className="pl-6 text-sm opacity-50 italic">No experience listed.</div>}
                             </div>
                         )}
                     </div>
@@ -1208,12 +1272,22 @@ return (
                             <textarea 
                                 value={employerData.education} 
                                 onChange={(e) => setEmployerData({...employerData, education: e.target.value})} 
-                                placeholder="• Degree/Certificate&#10;• School/Institution (Year)" 
+                                placeholder="Enter each education level on a new line (Primary, Secondary, Tertiary...)" 
                                 className={`w-full h-64 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text focus:ring-2 ring-purple-500/50 ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} 
                             />
                         ) : (
-                            <div className={`text-sm leading-relaxed whitespace-pre-wrap pl-2 border-l-2 border-dashed ${darkMode ? 'text-slate-400 border-white/10' : 'text-slate-600 border-slate-300'}`}>
-                                {employerData.education ? employerData.education : <span className="opacity-50 italic">No education listed.</span>}
+                            <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 space-y-8 pb-2">
+                                {employerData.education ? splitByNewLine(employerData.education).map((line, i) => (
+                                    <div key={i} className="relative pl-6">
+                                        <span className="absolute -left-[5px] top-2 w-2.5 h-2.5 rounded-full bg-purple-500 ring-4 ring-white dark:ring-slate-900/50"></span>
+                                        <div className="flex flex-col">
+                                            <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                                                {EDUCATION_LABELS[i] || "Additional Education"}
+                                            </span>
+                                            <p className={`text-sm font-bold leading-relaxed ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{line}</p>
+                                        </div>
+                                    </div>
+                                )) : <div className="pl-6 text-sm opacity-50 italic">No education listed.</div>}
                             </div>
                         )}
                     </div>
@@ -1464,53 +1538,88 @@ return (
                         </div>
                       </div>
 
-                    <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:max-w-[60%] lg:max-w-4xl ${glassPanel}`}>
+                    {/* --- FILTER BAR (Responsive) --- */}
+                    <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full lg:max-w-4xl gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
+                        
                         {/* SEARCH BAR */}
-                        <div className="relative flex-1 min-w-[120px]">
+                        <div className="relative flex-1 w-full lg:min-w-[120px]">
                             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input type="text" placeholder="Search name or skill..." value={talentSearch} onChange={(e) => setTalentSearch(e.target.value)} className={glassInput + " pl-9 pr-4 py-2.5"} />
                         </div>
                         
-                        <div className={`w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+                        <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
                         
-                        {/* SITIO FILTER */}
-                        <div className="relative min-w-[110px] md:min-w-[140px]">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10"><MapPinIcon className="w-4 h-4 text-blue-500" /></div>
-                            <select value={talentSitioFilter} onChange={(e) => setTalentSitioFilter(e.target.value)} className={`w-full bg-transparent pl-9 pr-8 py-2.5 outline-none font-bold text-xs appearance-none cursor-pointer transition-colors relative z-0 ${darkMode ? 'text-white hover:bg-white/5' : 'text-slate-700 hover:bg-slate-50'} rounded-xl`}>
-                                <option value="" className={darkMode ? 'bg-slate-900' : 'bg-white'}>All Locations</option>
-                                {PUROK_LIST.map(p => <option key={p} value={p} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{p}</option>)}
-                            </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}><ChevronRightIcon className="w-3 h-3 rotate-90 opacity-70"/></div></div>
+                        {/* SITIO FILTER (Custom Dropdown) */}
+                        <div className="relative w-full lg:w-auto lg:min-w-[224px]">
+                            <button onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} className={`w-full lg:w-56 flex items-center justify-between pl-3 pr-2 py-2.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
+                                <div className="flex items-center gap-2">
+                                    <MapPinIcon className="w-4 h-4 text-blue-500" />
+                                    <span>{talentSitioFilter || "All Locations"}</span>
+                                </div>
+                                <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}>
+                                    <ChevronDownIcon className={`w-3 h-3 transition-transform ${isSitioDropdownOpen ? 'rotate-180' : ''}`}/>
+                                </div>
+                            </button>
+
+                             {isSitioDropdownOpen && (
+                                <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                     <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
+                                         <button onClick={() => { setTalentSitioFilter(""); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!talentSitioFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                             <span className="text-xs font-bold block">All Locations</span>
+                                         </button>
+                                         {PUROK_LIST.map(p => (
+                                             <button key={p} onClick={() => { setTalentSitioFilter(p); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${talentSitioFilter === p ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                                 <span className="text-xs font-bold block">{p}</span>
+                                             </button>
+                                         ))}
+                                     </div>
+                                </div>
+                             )}
+                             {isSitioDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsSitioDropdownOpen(false)}></div>}
                         </div>
 
-                        <div className={`w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+                        <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
 
-                        {/* CATEGORY FILTER */}
-                        <div className="relative min-w-[110px] md:min-w-[140px] group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10"><TagIcon className="w-4 h-4 text-purple-500" /></div>
-                            <select value={talentCategoryFilter} onChange={(e) => setTalentCategoryFilter(e.target.value)} className={`w-full bg-transparent pl-9 pr-8 py-2.5 outline-none font-bold text-xs appearance-none cursor-pointer transition-colors relative z-0 ${darkMode ? 'text-white hover:bg-white/5' : 'text-slate-700 hover:bg-slate-50'} rounded-xl`}>
-                                <option value="" className={darkMode ? 'bg-slate-900' : 'bg-white'}>All Categories</option>
-                                {JOB_CATEGORIES.map(c => <option key={c.id} value={c.id} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{c.label}</option>)}
-                            </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}><ChevronRightIcon className="w-3 h-3 rotate-90 opacity-70"/></div></div>
-
-                            {/* HOVER MINI INFO / TOOLTIP */}
-                            <div className={`absolute top-full left-0 right-0 mt-2 p-3 rounded-xl shadow-xl border z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${glassPanel} bg-slate-900/90 backdrop-blur-md`}>
-                                <p className="text-[9px] font-black uppercase tracking-widest mb-1 opacity-50">Filter Examples:</p>
-                                <div className="space-y-1">
-                                    {JOB_CATEGORIES.map(c => (
-                                        <div key={c.id} className={`flex justify-between text-[10px] ${talentCategoryFilter === c.id ? 'text-purple-400 font-bold' : 'opacity-70'}`}>
-                                            <span className="font-bold">{c.label}:</span>
-                                            <span className="opacity-70 text-right truncate max-w-[120px] ml-2">{c.examples}</span>
-                                        </div>
-                                    ))}
+                        {/* CATEGORY FILTER (Custom Dropdown) */}
+                        <div className="relative w-full lg:w-auto lg:min-w-[224px]">
+                             <button onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} className={`w-full lg:w-56 flex items-center justify-between pl-3 pr-2 py-2.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
+                                <div className="flex items-center gap-2">
+                                    <TagIcon className="w-4 h-4 text-purple-500" />
+                                    <span>{talentCategoryFilter ? JOB_CATEGORIES.find(c => c.id === talentCategoryFilter)?.label : "All Categories"}</span>
                                 </div>
-                            </div>
+                                <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}>
+                                    <ChevronDownIcon className={`w-3 h-3 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`}/>
+                                </div>
+                             </button>
+
+                             {isCategoryDropdownOpen && (
+                                <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                     <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
+                                         <button onClick={() => { setTalentCategoryFilter(""); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!talentCategoryFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                             <span className="text-xs font-bold block">All Categories</span>
+                                         </button>
+                                         {JOB_CATEGORIES.map(c => (
+                                             <button key={c.id} onClick={() => { setTalentCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors group ${talentCategoryFilter === c.id ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                                 <div className="flex flex-col">
+                                                     <span className="text-xs font-bold block">{c.label}</span>
+                                                     {/* MINI INFO PER ITEM */}
+                                                     <span className={`text-[9px] mt-0.5 font-medium truncate ${talentCategoryFilter === c.id ? 'text-white/70' : 'opacity-50'}`}>
+                                                         {c.examples}
+                                                     </span>
+                                                 </div>
+                                             </button>
+                                         ))}
+                                     </div>
+                                </div>
+                             )}
+                             
+                             {/* Overlay to close dropdown when clicking outside */}
+                             {isCategoryDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsCategoryDropdownOpen(false)}></div>}
                         </div>
 
                     </div>
                 </div>
-                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
+                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 relative z-0">
                     {filteredTalents.length > 0 ? filteredTalents.map(user => {
                         const pic = getAvatarUrl(user);
                         return (
