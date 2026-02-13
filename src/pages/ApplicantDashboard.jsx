@@ -86,9 +86,11 @@ export default function ApplicantDashboard() {
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [lastTicketCreatedAt, setLastTicketCreatedAt] = useState(0); 
   const [isBotTyping, setIsBotTyping] = useState(false);
+  const [longPressedTicketId, setLongPressedTicketId] = useState(null); 
 
   const ticketScrollRef = useRef(null);
   const supportFileRef = useRef(null);
+  const longPressTimerRef = useRef(null);
 
   // --- ANNOUNCEMENTS STATE ---
   const [announcements, setAnnouncements] = useState([]);
@@ -177,14 +179,15 @@ export default function ApplicantDashboard() {
 
   const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 ${darkMode ? 'text-white' : 'text-slate-800'}`;
 
-  // Removed shine effect from NavBtn
-  const glassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out group hover:-translate-y-1 overflow-hidden ${
+  // FIX: Removed 'overflow-hidden'
+  const glassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out group hover:-translate-y-1 ${
       darkMode 
       ? 'text-slate-400 hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' 
       : 'text-slate-400 hover:text-blue-500 hover:drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]'
   }`;
    
-  const activeGlassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out scale-125 -translate-y-1 overflow-hidden ${
+  // FIX: Removed 'overflow-hidden'
+  const activeGlassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out scale-125 -translate-y-1 ${
       darkMode
       ? 'text-blue-400 drop-shadow-[0_0_15px_rgba(96,165,250,0.8)]'
       : 'text-blue-600 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)]'
@@ -285,7 +288,6 @@ export default function ApplicantDashboard() {
 
      if(activeTab === "Ratings") {
         const fetchReviews = () => {
-             // Fetch reviews where YOU are the target (Employer reviewing Applicant)
              const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid), orderBy("createdAt", "desc"));
              const unsub = onSnapshot(q, (snap) => {
                  const revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
@@ -403,12 +405,21 @@ export default function ApplicantDashboard() {
 
   const effectiveActiveChatId = (isBubbleVisible && isMobile) ? (activeBubbleView !== 'inbox' ? activeBubbleView : null) : activeChat?.id;
 
+  // FIX: Updated logic to clear notifications in both Bubble view and Main Message Tab view
   useEffect(() => {
     if (!effectiveActiveChatId || !auth.currentUser) return;
     const chatId = [auth.currentUser.uid, effectiveActiveChatId].sort().join("_");
-    if ((!isMobile && !isChatMinimized) || (isMobile && isBubbleVisible && isBubbleExpanded)) {
+    
+    // Determine if the current chat is "visible" to the user
+    const isVisible = 
+        (!isMobile && !isChatMinimized) || // Desktop Chat Window Open
+        (isMobile && isBubbleVisible && isBubbleExpanded) || // Mobile Bubble Open
+        (activeTab === "Messages" && activeChat && activeChat.id === effectiveActiveChatId); // Main Messages Tab Open (Mobile or Desktop)
+
+    if (isVisible) {
        updateDoc(doc(db, "conversations", chatId), { [`unread_${auth.currentUser.uid}`]: 0 }).catch(() => {});
     }
+    
     const qChat = query(collection(db, "messages"), where("chatId", "==", chatId));
     const unsubChat = onSnapshot(qChat, (snap) => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -417,7 +428,7 @@ export default function ApplicantDashboard() {
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
     return () => { unsubChat(); };
-  }, [effectiveActiveChatId, isChatMinimized, isBubbleVisible, isBubbleExpanded]);
+  }, [effectiveActiveChatId, isChatMinimized, isBubbleVisible, isBubbleExpanded, activeTab, activeChat]);
 
   // --- HANDLERS ---
   const handleTouchStart = (e) => { setIsDragging(true); const touch = e.touches[0]; dragOffset.current = { x: touch.clientX - bubblePos.x, y: touch.clientY - bubblePos.y }; };
@@ -538,6 +549,20 @@ export default function ApplicantDashboard() {
   const handleCloseSupportTicket = async (ticketId) => { if(!confirm("Close this support request?")) return; try { await updateDoc(doc(db, "support_tickets", ticketId), { status: 'closed', lastUpdated: serverTimestamp() }); setActiveSupportTicket(null); setIsSupportOpen(false); } catch (err) { alert("Error: " + err.message); } };
   const handleDeleteTicket = async (ticketId) => { if(confirm("Delete this conversation permanently?")) { try { await deleteDoc(doc(db, "support_tickets", ticketId)); if(activeSupportTicket?.id === ticketId) { setActiveSupportTicket(null); setIsSupportOpen(false); } } catch(err) { alert("Error: " + err.message); } } };
 
+  // --- LONG PRESS HANDLERS FOR MOBILE TICKET DELETE ---
+  const handleTicketTouchStart = (ticketId) => {
+    longPressTimerRef.current = setTimeout(() => {
+        setLongPressedTicketId(ticketId);
+    }, 600); 
+  };
+
+  const handleTicketTouchEnd = () => {
+    if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+    }
+  };
+
   const handleImageUpload = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { setProfileImage(reader.result); setIsEditingImage(true); }; reader.readAsDataURL(file); } };
   const dataURLtoBlob = (dataurl) => { try { const arr = dataurl.split(','); const mime = arr[0].match(/:(.*?);/)[1]; const bstr = atob(arr[1]); let n = bstr.length; const u8arr = new Uint8Array(n); while(n--) u8arr[n] = bstr.charCodeAt(n); return new Blob([u8arr], {type:mime}); } catch (e) { return null; } };
   const saveProfileImage = async () => { if (!auth.currentUser || !profileImage) return; setLoading(true); try { const storage = getStorage(auth.app); const storageRef = ref(storage, `profile_pics/${auth.currentUser.uid}`); const blob = dataURLtoBlob(profileImage); if (!blob) throw new Error("Failed to process image data."); const uploadTask = await uploadBytes(storageRef, blob); const downloadURL = await getDownloadURL(uploadTask.ref); await setDoc(doc(db, "applicants", auth.currentUser.uid), { profilePic: downloadURL, imgScale: imgScale, uid: auth.currentUser.uid, updatedAt: serverTimestamp() }, { merge: true }); setIsEditingImage(false); alert("Profile picture updated!"); } catch (err) { alert(`Error: ${err.message}`); } finally { setLoading(false); } };
@@ -593,13 +618,12 @@ export default function ApplicantDashboard() {
     setLoading(true);
     try {
         await addDoc(collection(db, "reviews"), {
-            targetId: selectedEmployerToRate.employerId, // Critical: Target is the employer
-            employerId: selectedEmployerToRate.employerId, // Critical for Employer Dash queries
-            applicantId: auth.currentUser.uid, // Critical for cross-referencing
+            targetId: selectedEmployerToRate.employerId, 
+            employerId: selectedEmployerToRate.employerId, 
+            applicantId: auth.currentUser.uid, 
             reviewerId: auth.currentUser.uid,
             reviewerName: displayName,
             reviewerPic: profileImage || null,
-            // Add Applicant fields so Employer Dashboard can render it
             applicantName: displayName,
             applicantPic: profileImage || null,
             rating: ratingData.rating,
@@ -888,7 +912,7 @@ export default function ApplicantDashboard() {
         </header>
         )}
 
-        {/* PROFILE TAB (Matching Employer's Implementation) */}
+        {/* PROFILE TAB */}
         {activeTab === "Profile" && (
             <div key="Profile" className="animate-content space-y-6">
                 <div className={`relative p-8 md:p-10 rounded-[2.5rem] border overflow-hidden ${glassPanel}`}>
@@ -919,7 +943,6 @@ export default function ApplicantDashboard() {
                         {isEditingProfile ? <textarea value={applicantData.bio} onChange={(e) => setApplicantData({...applicantData, bio: e.target.value})} placeholder="Introduce yourself to employers..." className={`w-full h-32 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text focus:ring-2 ring-blue-500/50 ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} /> : <p className={`text-sm leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{applicantData.bio || "No information added yet."}</p>}
                     </div>
                     
-                    {/* EXPERIENCE SECTION (Updated to match Employer) */}
                     <div className={`p-8 rounded-[2.5rem] relative overflow-hidden flex flex-col h-[28rem] ${glassPanel}`}>
                         <div className="absolute top-0 left-0 w-2 h-full bg-amber-500/20"></div>
                         <div className="flex items-center gap-3 mb-4">
@@ -982,7 +1005,6 @@ export default function ApplicantDashboard() {
                         </div>
                     </div>
 
-                    {/* EDUCATION SECTION (Updated to match Employer) */}
                     <div className={`p-8 rounded-[2.5rem] relative overflow-hidden flex flex-col h-[28rem] ${glassPanel}`}>
                         <div className="absolute top-0 left-0 w-2 h-full bg-purple-500/20"></div>
                         <div className="flex items-center gap-3 mb-4">
@@ -1040,11 +1062,10 @@ export default function ApplicantDashboard() {
             </div>
         )}
 
-        {/* RATINGS TAB (Newly Added to Match Employer's Ratings Tab) */}
+        {/* RATINGS TAB */}
         {isVerified && activeTab === "Ratings" && (
             <div key="Ratings" className="animate-content space-y-6">
                 
-                {/* 1. OVERALL RATING CARD */}
                 <div className={`p-8 md:p-12 rounded-[2.5rem] relative overflow-hidden flex flex-col items-center justify-center text-center ${glassPanel}`}>
                     <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600"></div>
                     
@@ -1073,7 +1094,6 @@ export default function ApplicantDashboard() {
                     </p>
                 </div>
 
-                {/* 2. REVIEWS LIST */}
                 <div className="grid grid-cols-1 gap-6">
                     <div className="flex items-center gap-3 mb-2 px-2">
                         <div className="p-2 bg-amber-500/10 rounded-xl text-amber-500"><StarIconSolid className="w-5 h-5"/></div>
@@ -1124,7 +1144,7 @@ export default function ApplicantDashboard() {
             </div>
         )}
 
-        {/* SUPPORT TAB (Restored) */}
+        {/* SUPPORT TAB */}
         {activeTab === "Support" && (
             <div key="Support" className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (isSupportOpen ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
                 
@@ -1147,6 +1167,11 @@ export default function ApplicantDashboard() {
                                 <div 
                                     key={ticket.id}
                                     onClick={() => { setActiveSupportTicket(ticket); setIsSupportOpen(true); }}
+                                    onTouchStart={() => handleTicketTouchStart(ticket.id)}
+                                    onTouchEnd={handleTicketTouchEnd}
+                                    onMouseDown={() => handleTicketTouchStart(ticket.id)} 
+                                    onMouseUp={handleTicketTouchEnd}
+                                    onMouseLeave={handleTicketTouchEnd}
                                     className={`p-4 rounded-2xl cursor-pointer transition-all border group relative ${activeSupportTicket?.id === ticket.id ? 'bg-blue-600/10 border-blue-500' : darkMode ? 'bg-white/5 border-transparent hover:bg-white/10' : 'bg-slate-100 border-transparent hover:bg-slate-200'}`}
                                 >
                                     <div className="flex justify-between items-start mb-1">
@@ -1156,6 +1181,7 @@ export default function ApplicantDashboard() {
                                     <p className="text-xs opacity-50 truncate">
                                         {ticket.messages && ticket.messages.length > 0 ? ticket.messages[ticket.messages.length - 1].text : 'No messages'}
                                     </p>
+                                    
                                     <button 
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -1165,6 +1191,30 @@ export default function ApplicantDashboard() {
                                     >
                                         <TrashIcon className="w-3 h-3"/>
                                     </button>
+
+                                    {longPressedTicketId === ticket.id && isMobile && (
+                                        <div className="absolute inset-0 z-20 bg-slate-900/80 backdrop-blur-sm rounded-2xl flex items-center justify-center gap-4 animate-in fade-in zoom-in-95">
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setLongPressedTicketId(null);
+                                                    handleDeleteTicket(ticket.id);
+                                                }}
+                                                className="p-3 bg-red-600 text-white rounded-full shadow-lg"
+                                            >
+                                                <TrashIcon className="w-6 h-6"/>
+                                            </button>
+                                            <button 
+                                                 onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setLongPressedTicketId(null);
+                                                }}
+                                                className="p-3 bg-white/20 text-white rounded-full"
+                                            >
+                                                <XMarkIcon className="w-6 h-6"/>
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             ))
                         ) : (
@@ -1309,7 +1359,6 @@ export default function ApplicantDashboard() {
              <RestrictedView />
         )}
 
-        {/* ANNOUNCEMENTS TAB (Restored) */}
         {activeTab === "Announcements" && (
             <div key="Announcements" className="animate-content space-y-6">
                 <div className={`p-6 lg:p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel} min-h-[50vh]`}>
@@ -1344,11 +1393,9 @@ export default function ApplicantDashboard() {
             </div>
         )}
 
-        {/* FIND JOBS TAB (Updated to exclude applied jobs) */}
         {isVerified && activeTab === "FindJobs" && (
             <div key="FindJobs" className="animate-content">
                 <div className="space-y-6 mb-8">
-                     {/* --- QUICK STATS (ADDED SHINE EFFECT) --- */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
                         <div onClick={() => setActiveTab("FindJobs")} className={`shine relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
@@ -1383,10 +1430,7 @@ export default function ApplicantDashboard() {
                         </div>
                       </div>
 
-                    {/* --- FILTER BAR --- */}
                     <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
-                        
-                        {/* SEARCH BAR */}
                         <div className="relative w-full lg:flex-1 min-w-0">
                             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input type="text" placeholder="Search job title or employer..." value={jobSearch} onChange={(e) => setJobSearch(e.target.value)} className={glassInput + " pl-9 pr-4 py-2.5"} />
@@ -1394,7 +1438,6 @@ export default function ApplicantDashboard() {
                         
                         <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
                         
-                        {/* LOCATION DROPDOWN */}
                         <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
                             <button onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
                                 <div className="flex items-center gap-3">
@@ -1426,7 +1469,6 @@ export default function ApplicantDashboard() {
 
                         <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
 
-                        {/* CATEGORY DROPDOWN */}
                         <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
                              <button onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
                                 <div className="flex items-center gap-3">
@@ -1461,7 +1503,6 @@ export default function ApplicantDashboard() {
                              {isCategoryDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsCategoryDropdownOpen(false)}></div>}
                         </div>
 
-                         {/* ANNOUNCEMENT NOTICE */}
                         {displayAnnouncement && (
                             <>
                                 <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
@@ -1488,7 +1529,6 @@ export default function ApplicantDashboard() {
                     </div>
                 </div>
 
-                {/* JOB GRID */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
                     {filteredJobs.length > 0 ? filteredJobs.map(job => {
                         const style = getJobStyle(job.type);
@@ -1531,7 +1571,6 @@ export default function ApplicantDashboard() {
             </div>
         )}
 
-        {/* SAVED JOBS (Equivalent to Employer's Listings) */}
         {isVerified && activeTab === "Saved" && (
           <div key="Saved" className="animate-content">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -1573,7 +1612,6 @@ export default function ApplicantDashboard() {
           </div>
         )}
 
-        {/* APPLICATIONS TAB (Equivalent to Employer's Applicants) */}
         {isVerified && activeTab === "Applications" && (
           <div key="Applications" className="animate-content space-y-10">
             <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:w-96 ${glassPanel}`}>
@@ -1606,7 +1644,7 @@ export default function ApplicantDashboard() {
                             onView={() => handleViewApplicationDetails(app)}
                             unreadCount={conversations.find(c => c.chatId.includes(app.employerId))?.[`unread_${auth.currentUser.uid}`] || 0}
                             onRate={() => { setSelectedEmployerToRate(app); setIsRatingEmployerModalOpen(true); }}
-                            onWithdraw={() => handleWithdrawApplication(app.id)} // Added missing prop for delete button
+                            onWithdraw={() => handleWithdrawApplication(app.id)} 
                         />
                     )) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No accepted applications</p></div>)}
                 </div>
@@ -1627,7 +1665,6 @@ export default function ApplicantDashboard() {
           </div>
         )}
 
-        {/* MESSAGES TAB */}
         {isVerified && activeTab === "Messages" && (
             <div key="Messages" className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (activeChat ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
                 {/* LEFT COLUMN: CONVERSATION LIST */}
@@ -1824,7 +1861,7 @@ export default function ApplicantDashboard() {
         )}
       </main>
 
-      {/* JOB DETAILS MODAL (Matching Employer Style) */}
+      {/* JOB DETAILS MODAL */}
       {selectedJob && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
             <div className={`max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
@@ -1881,7 +1918,7 @@ export default function ApplicantDashboard() {
         </div>
       )}
 
-      {/* APPLICATION DETAILS MODAL (Matching Employer Style) */}
+      {/* APPLICATION DETAILS MODAL */}
       {viewingApplication && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setViewingApplication(null)}>
              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
@@ -1951,7 +1988,7 @@ export default function ApplicantDashboard() {
         </div>
       )}
 
-      {/* RATE EMPLOYER MODAL (Matching Employer's Rate Applicant Modal) */}
+      {/* RATE EMPLOYER MODAL */}
       <RateEmployerModal 
         isOpen={isRatingEmployerModalOpen}
         onClose={() => setIsRatingEmployerModalOpen(false)}
@@ -1965,10 +2002,10 @@ export default function ApplicantDashboard() {
         <MobileNavItem icon={<SparklesIcon className="w-6 h-6" />} active={activeTab === "FindJobs"} onClick={() => setActiveTab("FindJobs")} />
         <MobileNavItem icon={<BookmarkIcon className="w-6 h-6" />} active={activeTab === "Saved"} onClick={() => setActiveTab("Saved")} />
         <MobileNavItem icon={<div className="relative"><PaperAirplaneIcon className="w-6 h-6" />{hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white animate-pulse"></span>}</div>} active={activeTab === "Applications"} onClick={() => setActiveTab("Applications")} />
-        <MobileNavItem icon={<div className="relative"><ChatBubbleLeftRightIcon className="w-6 h-6" />{unreadMsgCount > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</div>} active={activeTab === "Messages"} onClick={() => setActiveTab("Messages")} />
+        <MobileNavItem icon={<div className="relative"><ChatBubbleLeftRightIcon className="w-6 h-6" />{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 min-w-[16px] h-[16px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-2 border-white dark:border-slate-900">{unreadMsgCount}</span>}</div>} active={activeTab === "Messages"} onClick={() => setActiveTab("Messages")} />
       </nav>
 
-      {/* CHAT BUBBLES (Restored for Employer Parity) */}
+      {/* CHAT BUBBLES */}
       {isBubbleVisible && (
         isMobile ? (
           <>
@@ -1980,7 +2017,13 @@ export default function ApplicantDashboard() {
                              (getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>
                            ) : ( <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} /> )}
                        </button>
-                       {unreadMsgCount > 0 && activeBubbleView === 'inbox' && (<span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">!</span>)}
+                       {unreadMsgCount > 0 && activeBubbleView === 'inbox' && (<span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">{unreadMsgCount}</span>)}
+                       {activeBubbleView !== 'inbox' && (() => {
+                           const currentChatUnread = conversations.find(c => c.participants.includes(activeBubbleView) && c.participants.includes(auth.currentUser.uid))?.[`unread_${auth.currentUser.uid}`] || 0;
+                           return currentChatUnread > 0 ? (
+                               <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">{currentChatUnread}</span>
+                           ) : null;
+                       })()}
                    </div>
                 </div>
              )}
@@ -1993,11 +2036,18 @@ export default function ApplicantDashboard() {
                                 <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${activeBubbleView === chat.id ? 'border-blue-500 scale-110' : 'border-transparent opacity-60'}`}>
                                     {(getAvatarUrl(chat) || chat.profilePic) ? <img src={getAvatarUrl(chat) || chat.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
                                 </button>
+                                {(() => {
+                                   const chatUnread = conversations.find(c => c.participants.includes(chat.id) && c.participants.includes(auth.currentUser.uid))?.[`unread_${auth.currentUser.uid}`] || 0;
+                                   return chatUnread > 0 ? (
+                                       <span className="absolute -top-1 -left-1 min-w-[18px] h-[18px] bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-md z-10">{chatUnread}</span>
+                                   ) : null;
+                                })()}
                                 {activeBubbleView === chat.id && (<button onClick={(e) => { e.stopPropagation(); handleCloseBubble(chat.id); }} className="absolute -top-1 -right-1 bg-slate-500 text-white rounded-full p-0.5 shadow-md animate-in zoom-in"><XMarkIcon className="w-3 h-3"/></button>)}
                            </div>
                         ))}
-                        <div className="flex flex-col items-center gap-1 shrink-0">
+                        <div className="flex flex-col items-center gap-1 shrink-0 relative">
                             <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all border-2 ${activeBubbleView === 'inbox' ? 'border-blue-500 scale-110' : 'border-white dark:border-slate-700 opacity-60'} ${darkMode ? 'bg-slate-800' : 'bg-white'}`}><ChatBubbleOvalLeftEllipsisIcon className="w-7 h-7 text-blue-500" /></button>
+                            {unreadMsgCount > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-md z-10">{unreadMsgCount}</span>}
                         </div>
                     </div>
 
@@ -2097,7 +2147,7 @@ export default function ApplicantDashboard() {
                     className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden ${darkMode ? 'bg-blue-600' : 'bg-blue-600'}`}
                 >
                     <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
-                    {unreadMsgCount > 0 && (<span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">!</span>)}
+                    {unreadMsgCount > 0 && (<span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-bounce">{unreadMsgCount}</span>)}
                 </button>
             </div>
             {openBubbles.map((chat) => (
@@ -2110,10 +2160,19 @@ export default function ApplicantDashboard() {
                         >
                             {(getAvatarUrl(chat) || chat.profilePic) ? (<img src={getAvatarUrl(chat) || chat.profilePic} alt="" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
                         </button>
+                        
+                        {(() => {
+                           const chatUnread = conversations.find(c => c.participants.includes(chat.id) && c.participants.includes(auth.currentUser.uid))?.[`unread_${auth.currentUser.uid}`] || 0;
+                           return chatUnread > 0 ? (
+                               <span className="absolute -top-1 -left-1 min-w-[18px] h-[18px] bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-md z-10">{chatUnread}</span>
+                           ) : null;
+                        })()}
+
                         <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className="absolute -top-1 -left-1 w-5 h-5 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-white dark:border-slate-800"><XMarkIcon className="w-3 h-3 text-slate-600 dark:text-slate-300" /></button>
                     </div>
                 </div>
             ))}
+            
             {isDesktopInboxVisible && !activeChat && (
                 <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
                     <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
@@ -2249,7 +2308,7 @@ function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCoun
 
 function NavBtn({ icon, label, active, onClick, darkMode, open, badge, badgeColor }) {
   return (
-    <button onClick={onClick} title={!open ? label : ''} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 group relative overflow-hidden ${active ? 'bg-transparent' : `${darkMode ? 'text-slate-400 hover:bg-white/10 hover:text-white' : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`} ${!open && 'lg:justify-center'}`}>
+    <button onClick={onClick} title={!open ? label : ''} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 group relative ${active ? 'bg-transparent' : `${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-blue-600'}`} ${!open && 'lg:justify-center'}`}>
         <div className={`relative z-10 shrink-0 ${active ? 'text-blue-600 dark:text-blue-400 drop-shadow-[0_0_10px_rgba(59,130,246,0.6)]' : ''}`}>{icon}</div>
         <span className={`relative z-10 font-bold text-xs uppercase tracking-widest whitespace-nowrap overflow-hidden transition-all duration-300 ${!open ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'} ${active ? 'text-blue-600 dark:text-blue-400' : ''}`}>{label}</span>
         {(badge > 0 && open) && <span className={`absolute right-3 ${badgeColor || 'bg-red-500'} text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10`}>{badge}</span>}
@@ -2261,7 +2320,7 @@ function NavBtn({ icon, label, active, onClick, darkMode, open, badge, badgeColo
 
 function MobileNavItem({ icon, active, onClick }) {
   return (
-    <button onClick={onClick} className={`relative p-2 rounded-full transition-all duration-500 ease-out overflow-hidden ${active ? 'scale-125 text-blue-600 dark:text-blue-400 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)] dark:drop-shadow-[0_0_15px_rgba(96,165,250,0.8)]' : 'text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-white hover:scale-110 hover:-translate-y-1'}`}>
+    <button onClick={onClick} className={`relative p-2 rounded-full transition-all duration-500 ease-out ${active ? 'scale-125 text-blue-600 dark:text-blue-400 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)] dark:drop-shadow-[0_0_15px_rgba(96,165,250,0.8)]' : 'text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-white hover:scale-110 hover:-translate-y-1'}`}>
       <div className="relative z-10">{icon}</div>
     </button>
   );
