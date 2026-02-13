@@ -24,12 +24,23 @@ import {
   BuildingOfficeIcon, ChevronDownIcon,
   ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon,
   BookmarkIcon, BellIcon, QuestionMarkCircleIcon,
-  MegaphoneIcon, LockClosedIcon, IdentificationIcon, CpuChipIcon
+  MegaphoneIcon, LockClosedIcon, IdentificationIcon, CpuChipIcon, TagIcon,
+  StarIcon as StarIconOutline
 } from "@heroicons/react/24/outline";
+
+import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
 // --- STATIC DATA ---
 const PUROK_LIST = [
   "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary"
+];
+
+const JOB_CATEGORIES = [
+    { id: "EDUCATION", label: "Education", examples: "Teachers, Tutors, Principals" },
+    { id: "AGRICULTURE", label: "Agriculture", examples: "Corn/Rice Farmers, Livestock" },
+    { id: "AUTOMOTIVE", label: "Automotive", examples: "Mechanics, Mechanical Engineering" },
+    { id: "CARPENTRY", label: "Carpentry", examples: "Carpenters, Furniture Makers" },
+    { id: "HOUSEHOLD", label: "Household Service", examples: "Maids, Caregivers, Nanny" }
 ];
 
 const ADMIN_EMAIL = "admin@livelimatch.com";
@@ -47,24 +58,17 @@ const getAvatarUrl = (user) => {
 };
 
 // --- BOT KNOWLEDGE BASE ---
-const BOT_RESPONSES = [
-    { 
-      keywords: ["hello", "hi", "hey", "kamusta"], 
-      response: "Hello! I am the LiveliMatch automated assistant. How can I help you find a job today? (Kamusta! Paano ako makakatulong sa iyong paghahanap ng trabaho?)" 
-    },
-    { 
-      keywords: ["verify", "verification", "badge", "id", "resume", "upload"], 
-      response: "To get verified, please complete your Profile and upload a valid Government ID or Resume. Admins review this daily. (Para ma-verify, kumpletuhin ang Profile at mag-upload ng valid ID.)" 
-    },
-    { 
-      keywords: ["apply", "job", "submit", "application"], 
-      response: "To apply for a job, go to 'Find Jobs', click 'View Details', and then click 'Apply'. (Pumunta sa 'Find Jobs', i-click ang details, at pindutin ang 'Apply'.)" 
-    },
-    { 
-      keywords: ["withdraw", "cancel", "delete", "remove"], 
-      response: "You can withdraw an application in the 'Applications' tab by clicking the Trash/Remove icon. (Pwede mong i-withdraw ang application sa 'Applications' tab gamit ang Trash icon.)" 
-    }
+const BOT_FAQ = [
+    { id: 1, question: "How do I verify my account?", answer: "To verify, go to Profile and fill in your details. Admins review profiles daily." },
+    { id: 2, question: "How to apply for a job?", answer: "Go to 'Find Jobs', click a job card, then click 'Apply Now'." },
+    { id: 3, question: "Can I withdraw an application?", answer: "Yes, go to 'Applications', select the application, and click the Trash icon." },
+    { id: 4, question: "How to chat with employers?", answer: "You can message an employer once they accept your application, or if they message you first." },
 ];
+
+const splitByNewLine = (text) => {
+    if (!text) return [];
+    return text.split('\n').filter(line => line.trim() !== '');
+};
 
 export default function ApplicantDashboard() {
   const { userData } = useAuth();
@@ -89,7 +93,8 @@ export default function ApplicantDashboard() {
   // --- ANNOUNCEMENTS STATE ---
   const [announcements, setAnnouncements] = useState([]);
   const [lastReadAnnouncementId, setLastReadAnnouncementId] = useState(localStorage.getItem("lastReadAnnounceApp"));
-
+  const [currentAnnounceIndex, setCurrentAnnounceIndex] = useState(0);
+  
   // --- BUBBLE & UI STATES ---
   const [isBubbleVisible, setIsBubbleVisible] = useState(false);
   const [isChatMinimized, setIsChatMinimized] = useState(false);
@@ -112,7 +117,6 @@ export default function ApplicantDashboard() {
   const [attachment, setAttachment] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   const [lightboxUrl, setLightboxUrl] = useState(null);
-  const [chatStatus, setChatStatus] = useState({ isOnline: false, lastSeen: null });
   const chatFileRef = useRef(null); 
   const scrollRef = useRef(null);
   
@@ -129,10 +133,14 @@ export default function ApplicantDashboard() {
   const [myApplications, setMyApplications] = useState([]);
   const [savedJobs, setSavedJobs] = useState([]);
 
+  // Filters
   const [jobSearch, setJobSearch] = useState("");
   const [jobLocationFilter, setJobLocationFilter] = useState("");
-  const [selectedJob, setSelectedJob] = useState(null);
+  const [jobCategoryFilter, setJobCategoryFilter] = useState(""); 
+  const [isSitioDropdownOpen, setIsSitioDropdownOpen] = useState(false);
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
 
+  const [selectedJob, setSelectedJob] = useState(null);
   const [viewingApplication, setViewingApplication] = useState(null);
   const [modalJobDetails, setModalJobDetails] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
@@ -144,17 +152,21 @@ export default function ApplicantDashboard() {
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
 
+  // --- RATINGS STATE ---
+  const [reviews, setReviews] = useState([]);
+  const [averageRating, setAverageRating] = useState(0);
+  const [isRatingEmployerModalOpen, setIsRatingEmployerModalOpen] = useState(false);
+  const [selectedEmployerToRate, setSelectedEmployerToRate] = useState(null);
+
   const [applicantData, setApplicantData] = useState({
     firstName: "", lastName: "", sitio: "", title: "Job Seeker",
     bio: "", skills: "", education: "", experience: "",
     verificationStatus: "pending" 
   });
 
-  const [analyticsData, setAnalyticsData] = useState({ totalApplicants: 0, totalEmployers: 0, sitioStats: [] });
-
   const isVerified = applicantData.verificationStatus === 'verified';
 
-  // --- STYLES (Restored) ---
+  // --- STYLES ---
   const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
     ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' 
     : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
@@ -177,13 +189,23 @@ export default function ApplicantDashboard() {
       : 'text-blue-600 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)]'
   }`;
 
-  // Helper for mobile view logic
   const isFullScreenPage = isMobile && (
     (activeTab === "Messages" && activeChat) || 
     (activeTab === "Support" && isSupportOpen)
   );
 
   // --- EFFECTS ---
+
+  useEffect(() => {
+    if (announcements.length > 1) {
+        const interval = setInterval(() => {
+            setCurrentAnnounceIndex(prev => (prev + 1) % announcements.length);
+        }, 5000); 
+        return () => clearInterval(interval);
+    }
+  }, [announcements.length]);
+  
+  const displayAnnouncement = announcements[currentAnnounceIndex];
 
   useEffect(() => {
     if(activeTab !== "Support") {
@@ -211,6 +233,12 @@ export default function ApplicantDashboard() {
        setIsBubbleVisible(false); setIsBubbleExpanded(false); setIsDesktopInboxVisible(false);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    const isModalActive = selectedJob !== null || viewingApplication !== null || isEditingImage || lightboxUrl !== null;
+    if (isModalActive) { document.body.style.overflow = "hidden"; } else { document.body.style.overflow = "auto"; }
+    return () => { document.body.style.overflow = "auto"; };
+  }, [selectedJob, viewingApplication, isEditingImage, lightboxUrl]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -242,36 +270,36 @@ export default function ApplicantDashboard() {
   }, [activeTab, myApplications]);
 
    useEffect(() => {
-     if(activeTab === "FindJobs" || activeTab === "Analytics") {
+     if(activeTab === "FindJobs") {
         const fetchData = async () => {
             try {
                 const q = query(collection(db, "jobs"), where("status", "==", "active"));
                 const querySnapshot = await getDocs(q);
                 const jobs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 setAvailableJobs(jobs);
-
-                const userCountSnap = await getCountFromServer(collection(db, "applicants"));
-                const employerCountSnap = await getCountFromServer(collection(db, "employers"));
-
-                const stats = {};
-                jobs.forEach(job => {
-                    if(job.sitio) {
-                        stats[job.sitio] = (stats[job.sitio] || 0) + 1;
-                    }
-                });
-                const sortedStats = Object.entries(stats)
-                    .map(([name, count]) => ({ name, count }))
-                    .sort((a,b) => b.count - a.count);
-
-                setAnalyticsData({
-                    totalApplicants: userCountSnap.data().count,
-                    totalEmployers: employerCountSnap.data().count,
-                    sitioStats: sortedStats
-                });
-
-            } catch (err) { console.error("Error fetching data", err); }
+            } catch (err) { console.error("Error fetching jobs", err); }
         };
         fetchData();
+     }
+
+     if(activeTab === "Ratings") {
+        const fetchReviews = () => {
+             const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid), orderBy("createdAt", "desc"));
+             const unsub = onSnapshot(q, (snap) => {
+                 const revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                 setReviews(revs);
+                 
+                 if(revs.length > 0) {
+                     const total = revs.reduce((acc, curr) => acc + (Number(curr.rating) || 0), 0);
+                     setAverageRating((total / revs.length).toFixed(1));
+                 } else {
+                     setAverageRating(0);
+                 }
+             });
+             return unsub;
+         };
+         const unsubReviews = fetchReviews();
+         return () => unsubReviews && unsubReviews();
      }
    }, [activeTab]);
 
@@ -386,11 +414,7 @@ export default function ApplicantDashboard() {
       setMessages(msgs);
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
-    const otherUserRef = doc(db, "employers", effectiveActiveChatId);
-    const unsubStatus = onSnapshot(otherUserRef, (docSnap) => {
-        if (docSnap.exists()) { const data = docSnap.data(); setChatStatus({ isOnline: data.isOnline || false, lastSeen: data.lastSeen || null }); }
-    });
-    return () => { unsubChat(); unsubStatus(); };
+    return () => { unsubChat(); };
   }, [effectiveActiveChatId, isChatMinimized, isBubbleVisible, isBubbleExpanded]);
 
   // --- HANDLERS ---
@@ -402,7 +426,8 @@ export default function ApplicantDashboard() {
     if (!activeChat) return;
     setIsBubbleVisible(true); setIsChatMinimized(true); setIsChatOptionsOpen(false); setActiveBubbleView(activeChat.id); 
     if (activeChat && !openBubbles.find(b => b.id === activeChat.id)) { setOpenBubbles(prev => [...prev, activeChat]); }
-    setActiveChat(null); setActiveTab("FindJobs"); 
+    closeChat(); 
+    setActiveTab("FindJobs"); 
   };
 
   const openChat = (user) => { setActiveChat(user); };
@@ -456,22 +481,25 @@ export default function ApplicantDashboard() {
     } catch (err) { alert("Failed to send message."); } finally { setIsUploading(false); }
   };
 
-  const simulateBotResponse = async (userText, ticketId) => {
-      setIsBotTyping(true);
-      const lowerText = userText.toLowerCase();
-      let botResponseText = "Thank you for your message. An admin will review it shortly.";
-      const foundMatch = BOT_RESPONSES.find(item => item.keywords.some(k => lowerText.includes(k)));
-      if(foundMatch) { botResponseText = foundMatch.response; }
-      setTimeout(async () => {
-          try {
-              const ticketRef = doc(db, "support_tickets", ticketId);
-              const botMessage = { sender: 'admin', text: `🤖 [Auto-Reply]: ${botResponseText}`, timestamp: new Date() };
-              await updateDoc(ticketRef, { messages: arrayUnion(botMessage), lastUpdated: serverTimestamp() });
-          } catch(err) { } finally { setIsBotTyping(false); }
-      }, 1500);
-  };
-
   const handleSupportFileSelect = (e) => { if (e.target.files[0]) setSupportAttachment(e.target.files[0]); };
+
+  const handleSendFAQ = async (faq) => {
+      const userMsg = { sender: 'user', text: faq.question, timestamp: new Date() };
+      const botMsg = { sender: 'admin', text: `🤖 ${faq.answer}`, timestamp: new Date() };
+      
+      try {
+          if (activeSupportTicket) {
+               if(activeSupportTicket.status === 'closed') { alert("This ticket is closed. Please start a new one."); return; }
+               await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), { messages: arrayUnion(userMsg, botMsg), lastUpdated: serverTimestamp(), status: 'open' });
+          } else {
+              const ticketIdString = Math.floor(1000 + Math.random() * 9000).toString();
+              const newTicketRef = await addDoc(collection(db, "support_tickets"), { ticketId: ticketIdString, user: `${applicantData.firstName} ${applicantData.lastName}`, userId: auth.currentUser.uid, type: 'Applicant', status: 'open', lastUpdated: serverTimestamp(), messages: [userMsg, botMsg] });
+              setLastTicketCreatedAt(Date.now());
+              const newTicketSnap = await getDoc(newTicketRef);
+              setActiveSupportTicket({ id: newTicketRef.id, ...newTicketSnap.data() });
+          }
+      } catch (err) { console.error("Error sending FAQ:", err); }
+  };
 
   const handleSendSupportMessage = async (e) => {
       e.preventDefault();
@@ -483,7 +511,6 @@ export default function ApplicantDashboard() {
           return alert(`Please wait ${remaining} more minute(s) before opening a new support request.`);
       }
       setIsSupportUploading(true);
-      const currentMessageText = ticketMessage; 
       try {
           let imageUrl = null;
           if (supportAttachment) {
@@ -495,14 +522,12 @@ export default function ApplicantDashboard() {
           const msgObj = { sender: 'user', text: ticketMessage, imageUrl: imageUrl || null, timestamp: new Date() };
           if (activeSupportTicket) {
               await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), { messages: arrayUnion(msgObj), lastUpdated: serverTimestamp(), status: 'open' });
-              simulateBotResponse(currentMessageText, activeSupportTicket.id);
           } else {
               const ticketIdString = Math.floor(1000 + Math.random() * 9000).toString();
               const newTicketRef = await addDoc(collection(db, "support_tickets"), { ticketId: ticketIdString, user: `${applicantData.firstName} ${applicantData.lastName}`, userId: auth.currentUser.uid, type: 'Applicant', status: 'open', lastUpdated: serverTimestamp(), messages: [msgObj] });
               setLastTicketCreatedAt(now);
               const newTicketSnap = await getDoc(newTicketRef);
               setActiveSupportTicket({ id: newTicketRef.id, ...newTicketSnap.data() });
-              simulateBotResponse(currentMessageText, newTicketRef.id);
           }
           setTicketMessage(""); setSupportAttachment(null); if(supportFileRef.current) supportFileRef.current.value = ""; 
       } catch (err) { console.error("Error sending support message:", err); } finally { setIsSupportUploading(false); }
@@ -517,14 +542,91 @@ export default function ApplicantDashboard() {
   const handleSaveProfile = async () => { setLoading(true); try { await setDoc(doc(db, "applicants", auth.currentUser.uid), { title: applicantData.title, aboutMe: applicantData.bio, education: applicantData.education, workExperience: applicantData.experience, updatedAt: serverTimestamp() }, { merge: true }); setIsEditingProfile(false); } catch (err) { alert("Error saving profile: " + err.message); } finally { setLoading(false); } };
 
   const handleViewApplicationDetails = async (app) => { setModalLoading(true); setViewingApplication(app); setModalJobDetails(null); try { if (app.jobId) { const jobSnap = await getDoc(doc(db, "jobs", app.jobId)); if (jobSnap.exists()) { setModalJobDetails(jobSnap.data()); } } } catch (err) { } finally { setModalLoading(false); } };
-  const handleApplyToJob = async (job) => { if(!window.confirm(`Apply to ${job.title} at ${job.employerName}?`)) return; setLoading(true); try { await addDoc(collection(db, "applications"), { jobId: job.id, jobTitle: job.title, employerId: job.employerId, employerName: job.employerName, employerLogo: job.employerLogo || "", applicantId: auth.currentUser.uid, applicantName: `${applicantData.firstName} ${applicantData.lastName}`, applicantProfilePic: profileImage || "", status: 'pending', appliedAt: serverTimestamp(), isViewed: false, isReadByApplicant: true }); alert("Application Sent!"); setSelectedJob(null); } catch(err) { alert("Error applying: " + err.message); } finally { setLoading(false); } };
+  
+  const handleApplyToJob = async (job) => {
+    if(!window.confirm(`Apply to ${job.title} at ${job.employerName}?`)) return;
+    setLoading(true);
+    try {
+        await addDoc(collection(db, "applications"), {
+            jobId: job.id,
+            jobTitle: job.title,
+            employerId: job.employerId,
+            employerName: job.employerName,
+            employerLogo: job.employerLogo || "",
+            applicantId: auth.currentUser.uid,
+            applicantName: `${applicantData.firstName} ${applicantData.lastName}`,
+            applicantProfilePic: profileImage || "",
+            status: 'pending',
+            appliedAt: serverTimestamp(),
+            isViewed: false,
+            isReadByApplicant: true 
+        });
+
+        const isAlreadySaved = savedJobs.some(s => s.jobId === job.id);
+        if (!isAlreadySaved) {
+             await addDoc(collection(db, "saved_jobs"), {
+                userId: auth.currentUser.uid,
+                jobId: job.id,
+                jobData: job,
+                savedAt: serverTimestamp()
+            });
+        }
+
+        alert("Application Sent! This job has been added to your Saved jobs.");
+        setSelectedJob(null);
+    } catch(err) {
+        alert("Error applying: " + err.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
   const handleWithdrawApplication = async (appId) => { if(!window.confirm("Are you sure you want to withdraw this application?")) return; setLoading(true); try { await deleteDoc(doc(db, "applications", appId)); setViewingApplication(null); } catch (err) { alert("Error withdrawing: " + err.message); } finally { setLoading(false); } };
   const handleToggleSaveJob = async (job) => { const existing = savedJobs.find(s => s.jobId === job.id); try { if(existing) { await deleteDoc(doc(db, "saved_jobs", existing.id)); } else { await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() }); } } catch(err) { } };
   
   const handleViewAnnouncement = (annId) => { setActiveTab("Announcements"); setIsNotifOpen(false); setLastReadAnnouncementId(annId); localStorage.setItem("lastReadAnnounceApp", annId); };
 
+  const handleSubmitEmployerRating = async (ratingData) => {
+    if (!auth.currentUser || !selectedEmployerToRate) return;
+    setLoading(true);
+    try {
+        await addDoc(collection(db, "reviews"), {
+            targetId: selectedEmployerToRate.employerId,
+            reviewerId: auth.currentUser.uid,
+            reviewerName: displayName,
+            reviewerPic: profileImage || null,
+            rating: ratingData.rating,
+            comment: ratingData.comment,
+            type: 'employer_review',
+            createdAt: serverTimestamp()
+        });
+
+        await updateDoc(doc(db, "applications", selectedEmployerToRate.id), {
+            isRatedByApplicant: true
+        });
+
+        alert("Employer rated successfully!");
+        setIsRatingEmployerModalOpen(false);
+    } catch (error) {
+        console.error("Error rating employer:", error);
+        alert("Failed to submit rating.");
+    } finally {
+        setLoading(false);
+    }
+  };
+
   const displayName = `${applicantData.firstName} ${applicantData.lastName}`.trim() || "Applicant";
-  const filteredJobs = availableJobs.filter(job => { const matchesSearch = job.title.toLowerCase().includes(jobSearch.toLowerCase()) || (job.employerName && job.employerName.toLowerCase().includes(jobSearch.toLowerCase())); const matchesLoc = jobLocationFilter ? job.sitio === jobLocationFilter : true; return matchesSearch && matchesLoc; });
+  
+  const filteredJobs = availableJobs.filter(job => {
+      const hasApplied = myApplications.some(app => app.jobId === job.id);
+      if (hasApplied) return false;
+
+      const matchesSearch = job.title.toLowerCase().includes(jobSearch.toLowerCase()) || (job.employerName && job.employerName.toLowerCase().includes(jobSearch.toLowerCase()));
+      const matchesLoc = jobLocationFilter ? job.sitio === jobLocationFilter : true;
+      const matchesCategory = jobCategoryFilter ? job.category === jobCategoryFilter : true;
+      return matchesSearch && matchesLoc && matchesCategory;
+  });
+
   const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
   const filteredApplications = myApplications.filter(app => app.jobTitle.toLowerCase().includes(applicationSearch.toLowerCase()) || (app.employerName && app.employerName.toLowerCase().includes(applicationSearch.toLowerCase())));
   const pendingApplications = filteredApplications.filter(app => app.status === 'pending');
@@ -561,11 +663,6 @@ export default function ApplicantDashboard() {
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-        @keyframes glass-shine {
-          0% { transform: translateX(-150%) skewX(-20deg); opacity: 0; }
-          40% { opacity: 0.8; }
-          100% { transform: translateX(250%) skewX(-20deg); opacity: 0; }
-        }
         @keyframes content-wipe {
           0% { opacity: 0; transform: translateY(10px) scale(0.99); }
           100% { opacity: 1; transform: translateY(0) scale(1); }
@@ -574,21 +671,7 @@ export default function ApplicantDashboard() {
           animation: content-wipe 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .shine-effect::after {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: linear-gradient(
-            to right,
-            transparent 0%,
-            rgba(255, 255, 255, 0.75) 50%,
-            transparent 100%
-          );
-          transform: translateX(-150%);
-          animation: glass-shine 0.6s ease-out;
-          pointer-events: none;
+            display: none; 
         }
         .typing-dot {
             animation: typing 1.4s infinite ease-in-out both;
@@ -640,17 +723,17 @@ export default function ApplicantDashboard() {
             </div>
 
             <div className="hidden lg:flex items-center gap-24">
-                <button onClick={() => isVerified && setActiveTab("FindJobs")} className={`${activeTab === "FindJobs" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                <button onClick={() => isVerified && setActiveTab("FindJobs")} className={`${activeTab === "FindJobs" ? activeGlassNavBtn : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                     {isVerified ? <BriefcaseIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
                 </button>
-                <button onClick={() => isVerified && setActiveTab("Saved")} className={`${activeTab === "Saved" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                <button onClick={() => isVerified && setActiveTab("Saved")} className={`${activeTab === "Saved" ? activeGlassNavBtn : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                      {isVerified ? <BookmarkIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
                 </button>
-                <button onClick={() => isVerified && setActiveTab("Applications")} className={`relative ${activeTab === "Applications" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                <button onClick={() => isVerified && setActiveTab("Applications")} className={`relative ${activeTab === "Applications" ? activeGlassNavBtn : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                      {isVerified ? <PaperAirplaneIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
                     {isVerified && hasUnreadUpdates && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full animate-pulse z-20"></span>}
                 </button>
-                <button onClick={() => isVerified && setActiveTab("Messages")} className={`relative ${activeTab === "Messages" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                <button onClick={() => isVerified && setActiveTab("Messages")} className={`relative ${activeTab === "Messages" ? activeGlassNavBtn : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                      {isVerified ? <ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
                     {isVerified && unreadMsgCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-2 border-white dark:border-slate-900 z-20">{unreadMsgCount}</span>}
                 </button>
@@ -721,16 +804,16 @@ export default function ApplicantDashboard() {
 
         <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
             {isVerified ? (
-                <NavBtn active={activeTab==="Analytics"} onClick={()=>{setActiveTab("Analytics"); setIsSidebarOpen(false)}} icon={<PresentationChartLineIcon className="w-6 h-6"/>} label="Analytics" open={true} dark={darkMode} />
+                <NavBtn active={activeTab==="Ratings"} onClick={()=>{setActiveTab("Ratings"); setIsSidebarOpen(false)}} icon={<StarIconOutline className="w-6 h-6"/>} label="Ratings" open={true} dark={darkMode} />
             ) : (
-                <NavBtn active={false} onClick={()=>{}} icon={<LockClosedIcon className="w-6 h-6 text-slate-500"/>} label="Analytics Locked" open={true} dark={darkMode} />
+                <NavBtn active={false} onClick={()=>{}} icon={<LockClosedIcon className="w-6 h-6 text-slate-500"/>} label="Ratings Locked" open={true} dark={darkMode} />
             )}
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
             <NavBtn active={activeTab==="Announcements"} onClick={()=>{setActiveTab("Announcements"); setIsSidebarOpen(false)}} icon={<MegaphoneIcon className="w-6 h-6"/>} label="Announcements" open={true} dark={darkMode} />
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
             <NavBtn active={activeTab==="Support"} onClick={()=>{setActiveTab("Support"); setIsSidebarOpen(false)}} icon={<QuestionMarkCircleIcon className="w-6 h-6"/>} label="Help & Support" open={true} dark={darkMode} />
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
-            <NavBtn active={activeTab==="Profile"} onClick={()=>{setActiveTab("Profile"); setIsEditingProfile(true); setIsSidebarOpen(false); }} icon={<PencilSquareIcon className="w-6 h-6"/>} label="Edit Resume" open={true} dark={darkMode} />
+            <NavBtn active={activeTab==="Profile"} onClick={()=>{setActiveTab("Profile"); setIsEditingProfile(true); setIsSidebarOpen(false); }} icon={<UserCircleIcon className="w-6 h-6"/>} label="Profile" open={true} dark={darkMode} />
         </nav>
 
         <div className="p-4 space-y-3">
@@ -764,7 +847,7 @@ export default function ApplicantDashboard() {
                     {activeTab === "Applications" && <PaperAirplaneIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Messages" && <ChatBubbleLeftRightIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6 text-blue-500"/>}
-                    {activeTab === "Analytics" && <PresentationChartLineIcon className="w-6 h-6 text-blue-500"/>}
+                    {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6 text-blue-500"/>}
                 </div>
@@ -776,12 +859,12 @@ export default function ApplicantDashboard() {
         </header>
         )}
 
-        {/* PROFILE TAB */}
+        {/* PROFILE TAB (Matching Employer's Implementation) */}
         {activeTab === "Profile" && (
             <div key="Profile" className="animate-content space-y-6">
                 <div className={`relative p-8 md:p-10 rounded-[2.5rem] border overflow-hidden ${glassPanel}`}>
                     <div className="absolute top-8 right-8 z-20">
-                        <button onClick={(e) => { e.stopPropagation(); if(isEditingProfile) handleSaveProfile(); else setIsEditingProfile(true); }} className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg hover:scale-105 active:scale-95 ${isEditingProfile ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-slate-500/10 text-slate-500 hover:bg-slate-500/20'}`}>{isEditingProfile ? <>{loading ? 'Saving...' : 'Save Changes'}</> : <><PencilSquareIcon className="w-4 h-4" /> Edit Resume</>}</button>
+                        <button onClick={(e) => { e.stopPropagation(); if(isEditingProfile) handleSaveProfile(); else setIsEditingProfile(true); }} className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg hover:scale-105 active:scale-95 ${isEditingProfile ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-slate-500/10 text-slate-500 hover:bg-slate-500/20'}`}>{isEditingProfile ? <>{loading ? 'Saving...' : 'Save Changes'}</> : <><PencilSquareIcon className="w-4 h-4" /> Edit Profile</>}</button>
                     </div>
                     <div className="flex flex-col md:flex-row gap-8 items-start">
                         <div className="w-32 h-32 shrink-0 rounded-[2rem] border-2 border-dashed border-slate-500/20 p-2 select-none"><ProfilePicComponent sizeClasses="w-full h-full" isCollapsed={!isEditingProfile} /></div>
@@ -800,24 +883,135 @@ export default function ApplicantDashboard() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className={`col-span-1 lg:col-span-2 p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
                         <div className="absolute top-0 left-0 w-2 h-full bg-blue-500/20"></div>
-                        <div className="flex items-center gap-3 mb-4"><UserIcon className="w-5 h-5 text-blue-500" /><h3 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-white' : 'text-slate-900'}`}>About Me</h3></div>
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500"><UserIcon className="w-5 h-5" /></div>
+                            <h3 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-white' : 'text-slate-900'}`}>Professional Summary</h3>
+                        </div>
                         {isEditingProfile ? <textarea value={applicantData.bio} onChange={(e) => setApplicantData({...applicantData, bio: e.target.value})} placeholder="Introduce yourself to employers..." className={`w-full h-32 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text focus:ring-2 ring-blue-500/50 ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} /> : <p className={`text-sm leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{applicantData.bio || "No information added yet."}</p>}
                     </div>
-                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
+                    
+                    {/* EXPERIENCE SECTION (Updated to match Employer) */}
+                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden flex flex-col h-[28rem] ${glassPanel}`}>
                         <div className="absolute top-0 left-0 w-2 h-full bg-amber-500/20"></div>
-                        <div className="flex items-center gap-3 mb-4"><BriefcaseIcon className="w-5 h-5 text-amber-500" /><h3 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-white' : 'text-slate-900'}`}>Work Experience</h3></div>
-                        {isEditingProfile ? <textarea value={applicantData.experience} onChange={(e) => setApplicantData({...applicantData, experience: e.target.value})} placeholder="List your relevant work experience..." className={`w-full h-32 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text focus:ring-2 ring-amber-500/50 ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} /> : <p className={`text-sm leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{applicantData.experience || "No experience listed."}</p>}
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-amber-500/10 rounded-xl text-amber-500"><BriefcaseIcon className="w-5 h-5" /></div>
+                            <h3 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-white' : 'text-slate-900'}`}>Experience</h3>
+                        </div>
+                        
+                        <div className="overflow-y-auto no-scrollbar flex-1 pr-2">
+                            {isEditingProfile ? (
+                                <div className="space-y-3">
+                                    {(() => {
+                                        const expLines = applicantData.experience ? applicantData.experience.split('\n') : [''];
+                                        return expLines.map((line, i) => (
+                                            <div key={i} className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 w-full">
+                                                <span className={`text-[10px] font-black uppercase tracking-widest shrink-0 w-16 text-right ${darkMode ? 'text-amber-500' : 'text-amber-600'}`}>Work at</span>
+                                                <input
+                                                    type="text"
+                                                    value={line}
+                                                    placeholder="Company Name / Role..."
+                                                    autoFocus={i === expLines.length - 1 && expLines.length > 1}
+                                                    className={`w-full min-w-0 p-3 rounded-xl text-sm bg-transparent border outline-none focus:border-amber-500 transition-colors ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`}
+                                                    onChange={(e) => {
+                                                        const newLines = [...expLines];
+                                                        newLines[i] = e.target.value;
+                                                        setApplicantData({...applicantData, experience: newLines.join('\n')});
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            const newLines = [...expLines];
+                                                            newLines.splice(i + 1, 0, ""); 
+                                                            setApplicantData({...applicantData, experience: newLines.join('\n')});
+                                                        }
+                                                        if (e.key === 'Backspace' && line === '' && expLines.length > 1) {
+                                                            e.preventDefault();
+                                                            const newLines = [...expLines];
+                                                            newLines.splice(i, 1);
+                                                            setApplicantData({...applicantData, experience: newLines.join('\n')});
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                        ));
+                                    })()}
+                                    <p className="text-[9px] text-center opacity-40 uppercase font-bold pt-2">Press Enter to add new experience</p>
+                                </div>
+                            ) : (
+                                <div className="relative ml-3 space-y-6 pb-2">
+                                     {applicantData.experience ? splitByNewLine(applicantData.experience).map((line, i) => (
+                                         <div key={i} className="relative pl-6">
+                                             <span className="absolute -left-[4.5px] top-2 w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                                             <div className="flex flex-col">
+                                                <span className={`text-[9px] font-black uppercase tracking-widest mb-0.5 opacity-60 ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}>Work at</span>
+                                                <p className={`text-sm font-bold leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{line}</p>
+                                             </div>
+                                         </div>
+                                     )) : <div className="pl-6 text-sm opacity-50 italic">No experience listed.</div>}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
+
+                    {/* EDUCATION SECTION (Updated to match Employer) */}
+                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden flex flex-col h-[28rem] ${glassPanel}`}>
                         <div className="absolute top-0 left-0 w-2 h-full bg-purple-500/20"></div>
-                        <div className="flex items-center gap-3 mb-4"><AcademicCapIcon className="w-5 h-5 text-purple-500" /><h3 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-white' : 'text-slate-900'}`}>Education</h3></div>
-                        {isEditingProfile ? <textarea value={applicantData.education} onChange={(e) => setApplicantData({...applicantData, education: e.target.value})} placeholder="List your education background..." className={`w-full h-32 p-4 rounded-xl text-sm bg-transparent border resize-none outline-none select-text focus:ring-2 ring-purple-500/50 ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`} /> : <p className={`text-sm leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{applicantData.education || "No education listed."}</p>}
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-purple-500/10 rounded-xl text-purple-500"><AcademicCapIcon className="w-5 h-5" /></div>
+                            <h3 className={`font-black uppercase tracking-widest text-xs ${darkMode ? 'text-white' : 'text-slate-900'}`}>Education</h3>
+                        </div>
+                        
+                        <div className="overflow-y-auto no-scrollbar flex-1 pr-2">
+                             {isEditingProfile ? (
+                                <div className="space-y-4">
+                                    {(() => {
+                                        const labels = ["Primary School", "Secondary School", "College Graduated at"];
+                                        const eduLines = applicantData.education ? applicantData.education.split('\n') : ['', '', ''];
+                                        
+                                        return labels.map((label, i) => (
+                                            <div key={i} className="space-y-1 w-full">
+                                                <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{label}</label>
+                                                <input
+                                                    type="text"
+                                                    value={eduLines[i] || ''}
+                                                    placeholder={`Enter ${label}...`}
+                                                    className={`w-full min-w-0 p-3 rounded-xl text-sm bg-transparent border outline-none focus:border-purple-500 transition-colors ${darkMode ? 'border-white/20 text-slate-300' : 'border-slate-300 text-slate-600'}`}
+                                                    onChange={(e) => {
+                                                        const newLines = [...eduLines];
+                                                        while (newLines.length <= i) newLines.push("");
+                                                        newLines[i] = e.target.value;
+                                                        setApplicantData({...applicantData, education: newLines.join('\n')});
+                                                    }}
+                                                />
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                             ) : (
+                                 <div className="relative ml-3 space-y-6 pb-2">
+                                     {applicantData.education ? splitByNewLine(applicantData.education).map((line, i) => {
+                                         const labels = ["Primary School", "Secondary School", "College Graduated at"];
+                                         return (
+                                             <div key={i} className="relative pl-6">
+                                                 <span className="absolute -left-[4.5px] top-2 w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                                                 <div className="flex flex-col">
+                                                    <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                                                        {labels[i] || "Additional Education"}
+                                                    </span>
+                                                    <p className={`text-sm font-bold leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{line}</p>
+                                                 </div>
+                                             </div>
+                                         );
+                                     }) : <div className="pl-6 text-sm opacity-50 italic">No education listed.</div>}
+                                 </div>
+                             )}
+                        </div>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* SUPPORT TAB */}
+        {/* SUPPORT TAB (Restored) */}
         {activeTab === "Support" && (
             <div key="Support" className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (isSupportOpen ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
                 
@@ -956,6 +1150,18 @@ export default function ApplicantDashboard() {
                             </div>
                         ) : (
                             <>
+                                <div className="flex gap-2 overflow-x-auto pb-3 mb-2 hide-scrollbar">
+                                    {BOT_FAQ.map((faq) => (
+                                        <button 
+                                            key={faq.id} 
+                                            onClick={() => handleSendFAQ(faq)}
+                                            className={`shrink-0 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap border ${darkMode ? 'bg-slate-800 border-white/10 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-600'}`}
+                                        >
+                                            {faq.question}
+                                        </button>
+                                    ))}
+                                </div>
+
                                 {supportAttachment && (
                                     <div className="mb-2 p-2 bg-blue-500/10 rounded-lg flex items-center justify-between animate-in zoom-in-95">
                                         <span className="text-xs text-blue-500 truncate max-w-[200px] font-bold">{supportAttachment.name}</span>
@@ -990,7 +1196,7 @@ export default function ApplicantDashboard() {
              <RestrictedView />
         )}
 
-        {/* ANNOUNCEMENTS TAB */}
+        {/* ANNOUNCEMENTS TAB (Restored) */}
         {activeTab === "Announcements" && (
             <div key="Announcements" className="animate-content space-y-6">
                 <div className={`p-6 lg:p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel} min-h-[50vh]`}>
@@ -1013,7 +1219,7 @@ export default function ApplicantDashboard() {
                                 <div key={ann.id} className={`p-6 rounded-3xl border relative overflow-hidden group transition-all hover:-translate-y-1 ${darkMode ? 'bg-slate-800/40 border-white/5' : 'bg-white/40 border-slate-200'}`}>
                                      <div className="absolute top-0 left-0 w-1.5 h-full bg-pink-500"></div>
                                      <div className="flex justify-between items-start mb-3 pl-2">
-                                        <h4 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>{ann.title}</h4>
+                                        <h4 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>{ann.title}</h4>
                                         <span className="text-[10px] font-bold uppercase bg-black/5 dark:bg-white/5 px-2 py-1 rounded opacity-50">{ann.date}</span>
                                      </div>
                                      <p className={`text-sm pl-2 leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{ann.body}</p>
@@ -1025,14 +1231,13 @@ export default function ApplicantDashboard() {
             </div>
         )}
 
-        {/* FIND JOBS TAB */}
+        {/* FIND JOBS TAB (Updated to exclude applied jobs) */}
         {isVerified && activeTab === "FindJobs" && (
             <div key="FindJobs" className="animate-content">
                 <div className="space-y-6 mb-8">
                      {/* --- QUICK STATS --- */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
-                        {/* 1. AVAILABLE JOBS */}
-                        <div onClick={() => setActiveTab("FindJobs")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        <div onClick={() => setActiveTab("FindJobs")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{availableJobs.length}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>Jobs</p>
@@ -1040,8 +1245,7 @@ export default function ApplicantDashboard() {
                             <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
-                        {/* 2. SAVED */}
-                        <div onClick={() => setActiveTab("Saved")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        <div onClick={() => setActiveTab("Saved")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{savedJobs.length}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-blue-800'}`}>Saved</p>
@@ -1049,8 +1253,7 @@ export default function ApplicantDashboard() {
                             <BookmarkIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
-                        {/* 3. APPLICATIONS */}
-                        <div onClick={() => setActiveTab("Applications")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        <div onClick={() => setActiveTab("Applications")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{myApplications.length}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>Applied</p>
@@ -1058,8 +1261,7 @@ export default function ApplicantDashboard() {
                             <PaperAirplaneIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
-                        {/* 4. UNREAD MSGS */}
-                        <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{unreadMsgCount}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-blue-800'}`}>Messages</p>
@@ -1068,29 +1270,118 @@ export default function ApplicantDashboard() {
                         </div>
                       </div>
 
-                    <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm max-w-2xl ${glassPanel}`}>
-                        <div className="relative flex-1 min-w-[150px]">
+                    {/* --- FILTER BAR --- */}
+                    <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
+                        
+                        {/* SEARCH BAR */}
+                        <div className="relative w-full lg:flex-1 min-w-0">
                             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input type="text" placeholder="Search job title or employer..." value={jobSearch} onChange={(e) => setJobSearch(e.target.value)} className={glassInput + " pl-9 pr-4 py-2.5"} />
                         </div>
-                        <div className={`w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
-                        <div className="relative min-w-[140px] md:min-w-[160px]">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10"><FunnelIcon className="w-4 h-4 text-blue-500" /></div>
-                            <select value={jobLocationFilter} onChange={(e) => setJobLocationFilter(e.target.value)} className={`w-full bg-transparent pl-9 pr-8 py-2.5 outline-none font-bold text-xs appearance-none cursor-pointer transition-colors relative z-0 ${darkMode ? 'text-white hover:bg-white/5' : 'text-slate-700 hover:bg-slate-50'} rounded-xl`}>
-                                <option value="" className={darkMode ? 'bg-slate-900' : 'bg-white'}>All Locations</option>
-                                {PUROK_LIST.map(p => <option key={p} value={p} className={darkMode ? 'bg-slate-900' : 'bg-white'}>{p}</option>)}
-                            </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}><ChevronRightIcon className="w-3 h-3 rotate-90 opacity-70"/></div></div>
+                        
+                        <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+                        
+                        {/* LOCATION DROPDOWN */}
+                        <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
+                            <button onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
+                                <div className="flex items-center gap-3">
+                                    <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+                                        <MapPinIcon className="w-4 h-4" />
+                                    </div>
+                                    <span className="truncate">{jobLocationFilter || "All Locations"}</span>
+                                </div>
+                                <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}>
+                                    <ChevronDownIcon className={`w-3 h-3 transition-transform ${isSitioDropdownOpen ? 'rotate-180' : ''}`}/>
+                                </div>
+                            </button>
+                             {isSitioDropdownOpen && (
+                                <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                     <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
+                                         <button onClick={() => { setJobLocationFilter(""); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!jobLocationFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                              <span className="text-xs font-bold block">All Locations</span>
+                                         </button>
+                                         {PUROK_LIST.map(p => (
+                                              <button key={p} onClick={() => { setJobLocationFilter(p); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${jobLocationFilter === p ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                                   <span className="text-xs font-bold block">{p}</span>
+                                              </button>
+                                         ))}
+                                     </div>
+                                </div>
+                            )}
+                            {isSitioDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsSitioDropdownOpen(false)}></div>}
                         </div>
+
+                        <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+
+                        {/* CATEGORY DROPDOWN */}
+                        <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
+                             <button onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
+                                <div className="flex items-center gap-3">
+                                    <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
+                                        <TagIcon className="w-4 h-4" />
+                                    </div>
+                                    <span className="truncate">{jobCategoryFilter ? JOB_CATEGORIES.find(c => c.id === jobCategoryFilter)?.label : "All Categories"}</span>
+                                </div>
+                                <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}>
+                                    <ChevronDownIcon className={`w-3 h-3 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`}/>
+                                </div>
+                             </button>
+                             {isCategoryDropdownOpen && (
+                                <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                     <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
+                                         <button onClick={() => { setJobCategoryFilter(""); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!jobCategoryFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                              <span className="text-xs font-bold block">All Categories</span>
+                                         </button>
+                                         {JOB_CATEGORIES.map(c => (
+                                              <button key={c.id} onClick={() => { setJobCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors group ${jobCategoryFilter === c.id ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                                   <div className="flex flex-col">
+                                                       <span className="text-xs font-bold block">{c.label}</span>
+                                                       <span className={`text-[9px] mt-0.5 font-medium truncate ${jobCategoryFilter === c.id ? 'text-white/70' : 'opacity-50'}`}>
+                                                           {c.examples}
+                                                       </span>
+                                                   </div>
+                                              </button>
+                                         ))}
+                                     </div>
+                                </div>
+                            )}
+                             {isCategoryDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsCategoryDropdownOpen(false)}></div>}
+                        </div>
+
+                         {/* ANNOUNCEMENT NOTICE */}
+                        {displayAnnouncement && (
+                            <>
+                                <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+                                <button
+                                    onClick={() => handleViewAnnouncement(displayAnnouncement.id)}
+                                    className={`
+                                        flex items-center gap-3 px-3 py-2 rounded-xl transition-all group overflow-hidden text-left relative 
+                                        w-full lg:w-64 shrink-0
+                                        ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}
+                                    `}
+                                >
+                                    <div className={`p-1.5 rounded-lg shrink-0 bg-pink-500/10 text-pink-500`}>
+                                        <MegaphoneIcon className="w-4 h-4"/>
+                                    </div>
+                                    <div className="flex flex-col overflow-hidden min-w-0 flex-1 animate-in fade-in slide-in-from-bottom-1 duration-500 key={displayAnnouncement.id}">
+                                        <span className="text-[9px] font-black uppercase tracking-wider text-pink-500 leading-none mb-0.5 whitespace-nowrap">Heads Up</span>
+                                        <span className={`text-[11px] font-bold truncate leading-tight ${darkMode ? 'text-white' : 'text-slate-700'}`}>
+                                            {displayAnnouncement.title}
+                                        </span>
+                                    </div>
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
 
+                {/* JOB GRID */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
                     {filteredJobs.length > 0 ? filteredJobs.map(job => {
                         const style = getJobStyle(job.type);
                         const isSaved = savedJobs.some(s => s.jobId === job.id);
                         return (
-                            <div key={job.id} onClick={() => setSelectedJob(job)} className={`group relative p-4 md:p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl shine-effect cursor-pointer ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white border-slate-200 shadow-sm hover:border-blue-400/50'}`}>
+                            <div key={job.id} onClick={() => setSelectedJob(job)} className={`group relative p-4 md:p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl cursor-pointer ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white border-slate-200 shadow-sm hover:border-blue-400/50'}`}>
                                 <div className="absolute top-10 right-4 md:top-10 md:right-8 opacity-10 transform -rotate-12 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
                                      {cloneElement(style.icon, { className: "w-32 h-32 md:w-56 md:h-56" })}
                                 </div>
@@ -1127,50 +1418,17 @@ export default function ApplicantDashboard() {
             </div>
         )}
 
-        {/* ANALYTICS TAB */}
-        {isVerified && activeTab === "Analytics" && (
-            <div key="Analytics" className="animate-content space-y-8">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
-                       <div className="absolute right-0 top-0 opacity-5 p-4 transform rotate-12"><UserPlusIcon className="w-32 h-32"/></div>
-                       <div className="relative z-10">
-                           <div className="p-3 bg-blue-500/10 text-blue-500 rounded-xl inline-block mb-4"><UserPlusIcon className="w-8 h-8"/></div>
-                           <h3 className="text-4xl font-black mb-1">{analyticsData.totalApplicants}</h3>
-                           <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Total Applicants Registered</p>
-                       </div>
-                   </div>
-                    <div className={`p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel}`}>
-                       <div className="absolute right-0 top-0 opacity-5 p-4 transform rotate-12"><BuildingOfficeIcon className="w-32 h-32"/></div>
-                       <div className="relative z-10">
-                           <div className="p-3 bg-purple-500/10 text-purple-500 rounded-xl inline-block mb-4"><BriefcaseIcon className="w-8 h-8"/></div>
-                           <h3 className="text-4xl font-black mb-1">{analyticsData.totalEmployers}</h3>
-                           <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Total Employers Using Platform</p>
-                       </div>
-                   </div>
-               </div>
-               <div className={`p-8 rounded-[2.5rem] ${glassPanel}`}>
-                   <div className="flex items-center gap-3 mb-8"><ChartBarIcon className="w-6 h-6 text-green-500" /><h3 className="font-black text-lg uppercase tracking-wider">Sitios with Highest Job Opportunities</h3></div>
-                   <div className="space-y-4">
-                       {analyticsData.sitioStats.length > 0 ? analyticsData.sitioStats.map((item, index) => (
-                           <div key={item.name} className="relative">
-                               <div className="flex justify-between items-end mb-1 text-xs font-bold opacity-80"><span>{item.name}</span><span>{item.count} Jobs</span></div>
-                               <div className={`w-full h-4 rounded-full overflow-hidden ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}><div style={{ width: `${(item.count / analyticsData.sitioStats[0].count) * 100}%` }} className={`h-full rounded-full ${index === 0 ? 'bg-green-500' : index === 1 ? 'bg-blue-500' : 'bg-slate-400'}`}></div></div>
-                           </div>
-                       )) : (<div className="text-center py-10 opacity-50 font-black text-xs uppercase tracking-widest">No job data available yet</div>)}
-                   </div>
-               </div>
-            </div>
-        )}
-
-        {/* SAVED JOBS */}
+        {/* SAVED JOBS (Equivalent to Employer's Listings) */}
         {isVerified && activeTab === "Saved" && (
           <div key="Saved" className="animate-content">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {savedJobs.length > 0 ? savedJobs.map(item => {
                 const job = item.jobData;
                 const style = getJobStyle(job.type);
+                const hasApplied = myApplications.some(app => app.jobId === job.id);
+                
                 return (
-                  <div key={item.id} className={`group relative p-4 md:p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl shine-effect cursor-pointer ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white border-slate-200 shadow-sm hover:border-blue-400/50'}`}>
+                  <div key={item.id} className={`group relative p-4 md:p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl cursor-pointer ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white border-slate-200 shadow-sm hover:border-blue-400/50'}`}>
                       <div className="absolute top-10 right-4 md:top-10 md:right-8 opacity-10 transform -rotate-12 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
                            {cloneElement(style.icon, { className: "w-32 h-32 md:w-56 md:h-56" })}
                       </div>
@@ -1188,7 +1446,11 @@ export default function ApplicantDashboard() {
                           </div>
                           <div className="mt-auto flex gap-4 pt-4 border-t border-dashed border-slate-500/20">
                                <button onClick={() => setSelectedJob(job)} className={`flex-1 justify-center flex p-3 rounded-xl transition-all active:scale-95 font-black text-[10px] uppercase tracking-widest ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>View Details</button>
-                               <button onClick={() => handleApplyToJob(job)} className="flex-1 justify-center flex p-3 rounded-xl font-black text-[10px] uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg">Apply</button>
+                               {hasApplied ? (
+                                   <button disabled className="flex-1 justify-center flex p-3 rounded-xl font-black text-[10px] uppercase tracking-widest bg-green-500/10 text-green-500 cursor-not-allowed">Applied</button>
+                               ) : (
+                                   <button onClick={() => handleApplyToJob(job)} className="flex-1 justify-center flex p-3 rounded-xl font-black text-[10px] uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg">Apply</button>
+                               )}
                           </div>
                       </div>
                   </div>
@@ -1198,7 +1460,7 @@ export default function ApplicantDashboard() {
           </div>
         )}
 
-        {/* APPLICATIONS TAB */}
+        {/* APPLICATIONS TAB (Equivalent to Employer's Applicants) */}
         {isVerified && activeTab === "Applications" && (
           <div key="Applications" className="animate-content space-y-10">
             <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:w-96 ${glassPanel}`}>
@@ -1230,6 +1492,7 @@ export default function ApplicantDashboard() {
                             onChat={() => handleStartChatFromExternal({ id: app.employerId, name: app.employerName || "Employer", profilePic: null })}
                             onView={() => handleViewApplicationDetails(app)}
                             unreadCount={conversations.find(c => c.chatId.includes(app.employerId))?.[`unread_${auth.currentUser.uid}`] || 0}
+                            onRate={() => { setSelectedEmployerToRate(app); setIsRatingEmployerModalOpen(true); }}
                         />
                     )) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No accepted applications</p></div>)}
                 </div>
@@ -1250,10 +1513,9 @@ export default function ApplicantDashboard() {
           </div>
         )}
 
-        {/* MESSAGES TAB - UPDATED TO MATCH EMPLOYER */}
+        {/* MESSAGES TAB */}
         {isVerified && activeTab === "Messages" && (
             <div key="Messages" className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (activeChat ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
-                
                 {/* LEFT COLUMN: CONVERSATION LIST */}
                 <div className={`lg:col-span-1 rounded-[2.5rem] overflow-hidden flex flex-col ${glassPanel} ${(isMobile && activeChat) ? 'hidden' : 'flex'} ${isMobile ? 'h-full mb-4' : 'h-full'}`}>
                     <div className="p-4 md:p-6 border-b border-gray-500/10 shrink-0">
@@ -1263,7 +1525,6 @@ export default function ApplicantDashboard() {
                                 <p className="text-xs opacity-50 font-bold uppercase mt-1">{filteredChats.length} Conversations</p>
                             </div>
                         </div>
-                        {/* Search Bar */}
                         <div className={`flex items-center p-1.5 rounded-2xl border transition-all ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
                             <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
                             <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search chats..." className="bg-transparent border-none outline-none text-xs p-2 w-full font-bold" />
@@ -1449,12 +1710,11 @@ export default function ApplicantDashboard() {
         )}
       </main>
 
-      {/* JOB DETAILS MODAL */}
+      {/* JOB DETAILS MODAL (Matching Employer Style) */}
       {selectedJob && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/90 backdrop-blur-md animate-in fade-in" onClick={() => setSelectedJob(null)}>
-            <div className={`max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
+            <div className={`max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
                 
-                {/* Header with Profile Pic */}
                 <div className="flex flex-col sm:flex-row gap-6 items-start mb-8 relative">
                     <button onClick={() => setSelectedJob(null)} className={`absolute top-0 right-0 p-2 rounded-full ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'} sm:hidden`}><XMarkIcon className="w-6 h-6"/></button>
                     
@@ -1469,7 +1729,7 @@ export default function ApplicantDashboard() {
                     <div className="flex-1 w-full pt-2">
                         <div className="flex justify-between items-start">
                             <div>
-                                <h3 className={`text-2xl sm:text-4xl font-black uppercase tracking-tight leading-none mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{selectedJob.title}</h3>
+                                <h3 className={`text-2xl sm:text-4xl font-black uppercase tracking-tight leading-none mb-2`}>{selectedJob.title}</h3>
                                 <div className="flex items-center gap-2 mb-4">
                                     <span className="text-blue-500 font-black uppercase tracking-widest text-xs">{selectedJob.employerName}</span>
                                     <span className="text-slate-500">•</span>
@@ -1497,16 +1757,22 @@ export default function ApplicantDashboard() {
 
                 <div className="flex gap-4">
                     <button onClick={() => setSelectedJob(null)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">Close</button>
-                    <button onClick={() => handleApplyToJob(selectedJob)} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">{loading ? 'Applying...' : 'Apply Now'}</button>
+                    {myApplications.some(app => app.jobId === selectedJob.id) ? (
+                        <button disabled className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-green-500/20 text-green-500 cursor-not-allowed">Applied</button>
+                    ) : (
+                        <button onClick={() => handleApplyToJob(selectedJob)} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">{loading ? 'Applying...' : 'Apply Now'}</button>
+                    )}
                 </div>
             </div>
         </div>
       )}
 
-      {/* APPLICATION DETAILS MODAL */}
+      {/* APPLICATION DETAILS MODAL (Matching Employer Style) */}
       {viewingApplication && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/90 backdrop-blur-md animate-in fade-in" onClick={() => setViewingApplication(null)}>
-            <div className={`max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setViewingApplication(null)}>
+             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
+
+            <div className={`relative max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] border shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
                 
                 <div className="flex flex-col sm:flex-row gap-6 items-start mb-8 relative">
                      <button onClick={() => setViewingApplication(null)} className={`absolute top-0 right-0 p-2 rounded-full ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'} sm:hidden`}><XMarkIcon className="w-6 h-6"/></button>
@@ -1522,7 +1788,7 @@ export default function ApplicantDashboard() {
                     <div className="flex-1 w-full pt-2">
                         <div className="flex justify-between items-start">
                             <div>
-                                <h3 className={`text-2xl sm:text-4xl font-black uppercase tracking-tight leading-none mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{viewingApplication.jobTitle}</h3>
+                                <h3 className={`text-2xl sm:text-4xl font-black uppercase tracking-tight leading-none mb-2`}>{viewingApplication.jobTitle}</h3>
                                 <div className="flex items-center gap-2 mb-4">
                                     <span className="text-blue-500 font-black uppercase tracking-widest text-xs">{viewingApplication.employerName}</span>
                                     <span className="text-slate-500">•</span>
@@ -1571,10 +1837,27 @@ export default function ApplicantDashboard() {
         </div>
       )}
 
-      {/* BUBBLES */}
+      {/* RATE EMPLOYER MODAL (Matching Employer's Rate Applicant Modal) */}
+      <RateEmployerModal 
+        isOpen={isRatingEmployerModalOpen}
+        onClose={() => setIsRatingEmployerModalOpen(false)}
+        onSubmit={handleSubmitEmployerRating}
+        employerName={selectedEmployerToRate?.employerName || "Employer"}
+        darkMode={darkMode} 
+      />
+
+      {/* MOBILE BOTTOM NAV */}
+      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${(isFullScreenPage) ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
+        <MobileNavItem icon={<SparklesIcon className="w-6 h-6" />} active={activeTab === "FindJobs"} onClick={() => setActiveTab("FindJobs")} />
+        <MobileNavItem icon={<BookmarkIcon className="w-6 h-6" />} active={activeTab === "Saved"} onClick={() => setActiveTab("Saved")} />
+        <MobileNavItem icon={<div className="relative"><PaperAirplaneIcon className="w-6 h-6" />{hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white animate-pulse"></span>}</div>} active={activeTab === "Applications"} onClick={() => setActiveTab("Applications")} />
+        <MobileNavItem icon={<div className="relative"><ChatBubbleLeftRightIcon className="w-6 h-6" />{unreadMsgCount > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</div>} active={activeTab === "Messages"} onClick={() => setActiveTab("Messages")} />
+      </nav>
+
+      {/* CHAT BUBBLES (Restored for Employer Parity) */}
       {isBubbleVisible && (
         isMobile ? (
-           <>
+          <>
              {!isBubbleExpanded && (
                 <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                    <div className="relative">
@@ -1587,7 +1870,7 @@ export default function ApplicantDashboard() {
                    </div>
                 </div>
              )}
-             
+
              {isBubbleExpanded && (
                 <div className="fixed inset-0 z-[1000] flex flex-col bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
@@ -1660,11 +1943,11 @@ export default function ApplicantDashboard() {
                                                                     <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>
                                                                         {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
                                                                         {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
-                                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
+                                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${!isMe && 'bg-black/5'}`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
                                                                     </div>
                                                                 )}
                                                                 {hasText && (
-                                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none'}`}>
+                                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}>
                                                                         <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
                                                                     </div>
                                                                 )}
@@ -1691,7 +1974,7 @@ export default function ApplicantDashboard() {
                     </div>
                 </div>
              )}
-           </>
+          </>
         ) : (
           <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
             <div className="pointer-events-auto">
@@ -1793,19 +2076,11 @@ export default function ApplicantDashboard() {
           </div>
         )
       )}
-       
-      {/* MOBILE BOTTOM NAV */}
-      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${(isFullScreenPage) ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
-        <MobileNavItem icon={<SparklesIcon className="w-6 h-6" />} active={activeTab === "FindJobs"} onClick={() => setActiveTab("FindJobs")} />
-        <MobileNavItem icon={<BookmarkIcon className="w-6 h-6" />} active={activeTab === "Saved"} onClick={() => setActiveTab("Saved")} />
-        <MobileNavItem icon={<div className="relative"><PaperAirplaneIcon className="w-6 h-6" />{hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white animate-pulse"></span>}</div>} active={activeTab === "Applications"} onClick={() => setActiveTab("Applications")} />
-        <MobileNavItem icon={<div className="relative"><ChatBubbleLeftRightIcon className="w-6 h-6" />{unreadMsgCount > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</div>} active={activeTab === "Messages"} onClick={() => setActiveTab("Messages")} />
-      </nav>
     </div>
   );
 }
 
-function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCount, isAccepted, isRejected }) {
+function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCount, isAccepted, isRejected, onRate }) {
     const borderColorClass = isAccepted ? 'border-l-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.1)]' : isRejected ? 'border-l-red-500 opacity-80' : 'border-l-amber-500';
     const iconBgClass = isAccepted ? 'bg-blue-500/10' : isRejected ? 'bg-red-500/10' : 'bg-amber-500/10';
     const iconContent = isAccepted ? '🤝' : isRejected ? '❌' : '📄';
@@ -1833,10 +2108,22 @@ function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCoun
           <button onClick={onView} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}><EyeIcon className="w-4 h-4" /> View</button>
            
           {isAccepted && (
+            <>
+              {app.isRatedByApplicant ? (
+                  <button disabled className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest opacity-50 cursor-not-allowed ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                      <StarIconSolid className="w-4 h-4 text-amber-500" /> Rated
+                  </button>
+              ) : (
+                  <button onClick={onRate} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      <StarIconOutline className="w-4 h-4" /> Rate
+                  </button>
+              )}
+
               <button onClick={onChat} className="flex-1 md:flex-none justify-center flex bg-blue-600 text-white p-3 rounded-2xl shadow-lg relative hover:bg-blue-500 transition-colors active:scale-95">
                   <ChatBubbleLeftRightIcon className="w-5 h-5" />
                   {unreadCount > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[7px] font-bold">{unreadCount}</span>}
               </button>
+            </>
           )}
 
           <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-white/10' : 'bg-slate-300'}`}></div>
@@ -1860,8 +2147,63 @@ function NavBtn({ icon, label, active, onClick, darkMode, open, badge, badgeColo
 
 function MobileNavItem({ icon, active, onClick }) {
   return (
-    <button onClick={onClick} className={`relative p-2 rounded-full transition-all duration-500 ease-out overflow-hidden ${active ? 'scale-125 text-blue-600 dark:text-blue-400 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)] dark:drop-shadow-[0_0_15px_rgba(96,165,250,0.8)] shine-effect' : 'text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-white hover:scale-110 hover:-translate-y-1'}`}>
+    <button onClick={onClick} className={`relative p-2 rounded-full transition-all duration-500 ease-out overflow-hidden ${active ? 'scale-125 text-blue-600 dark:text-blue-400 drop-shadow-[0_0_15px_rgba(37,99,235,0.6)] dark:drop-shadow-[0_0_15px_rgba(96,165,250,0.8)]' : 'text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-white hover:scale-110 hover:-translate-y-1'}`}>
       <div className="relative z-10">{icon}</div>
     </button>
   );
+}
+
+function RateEmployerModal({ isOpen, onClose, onSubmit, employerName, darkMode }) {
+    const [rating, setRating] = useState(0);
+    const [hoverRating, setHoverRating] = useState(0);
+    const [comment, setComment] = useState("");
+
+    if (!isOpen) return null;
+
+    return (
+        <div className={`fixed inset-0 z-[1000] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in ${darkMode ? 'bg-slate-950/60' : 'bg-slate-900/40'}`}>
+            <div className={`w-full max-w-md p-8 rounded-[2.5rem] shadow-2xl border relative ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+                
+                <button onClick={onClose} className={`absolute top-6 right-6 p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                    <XMarkIcon className={`w-5 h-5 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+                </button>
+
+                <div className="text-center mb-8">
+                    <div className="w-20 h-20 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <StarIconSolid className="w-10 h-10" />
+                    </div>
+                    <h3 className="text-2xl font-black uppercase tracking-tight">Rate Employer</h3>
+                    <p className={`text-xs mt-2 font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Feedback for {employerName}</p>
+                </div>
+
+                <div className="flex justify-center gap-3 mb-8">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                        <button 
+                            key={star} 
+                            onMouseEnter={() => setHoverRating(star)} 
+                            onMouseLeave={() => setHoverRating(0)} 
+                            onClick={() => setRating(star)} 
+                            className="transition-transform hover:scale-125 focus:outline-none"
+                        >
+                            <StarIconSolid className={`w-12 h-12 ${star <= (hoverRating || rating) ? 'text-amber-400 drop-shadow-md' : (darkMode ? 'text-slate-700' : 'text-slate-200')}`} />
+                        </button>
+                    ))}
+                </div>
+
+                <textarea 
+                    value={comment} 
+                    onChange={(e) => setComment(e.target.value)} 
+                    placeholder="How was your experience working with this employer? (Optional)" 
+                    className={`w-full h-32 p-4 rounded-3xl border outline-none text-sm font-medium resize-none focus:ring-2 ring-amber-500/50 mb-8 placeholder-slate-400 ${darkMode ? 'bg-black/20 border-white/10 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                />
+
+                <button 
+                    onClick={() => { if(rating === 0) return alert("Select a rating"); onSubmit({ rating, comment }); }} 
+                    className="w-full py-5 rounded-2xl bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                    Submit Rating
+                </button>
+            </div>
+        </div>
+    );
 }
