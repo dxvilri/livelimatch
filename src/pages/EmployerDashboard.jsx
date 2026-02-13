@@ -11,6 +11,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 // --- HOOKS ---
 import { useChat } from "../hooks/useChat"; 
 
+
 import { 
   BriefcaseIcon, ArrowLeftOnRectangleIcon, XMarkIcon, 
   Bars3BottomRightIcon, MapPinIcon, SunIcon, MoonIcon, 
@@ -26,8 +27,10 @@ import {
   BuildingOfficeIcon, ChevronDownIcon,
   ChatBubbleOvalLeftEllipsisIcon, PhoneIcon as PhoneSolidIcon,
   BellIcon, QuestionMarkCircleIcon, IdentificationIcon, LockClosedIcon,
-  MegaphoneIcon, CpuChipIcon, TagIcon, StarIcon as StarIconSolid
+  MegaphoneIcon, CpuChipIcon, TagIcon, StarIcon as StarIconOutline
 } from "@heroicons/react/24/outline";
+
+import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
 // --- STATIC DATA ---
 const PUROK_LIST = [
@@ -96,7 +99,7 @@ export default function EmployerDashboard() {
   const [isSupportUploading, setIsSupportUploading] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [lastTicketCreatedAt, setLastTicketCreatedAt] = useState(0); 
-  
+   
   // --- BOT STATE ---
   const [isBotTyping, setIsBotTyping] = useState(false);
 
@@ -154,7 +157,9 @@ export default function EmployerDashboard() {
   }, [announcements.length]);
 
   const displayAnnouncement = announcements[currentAnnounceIndex];
-     
+  const [isRatingApplicantModalOpen, setIsRatingApplicantModalOpen] = useState(false);
+  const [selectedApplicantToRate, setSelectedApplicantToRate] = useState(null);
+      
   // -- DISCOVER TALENT STATES --
   const [discoverTalents, setDiscoverTalents] = useState([]);
   const [talentSearch, setTalentSearch] = useState("");
@@ -228,7 +233,7 @@ export default function EmployerDashboard() {
     if (isModalActive) {
       document.body.style.overflow = "hidden"; 
     } else {
-      document.body.style.overflow = "auto";   
+      document.body.style.overflow = "auto";    
     }
 
     return () => { document.body.style.overflow = "auto"; };
@@ -512,16 +517,73 @@ export default function EmployerDashboard() {
     
   const handleSendMessageWrapper = async (e) => {
     e.preventDefault();
+
+    const myId = auth.currentUser.uid;
+    const otherId = activeChat.id;
+    const chatId = [myId, otherId].sort().join("_");
+
+    // --- FIX START: Reliable Name Resolution ---
+    let recipientName = activeChat.name;
+    let recipientPic = activeChat.profilePic;
+
+    // Helper: Check if a name is invalid
+    const isInvalidName = (n) => !n || n === "User" || n === "Applicant";
+
+    if (isInvalidName(recipientName)) {
+        // STRATEGY 1: Check the local 'discoverTalents' list first (Fastest/Safest)
+        // Since you already loaded these users in the Discover tab, we can grab the name from there.
+        const localTalent = discoverTalents.find(t => t.id === otherId);
+        
+        if (localTalent) {
+            recipientName = `${localTalent.firstName || ""} ${localTalent.lastName || ""}`.trim();
+            recipientPic = getAvatarUrl(localTalent) || recipientPic;
+        } 
+        
+        // STRATEGY 2: If still invalid, try fetching from Firestore directly
+        if (isInvalidName(recipientName)) {
+            try {
+                const userSnap = await getDoc(doc(db, "applicants", otherId));
+                if (userSnap.exists()) {
+                    const userData = userSnap.data();
+                    const realName = `${userData.firstName || ""} ${userData.lastName || ""}`.trim();
+                    if (realName) {
+                        recipientName = realName;
+                        recipientPic = getAvatarUrl(userData) || recipientPic;
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching real name:", err);
+            }
+        }
+    }
+    
+    // Final fallback if name is somehow still empty
+    if (isInvalidName(recipientName)) recipientName = "Applicant";
+    // --- FIX END ---
+
+    // Define the metadata update
+    const conversationMetaUpdate = {
+        [`names.${myId}`]: displayName || "Employer",
+        [`names.${otherId}`]: recipientName, 
+        [`profilePics.${myId}`]: profileImage || null,
+        [`profilePics.${otherId}`]: recipientPic || null,
+        participants: [myId, otherId]
+    };
+
     if (!attachment) {
         if (!newMessage.trim()) return;
+        
         await sendMessage(newMessage, replyingTo);
+        
+        // Force update the conversation document with the correct names
+        await setDoc(doc(db, "conversations", chatId), conversationMetaUpdate, { merge: true });
+
         setNewMessage("");
         setReplyingTo(null);
     } else {
         if (!activeChat) return;
         setIsUploading(true);
         try {
-            const chatId = [auth.currentUser.uid, activeChat.id].sort().join("_");
             const storage = getStorage(auth.app);
             const storageRef = ref(storage, `chat_attachments/${chatId}/${Date.now()}_${attachment.name}`);
             const uploadTask = await uploadBytes(storageRef, attachment);
@@ -536,9 +598,11 @@ export default function EmployerDashboard() {
                 replyTo: replyingTo ? { id: replyingTo.id, text: replyingTo.text, senderName: replyingTo.senderId === auth.currentUser.uid ? "You" : activeChat.name, type: replyingTo.fileType || 'text' } : null
              });
              
+             // Update with file message AND names
              await setDoc(doc(db, "conversations", chatId), {
                 chatId, lastMessage: `Sent a ${fileType}`, lastTimestamp: serverTimestamp(),
-                participants: [auth.currentUser.uid, activeChat.id], [`unread_${activeChat.id}`]: increment(1)
+                [`unread_${activeChat.id}`]: increment(1),
+                ...conversationMetaUpdate 
              }, { merge: true });
 
              setNewMessage(""); setAttachment(null); setReplyingTo(null); if (chatFileRef.current) chatFileRef.current.value = "";
@@ -808,6 +872,38 @@ export default function EmployerDashboard() {
     try { await deleteDoc(doc(db, "applications", appId)); if (selectedApplication?.id === appId) setSelectedApplication(null); } catch (err) { alert("Error deleting: " + err.message); } finally { setLoading(false); }
   };
   
+  // [NEW CODE]
+  const handleSubmitApplicantRating = async (ratingData) => {
+    if (!auth.currentUser || !selectedApplicantToRate) return;
+    setLoading(true);
+    try {
+        // 1. Create the review
+        await addDoc(collection(db, "reviews"), {
+            targetId: selectedApplicantToRate.applicantId,
+            reviewerId: auth.currentUser.uid,
+            reviewerName: displayName,
+            reviewerPic: profileImage || null,
+            rating: ratingData.rating,
+            comment: ratingData.comment,
+            type: 'applicant_review', 
+            createdAt: serverTimestamp()
+        });
+
+        // 2. Mark the application as rated
+        await updateDoc(doc(db, "applications", selectedApplicantToRate.id), {
+            isRatedByEmployer: true
+        });
+
+        alert("Applicant rated successfully!");
+        setIsRatingApplicantModalOpen(false);
+    } catch (error) {
+        console.error("Error rating applicant:", error);
+        alert("Failed to submit rating.");
+    } finally {
+        setLoading(false);
+    }
+  };
+  
   // Mark announcement as read
   const handleViewAnnouncement = (annId) => {
      setActiveTab("Announcements");
@@ -1057,19 +1153,20 @@ return (
                  <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>LIVELI<span className="text-blue-500">MATCH</span></h1>
             </div>
 
+            
             <div className="hidden lg:flex items-center gap-24">
-                <button onClick={() => isVerified && setActiveTab("Discover")} className={`${activeTab === "Discover" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                <button onClick={() => isVerified && setActiveTab("Discover")} className={`${activeTab === "Discover" ? activeGlassNavBtn : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                     {isVerified ? <SparklesIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
                 </button>
-                <button onClick={() => isVerified && setActiveTab("Listings")} className={`${activeTab === "Listings" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
-                     {isVerified ? <BriefcaseIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
+                <button onClick={() => isVerified && setActiveTab("Listings")} className={`${activeTab === "Listings" ? activeGlassNavBtn : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                    {isVerified ? <BriefcaseIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
                 </button>
-                <button onClick={() => isVerified && setActiveTab("Applicants")} className={`relative ${activeTab === "Applicants" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
-                     {isVerified ? <UsersIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
+                <button onClick={() => isVerified && setActiveTab("Applicants")} className={`relative ${activeTab === "Applicants" ? activeGlassNavBtn : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                    {isVerified ? <UsersIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
                     {isVerified && hasNewApps && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full animate-pulse z-20"></span>}
                 </button>
-                <button onClick={() => isVerified && setActiveTab("Messages")} className={`relative ${activeTab === "Messages" ? activeGlassNavBtn + " shine-effect" : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
-                     {isVerified ? <ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
+                <button onClick={() => isVerified && setActiveTab("Messages")} className={`relative ${activeTab === "Messages" ? activeGlassNavBtn : glassNavBtn} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                    {isVerified ? <ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" /> : <LockClosedIcon className="w-6 h-6 relative z-10" />}
                     {isVerified && hasGlobalUnread && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-2 border-white dark:border-slate-900 z-20">{unreadMsgCount}</span>}
                 </button>
             </div>
@@ -1096,12 +1193,12 @@ return (
                                      </button>
                                  )}
                                  <button onClick={() => { setActiveTab("Messages"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${unreadMsgCount > 0 ? 'text-blue-500 bg-blue-500/10' : 'opacity-50'}`}>
-                                                 <span>Unread Messages</span>
-                                                 <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
+                                                  <span>Unread Messages</span>
+                                                  <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{unreadMsgCount}</span>
                                  </button>
                                  <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-amber-500 bg-amber-500/10' : 'opacity-50'}`}>
-                                                 <span>New Applicants</span>
-                                                 <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
+                                                  <span>New Applicants</span>
+                                                  <span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
                                  </button>
                                  {totalNotifications === 0 && <div className="text-center py-4 opacity-30 text-xs font-bold uppercase">No new notifications</div>}
                              </div>
@@ -1138,7 +1235,8 @@ return (
 
         <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
             {isVerified ? (
-                <NavBtn active={activeTab==="Ratings"} onClick={()=>{setActiveTab("Ratings"); setIsSidebarOpen(false)}} icon={<StarIconSolid className="w-6 h-6"/>} label="Ratings" open={true} dark={darkMode} />
+                // UPDATED: Changed icon to StarIconOutline
+                <NavBtn active={activeTab==="Ratings"} onClick={()=>{setActiveTab("Ratings"); setIsSidebarOpen(false)}} icon={<StarIconOutline className="w-6 h-6"/>} label="Ratings" open={true} dark={darkMode} />
             ) : (
                 <NavBtn active={false} onClick={()=>{}} icon={<LockClosedIcon className="w-6 h-6 text-slate-500"/>} label="Ratings Locked" open={true} dark={darkMode} />
             )}
@@ -1180,7 +1278,8 @@ return (
                     {activeTab === "Applicants" && <UsersIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Messages" && <ChatBubbleLeftRightIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6 text-blue-500"/>}
-                    {activeTab === "Ratings" && <StarIconSolid className="w-6 h-6 text-blue-500"/>}
+                    {/* UPDATED: Changed icon to StarIconOutline in header */}
+                    {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6 text-blue-500"/>}
                 </div>
@@ -1283,9 +1382,10 @@ return (
                                     })()}
                                     <p className="text-[9px] text-center opacity-40 uppercase font-bold pt-2">Press Enter to add new experience</p>
                                 </div>
-                            ) : (
-                                <div className="relative border-l border-slate-200/60 dark:border-slate-700/60 ml-3 space-y-6 pb-2">
-                                    {employerData.workExperience ? splitByNewLine(employerData.workExperience).map((line, i) => (
+                            
+                                    ) : (
+                                        <div className="relative ml-3 space-y-6 pb-2">
+                                            {employerData.workExperience ? splitByNewLine(employerData.workExperience).map((line, i) => (
                                         <div key={i} className="relative pl-6">
                                             {/* Removed ring-4 class here */}
                                             <span className="absolute -left-[4.5px] top-2 w-2.5 h-2.5 rounded-full bg-amber-500"></span>
@@ -1335,9 +1435,10 @@ return (
                                         ));
                                     })()}
                                 </div>
-                            ) : (
-                                <div className="relative border-l border-slate-200/60 dark:border-slate-700/60 ml-3 space-y-6 pb-2">
-                                    {employerData.education ? splitByNewLine(employerData.education).map((line, i) => {
+                          
+                                ) : (
+                                    <div className="relative ml-3 space-y-6 pb-2">
+                                        {employerData.education ? splitByNewLine(employerData.education).map((line, i) => {
                                         const labels = ["Primary School", "Secondary School", "College Graduated at"];
                                         return (
                                             <div key={i} className="relative pl-6">
@@ -1619,7 +1720,7 @@ return (
                         </div>
                       </div>
 
-                   {/* --- FILTER BAR (Responsive) --- */}
+                    {/* --- FILTER BAR (Responsive) --- */}
                     <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
                         
                         {/* SEARCH BAR 
@@ -1651,12 +1752,12 @@ return (
                                 <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
                                      <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
                                          <button onClick={() => { setTalentSitioFilter(""); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!talentSitioFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
-                                             <span className="text-xs font-bold block">All Locations</span>
+                                              <span className="text-xs font-bold block">All Locations</span>
                                          </button>
                                          {PUROK_LIST.map(p => (
-                                             <button key={p} onClick={() => { setTalentSitioFilter(p); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${talentSitioFilter === p ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
-                                                 <span className="text-xs font-bold block">{p}</span>
-                                             </button>
+                                              <button key={p} onClick={() => { setTalentSitioFilter(p); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${talentSitioFilter === p ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                                   <span className="text-xs font-bold block">{p}</span>
+                                              </button>
                                          ))}
                                      </div>
                                 </div>
@@ -1685,17 +1786,17 @@ return (
                                 <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
                                      <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
                                          <button onClick={() => { setTalentCategoryFilter(""); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!talentCategoryFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
-                                             <span className="text-xs font-bold block">All Categories</span>
+                                              <span className="text-xs font-bold block">All Categories</span>
                                          </button>
                                          {JOB_CATEGORIES.map(c => (
-                                             <button key={c.id} onClick={() => { setTalentCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors group ${talentCategoryFilter === c.id ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
-                                                 <div className="flex flex-col">
-                                                     <span className="text-xs font-bold block">{c.label}</span>
-                                                     <span className={`text-[9px] mt-0.5 font-medium truncate ${talentCategoryFilter === c.id ? 'text-white/70' : 'opacity-50'}`}>
-                                                         {c.examples}
-                                                     </span>
-                                                 </div>
-                                             </button>
+                                              <button key={c.id} onClick={() => { setTalentCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors group ${talentCategoryFilter === c.id ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                                   <div className="flex flex-col">
+                                                       <span className="text-xs font-bold block">{c.label}</span>
+                                                       <span className={`text-[9px] mt-0.5 font-medium truncate ${talentCategoryFilter === c.id ? 'text-white/70' : 'opacity-50'}`}>
+                                                           {c.examples}
+                                                       </span>
+                                                   </div>
+                                              </button>
                                          ))}
                                      </div>
                                 </div>
@@ -1706,6 +1807,7 @@ return (
                         {/* ANNOUNCEMENT NOTICE 
                             Now swapped to be compact (w-64) instead of flex-grow.
                         */}
+                    
                         {displayAnnouncement && (
                             <>
                                 <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
@@ -1717,11 +1819,8 @@ return (
                                         ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}
                                     `}
                                 >
-                                     {/* Red Dot Indicator (Optional) */}
-                                     {displayAnnouncement.id !== lastReadAnnouncementId && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-pink-500 animate-ping"></span>}
-
-                                     {/* Icon: Static Pink Color */}
-                                     <div className={`p-1.5 rounded-lg shrink-0 bg-pink-500/10 text-pink-500`}>
+                                    {/* Icon: Static Pink Color */}
+                                    <div className={`p-1.5 rounded-lg shrink-0 bg-pink-500/10 text-pink-500`}>
                                         <MegaphoneIcon className="w-4 h-4"/>
                                     </div>
                                     
@@ -1777,7 +1876,12 @@ return (
                         <div className="flex flex-col items-start gap-1">
                             <div className="flex text-amber-400 gap-1">
                                 {[1, 2, 3, 4, 5].map((star) => (
-                                    <StarIconSolid key={star} className={`w-6 h-6 md:w-8 md:h-8 ${star <= Math.round(averageRating) ? 'text-amber-400 drop-shadow-md' : 'text-slate-300 dark:text-slate-700'}`} />
+                                    // UPDATED: Ensure star logic fills correctly based on computation
+                                    star <= Math.round(Number(averageRating)) ? (
+                                        <StarIconSolid key={star} className="w-6 h-6 md:w-8 md:h-8 text-amber-400 drop-shadow-md" />
+                                    ) : (
+                                        <StarIconOutline key={star} className="w-6 h-6 md:w-8 md:h-8 text-slate-300 dark:text-slate-700" />
+                                    )
                                 ))}
                             </div>
                             <span className="text-xs font-bold opacity-50 uppercase tracking-widest">{reviews.length} Total Reviews</span>
@@ -1811,8 +1915,12 @@ return (
                                             </div>
                                         </div>
                                         <div className="flex bg-amber-500/10 px-2 py-1 rounded-lg">
-                                            {[1,2,3,4,5].map(s => (
-                                                <StarIconSolid key={s} className={`w-3 h-3 ${s <= rev.rating ? 'text-amber-500' : 'text-amber-500/20'}`} />
+                                            {[1, 2, 3, 4, 5].map((s) => (
+                                                s <= rev.rating ? (
+                                                    <StarIconSolid key={s} className="w-3 h-3 text-amber-500" />
+                                                ) : (
+                                                    <StarIconOutline key={s} className="w-3 h-3 text-amber-500/40" />
+                                                )
                                             ))}
                                         </div>
                                     </div>
@@ -1931,7 +2039,7 @@ return (
             </section>
             <section className="space-y-6">
                 <div className="flex items-center gap-3"><CheckCircleIcon className="w-5 h-5 text-blue-500" /><h3 className="font-black text-sm uppercase tracking-[0.2em] text-blue-500 select-none cursor-default">Accepted Candidates ({acceptedApplications.length})</h3><div className="flex-1 h-px bg-blue-500/10"></div></div>
-                <div className="space-y-4">{acceptedApplications.length > 0 ? acceptedApplications.map(app => (<ApplicantCard key={app.id} app={app} darkMode={darkMode} isAccepted={true} onChat={() => handleStartChatFromExternal({ id: app.applicantId, name: app.applicantName, profilePic: app.applicantProfilePic || null })} onView={() => handleViewApplication(app)} onDelete={() => handleDeleteApplication(app.id)} unreadCount={conversations.find(c => c.chatId.includes(app.applicantId))?.[`unread_${auth.currentUser.uid}`] || 0} />)) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No accepted candidates found</p></div>)}</div>
+                <div className="space-y-4">{acceptedApplications.length > 0 ? acceptedApplications.map(app => (<ApplicantCard key={app.id} app={app} darkMode={darkMode} isAccepted={true} onChat={() => handleStartChatFromExternal({ id: app.applicantId, name: app.applicantName, profilePic: app.applicantProfilePic || null })} onView={() => handleViewApplication(app)} onDelete={() => handleDeleteApplication(app.id)} unreadCount={conversations.find(c => c.chatId.includes(app.applicantId))?.[`unread_${auth.currentUser.uid}`] || 0} onRate={() => { setSelectedApplicantToRate(app); setIsRatingApplicantModalOpen(true); }} />)) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No accepted candidates found</p></div>)}</div>
             </section>
           </div>
         )}
@@ -2161,7 +2269,7 @@ return (
                                ? <img src={modalApplicant?.profilePic || selectedApplication.applicantProfilePic} className="w-full h-full object-cover"/> 
                                : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">?</div>}
                         </div>
-                         
+                          
                         <h2 className="text-2xl font-black mb-1 text-center">{selectedApplication.applicantName}</h2>
                         <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{modalApplicant?.title || "Applicant"}</p>
 
@@ -2230,7 +2338,7 @@ return (
                             ? <img src={getAvatarUrl(selectedTalent) || selectedTalent.profilePic} className="w-full h-full object-cover"/> 
                             : <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20">{selectedTalent.firstName?.charAt(0)}</div>}
                     </div>
-                     
+                      
                     <h2 className="text-2xl font-black mb-1 text-center">{selectedTalent.firstName} {selectedTalent.lastName}</h2>
                     <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{selectedTalent.title || "Applicant"}</p>
 
@@ -2361,11 +2469,11 @@ return (
                                                                     <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>
                                                                         {msg.fileType === 'image' && <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" onClick={() => setLightboxUrl(msg.fileUrl)} />}
                                                                         {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
-                                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 ${!isMe && 'bg-black/5'} rounded-xl hover:bg-black/10 transition-colors`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
+                                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${!isMe && 'bg-black/5'}`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
                                                                     </div>
                                                                 )}
                                                                 {hasText && (
-                                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm overflow-hidden ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none'}`}>
+                                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}>
                                                                         <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
                                                                     </div>
                                                                 )}
@@ -2502,20 +2610,61 @@ return (
         <MobileNavItem icon={<div className="relative"><UsersIcon className="w-6 h-6" />{hasNewApps && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white animate-pulse"></span>}</div>} active={activeTab === "Applicants"} onClick={() => setActiveTab("Applicants")} />
         <MobileNavItem icon={<div className="relative"><ChatBubbleLeftRightIcon className="w-6 h-6" />{hasGlobalUnread && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</div>} active={activeTab === "Messages"} onClick={() => setActiveTab("Messages")} />
       </nav>
+        <RateApplicantModal 
+        isOpen={isRatingApplicantModalOpen}
+        onClose={() => setIsRatingApplicantModalOpen(false)}
+        onSubmit={handleSubmitApplicantRating}
+        applicantName={selectedApplicantToRate?.applicantName || "Applicant"}
+        darkMode={darkMode} 
+      />
     </div>
   );
 }
 
-function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDelete, isAccepted, unreadCount }) {
+
+function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDelete, onRate, isAccepted, unreadCount }) {
   return (
-    <div className={`p-4 md:p-8 rounded-[2.5rem] border-l-8 flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 transition-all relative overflow-hidden group hover:shadow-xl backdrop-blur-md ${darkMode ? 'bg-slate-900/60 border-white/5' : 'bg-white/60 border-white/40 shadow-md'} ${isAccepted ? 'border-l-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.1)]' : 'border-l-amber-500'}`}>
+    <div className={`p-4 md:p-8 rounded-[2.5rem] border-l-8 flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 transition-all relative overflow-hidden group hover:shadow-xl backdrop-blur-md ${darkMode ? 'bg-slate-900/60 border-white/5' : 'bg-white border-white/40 shadow-md'} ${isAccepted ? 'border-l-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.1)]' : 'border-l-amber-500'}`}>
       <div className="flex items-start gap-4 md:gap-5">
         <div className={`w-12 h-12 md:w-14 md:h-14 rounded-[1.2rem] flex items-center justify-center text-xl md:text-2xl shadow-inner select-none overflow-hidden shrink-0 ${isAccepted ? 'bg-blue-500/10' : 'bg-amber-500/10'}`}>{app.applicantProfilePic ? <img src={app.applicantProfilePic} alt={app.applicantName} className="w-full h-full object-cover"/> : <span>{isAccepted ? '🤝' : '📄'}</span>}</div>
         <div><div className="flex items-center gap-2"><h4 className={`font-black text-base md:text-lg leading-none select-none cursor-default ${darkMode ? 'text-white' : 'text-slate-900'}`}>{app.applicantName}</h4>{app.status === 'pending' && !app.isViewed && <span className="relative flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span></span>}</div><p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1.5 md:mt-2 select-none cursor-default truncate max-w-[200px]">{app.jobTitle}</p></div>
       </div>
       <div className="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
         <button onClick={onView} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}><EyeIcon className="w-4 h-4" /> View</button>
-        {!isAccepted ? (<><button title="Reject" onClick={onReject} className={`flex-1 md:flex-none justify-center flex p-3 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}><XMarkIcon className="w-5 h-5" /></button><button title="Accept" onClick={onAccept} className={`flex-1 md:flex-none justify-center flex p-3 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-green-500/10 text-green-500 hover:bg-green-500/20' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}><CheckCircleIcon className="w-5 h-5" /></button></>) : (<button onClick={onChat} className="flex-1 md:flex-none justify-center flex bg-blue-600 text-white p-3 rounded-2xl shadow-lg relative hover:bg-blue-500 transition-colors active:scale-95"><ChatBubbleLeftRightIcon className="w-5 h-5" />{unreadCount > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[7px] font-bold">{unreadCount}</span>}</button>)}
+        
+        {!isAccepted ? (
+            /* SHOW FOR PENDING */
+            <>
+                <button title="Reject" onClick={onReject} className={`flex-1 md:flex-none justify-center flex p-3 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}><XMarkIcon className="w-5 h-5" /></button>
+                <button title="Accept" onClick={onAccept} className={`flex-1 md:flex-none justify-center flex p-3 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-green-500/10 text-green-500 hover:bg-green-500/20' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}><CheckCircleIcon className="w-5 h-5" /></button>
+            </>
+        ) : (
+            /* SHOW FOR HIRED/ACCEPTED */
+            <>
+                {app.isRatedByEmployer ? (
+                    <button 
+                        disabled
+                        className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest opacity-50 cursor-not-allowed ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-500'}`}
+                    >
+                        <StarIconSolid className="w-4 h-4 text-amber-500" /> Rated
+                    </button>
+                ) : (
+                    <button 
+                        onClick={onRate} 
+                        // Style now matches the 'View' button with Outline Icon
+                        className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >
+                        <StarIconOutline className="w-4 h-4" /> Rate
+                    </button>
+                )}
+                
+                <button onClick={onChat} className="flex-1 md:flex-none justify-center flex bg-blue-600 text-white p-3 rounded-2xl shadow-lg relative hover:bg-blue-500 transition-colors active:scale-95">
+                    <ChatBubbleLeftRightIcon className="w-5 h-5" />
+                    {unreadCount > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[7px] font-bold">{unreadCount}</span>}
+                </button>
+            </>
+        )}
+        
         <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-white/10' : 'bg-slate-300'}`}></div>
         <button title="Delete Application" onClick={(e) => { e.stopPropagation(); onDelete(); }} className={`flex-none p-3 rounded-2xl transition-all active:scale-95 group-hover:opacity-100 opacity-60 ${darkMode ? 'text-slate-500 hover:text-red-500 hover:bg-red-500/10' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}><TrashIcon className="w-5 h-5" /></button>
       </div>
@@ -2541,4 +2690,61 @@ function MobileNavItem({ icon, active, onClick }) {
       <div className="relative z-10">{icon}</div>
     </button>
   );
+}
+
+
+// [NEW CODE]
+function RateApplicantModal({ isOpen, onClose, onSubmit, applicantName, darkMode }) {
+    const [rating, setRating] = useState(0);
+    const [hoverRating, setHoverRating] = useState(0);
+    const [comment, setComment] = useState("");
+
+    if (!isOpen) return null;
+
+    return (
+        <div className={`fixed inset-0 z-[1000] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in ${darkMode ? 'bg-slate-950/60' : 'bg-slate-900/40'}`}>
+            <div className={`w-full max-w-md p-8 rounded-[2.5rem] shadow-2xl border relative ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+                
+                <button onClick={onClose} className={`absolute top-6 right-6 p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                    <XMarkIcon className={`w-5 h-5 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+                </button>
+
+                <div className="text-center mb-8">
+                    <div className="w-20 h-20 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <StarIconSolid className="w-10 h-10" />
+                    </div>
+                    <h3 className="text-2xl font-black uppercase tracking-tight">Rate Applicant</h3>
+                    <p className={`text-xs mt-2 font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Feedback for {applicantName}</p>
+                </div>
+
+                <div className="flex justify-center gap-3 mb-8">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                        <button 
+                            key={star} 
+                            onMouseEnter={() => setHoverRating(star)} 
+                            onMouseLeave={() => setHoverRating(0)} 
+                            onClick={() => setRating(star)} 
+                            className="transition-transform hover:scale-125 focus:outline-none"
+                        >
+                            <StarIconSolid className={`w-12 h-12 ${star <= (hoverRating || rating) ? 'text-amber-400 drop-shadow-md' : (darkMode ? 'text-slate-700' : 'text-slate-200')}`} />
+                        </button>
+                    ))}
+                </div>
+
+                <textarea 
+                    value={comment} 
+                    onChange={(e) => setComment(e.target.value)} 
+                    placeholder="How was the applicant's performance? (Optional)" 
+                    className={`w-full h-32 p-4 rounded-3xl border outline-none text-sm font-medium resize-none focus:ring-2 ring-amber-500/50 mb-8 placeholder-slate-400 ${darkMode ? 'bg-black/20 border-white/10 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                />
+
+                <button 
+                    onClick={() => { if(rating === 0) return alert("Select a rating"); onSubmit({ rating, comment }); }} 
+                    className="w-full py-5 rounded-2xl bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                    Submit Rating
+                </button>
+            </div>
+        </div>
+    );
 }
