@@ -177,6 +177,7 @@ export default function ApplicantDashboard() {
 
   const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 ${darkMode ? 'text-white' : 'text-slate-800'}`;
 
+  // Removed shine effect from NavBtn
   const glassNavBtn = `relative p-3 rounded-xl transition-all duration-500 ease-out group hover:-translate-y-1 overflow-hidden ${
       darkMode 
       ? 'text-slate-400 hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' 
@@ -284,6 +285,7 @@ export default function ApplicantDashboard() {
 
      if(activeTab === "Ratings") {
         const fetchReviews = () => {
+             // Fetch reviews where YOU are the target (Employer reviewing Applicant)
              const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid), orderBy("createdAt", "desc"));
              const unsub = onSnapshot(q, (snap) => {
                  const revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
@@ -591,10 +593,15 @@ export default function ApplicantDashboard() {
     setLoading(true);
     try {
         await addDoc(collection(db, "reviews"), {
-            targetId: selectedEmployerToRate.employerId,
+            targetId: selectedEmployerToRate.employerId, // Critical: Target is the employer
+            employerId: selectedEmployerToRate.employerId, // Critical for Employer Dash queries
+            applicantId: auth.currentUser.uid, // Critical for cross-referencing
             reviewerId: auth.currentUser.uid,
             reviewerName: displayName,
             reviewerPic: profileImage || null,
+            // Add Applicant fields so Employer Dashboard can render it
+            applicantName: displayName,
+            applicantPic: profileImage || null,
             rating: ratingData.rating,
             comment: ratingData.comment,
             type: 'employer_review',
@@ -660,6 +667,9 @@ export default function ApplicantDashboard() {
 
       {/* STYLES */}
       <style>{`
+        /* Global Scrollbar Hiding */
+        *::-webkit-scrollbar { display: none; }
+        * { -ms-overflow-style: none; scrollbar-width: none; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -670,9 +680,28 @@ export default function ApplicantDashboard() {
         .animate-content {
           animation: content-wipe 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .shine-effect::after {
-            display: none; 
+        
+        /* New explicit shine class for stats and saved cards */
+        .shine {
+          position: relative;
+          overflow: hidden;
         }
+        .shine::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: -100%;
+          width: 50%;
+          height: 100%;
+          background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%);
+          transform: skewX(-25deg);
+          animation: shine 3s infinite;
+          pointer-events: none;
+        }
+        @keyframes shine {
+          100% { left: 125%; }
+        }
+
         .typing-dot {
             animation: typing 1.4s infinite ease-in-out both;
         }
@@ -1011,6 +1040,90 @@ export default function ApplicantDashboard() {
             </div>
         )}
 
+        {/* RATINGS TAB (Newly Added to Match Employer's Ratings Tab) */}
+        {isVerified && activeTab === "Ratings" && (
+            <div key="Ratings" className="animate-content space-y-6">
+                
+                {/* 1. OVERALL RATING CARD */}
+                <div className={`p-8 md:p-12 rounded-[2.5rem] relative overflow-hidden flex flex-col items-center justify-center text-center ${glassPanel}`}>
+                    <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600"></div>
+                    
+                    <h3 className={`text-xs font-black uppercase tracking-[0.3em] mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Overall Reputation</h3>
+                    
+                    <div className="flex items-center justify-center gap-6 mb-4">
+                        <span className={`text-7xl md:text-8xl font-black tracking-tighter ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                            {averageRating || "0.0"}
+                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                            <div className="flex text-amber-400 gap-1">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                    star <= Math.round(Number(averageRating)) ? (
+                                        <StarIconSolid key={star} className="w-6 h-6 md:w-8 md:h-8 text-amber-400 drop-shadow-md" />
+                                    ) : (
+                                        <StarIconOutline key={star} className="w-6 h-6 md:w-8 md:h-8 text-slate-300 dark:text-slate-700" />
+                                    )
+                                ))}
+                            </div>
+                            <span className="text-xs font-bold opacity-50 uppercase tracking-widest">{reviews.length} Total Reviews</span>
+                        </div>
+                    </div>
+                    
+                    <p className="text-xs opacity-40 max-w-md mx-auto">
+                        Ratings are based on feedback from employers you have worked with.
+                    </p>
+                </div>
+
+                {/* 2. REVIEWS LIST */}
+                <div className="grid grid-cols-1 gap-6">
+                    <div className="flex items-center gap-3 mb-2 px-2">
+                        <div className="p-2 bg-amber-500/10 rounded-xl text-amber-500"><StarIconSolid className="w-5 h-5"/></div>
+                        <h3 className={`font-black uppercase tracking-[0.2em] text-sm ${darkMode ? 'text-white' : 'text-slate-800'}`}>Recent Feedback</h3>
+                    </div>
+
+                    {reviews.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {reviews.map((rev) => (
+                                <div key={rev.id} className={`p-6 rounded-[2rem] border relative group transition-all hover:-translate-y-1 ${darkMode ? 'bg-slate-800/40 border-white/5' : 'bg-white border-slate-200 shadow-sm'}`}>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden">
+                                                {rev.reviewerPic ? <img src={rev.reviewerPic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center font-bold text-slate-500">{rev.reviewerName?.charAt(0)}</div>}
+                                            </div>
+                                            <div>
+                                                <h4 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-slate-900'}`}>{rev.reviewerName || "Anonymous"}</h4>
+                                                <p className="text-[9px] font-bold opacity-40 uppercase">{rev.createdAt ? formatTime(rev.createdAt) : 'Just now'}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex bg-amber-500/10 px-2 py-1 rounded-lg">
+                                            {[1, 2, 3, 4, 5].map((s) => (
+                                                s <= rev.rating ? (
+                                                    <StarIconSolid key={s} className="w-3 h-3 text-amber-500" />
+                                                ) : (
+                                                    <StarIconOutline key={s} className="w-3 h-3 text-amber-500/40" />
+                                                )
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <span className="absolute -top-2 -left-1 text-4xl font-serif opacity-10">“</span>
+                                        <p className={`text-sm leading-relaxed pl-4 relative z-10 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                                            {rev.comment || "No comment provided."}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="py-20 text-center flex flex-col items-center opacity-40">
+                            <StarIconSolid className="w-16 h-16 text-slate-300 mb-4"/>
+                            <p className="font-bold uppercase text-xs tracking-widest">No reviews yet</p>
+                            <p className="text-[10px] mt-2">Feedback will appear here once employers rate you.</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
+
         {/* SUPPORT TAB (Restored) */}
         {activeTab === "Support" && (
             <div key="Support" className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (isSupportOpen ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
@@ -1235,9 +1348,9 @@ export default function ApplicantDashboard() {
         {isVerified && activeTab === "FindJobs" && (
             <div key="FindJobs" className="animate-content">
                 <div className="space-y-6 mb-8">
-                     {/* --- QUICK STATS --- */}
+                     {/* --- QUICK STATS (ADDED SHINE EFFECT) --- */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
-                        <div onClick={() => setActiveTab("FindJobs")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        <div onClick={() => setActiveTab("FindJobs")} className={`shine relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{availableJobs.length}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>Jobs</p>
@@ -1245,7 +1358,7 @@ export default function ApplicantDashboard() {
                             <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
-                        <div onClick={() => setActiveTab("Saved")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        <div onClick={() => setActiveTab("Saved")} className={`shine relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{savedJobs.length}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-blue-800'}`}>Saved</p>
@@ -1253,7 +1366,7 @@ export default function ApplicantDashboard() {
                             <BookmarkIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
-                        <div onClick={() => setActiveTab("Applications")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        <div onClick={() => setActiveTab("Applications")} className={`shine relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{myApplications.length}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>Applied</p>
@@ -1261,7 +1374,7 @@ export default function ApplicantDashboard() {
                             <PaperAirplaneIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
 
-                        <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        <div onClick={() => setActiveTab("Messages")} className={`shine relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{unreadMsgCount}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-blue-800'}`}>Messages</p>
@@ -1428,7 +1541,7 @@ export default function ApplicantDashboard() {
                 const hasApplied = myApplications.some(app => app.jobId === job.id);
                 
                 return (
-                  <div key={item.id} className={`group relative p-4 md:p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl cursor-pointer ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white border-slate-200 shadow-sm hover:border-blue-400/50'}`}>
+                  <div key={item.id} className={`shine group relative p-4 md:p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl cursor-pointer ${darkMode ? 'bg-slate-800/40 border-white/5 hover:border-blue-500/30' : 'bg-white border-slate-200 shadow-sm hover:border-blue-400/50'}`}>
                       <div className="absolute top-10 right-4 md:top-10 md:right-8 opacity-10 transform -rotate-12 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
                            {cloneElement(style.icon, { className: "w-32 h-32 md:w-56 md:h-56" })}
                       </div>
@@ -1493,6 +1606,7 @@ export default function ApplicantDashboard() {
                             onView={() => handleViewApplicationDetails(app)}
                             unreadCount={conversations.find(c => c.chatId.includes(app.employerId))?.[`unread_${auth.currentUser.uid}`] || 0}
                             onRate={() => { setSelectedEmployerToRate(app); setIsRatingEmployerModalOpen(true); }}
+                            onWithdraw={() => handleWithdrawApplication(app.id)} // Added missing prop for delete button
                         />
                     )) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No accepted applications</p></div>)}
                 </div>
