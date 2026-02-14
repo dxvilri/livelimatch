@@ -433,7 +433,25 @@ export default function ApplicantDashboard() {
   // --- HANDLERS ---
   const handleTouchStart = (e) => { setIsDragging(true); const touch = e.touches[0]; dragOffset.current = { x: touch.clientX - bubblePos.x, y: touch.clientY - bubblePos.y }; };
   const handleTouchMove = (e) => { if (!isDragging) return; const touch = e.touches[0]; const bubbleSize = 56; let newX = touch.clientX - dragOffset.current.x; let newY = touch.clientY - dragOffset.current.y; newY = Math.max(80, Math.min(newY, window.innerHeight - 150)); newX = Math.max(0, Math.min(newX, window.innerWidth - bubbleSize)); setBubblePos({ x: newX, y: newY }); };
-  const handleTouchEnd = () => { setIsDragging(false); const bubbleSize = 56; if (bubblePos.x < window.innerWidth / 2) { setBubblePos(prev => ({ ...prev, x: 0 })); } else { setBubblePos(prev => ({ ...prev, x: window.innerWidth - bubbleSize })); } };
+  
+  const handleTouchEnd = () => { 
+    setIsDragging(false); 
+    const bubbleSize = 56; 
+
+    // --- NEW CLOSE COLLISION LOGIC ---
+    const closeZoneX = window.innerWidth / 2 - bubbleSize / 2;
+    const closeZoneY = window.innerHeight - 120;
+    const distance = Math.sqrt(Math.pow(bubblePos.x - closeZoneX, 2) + Math.pow(bubblePos.y - closeZoneY, 2));
+
+    if (distance < 50) {
+      setIsBubbleVisible(false);
+      setIsBubbleExpanded(false);
+      setOpenBubbles([]);
+      return;
+    }
+
+    if (bubblePos.x < window.innerWidth / 2) { setBubblePos(prev => ({ ...prev, x: 0 })); } else { setBubblePos(prev => ({ ...prev, x: window.innerWidth - bubbleSize })); } 
+  };
 
   const handleMinimizeToBubble = () => {
     if (!activeChat) return;
@@ -2009,6 +2027,16 @@ export default function ApplicantDashboard() {
       {isBubbleVisible && (
         isMobile ? (
           <>
+             {/* DRAG-TO-CLOSE X MARK */}
+             {isDragging && !isBubbleExpanded && (
+                <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in zoom-in-95 duration-200">
+                    <div className="w-14 h-14 rounded-full bg-red-600/20 border-2 border-dashed border-red-500 flex items-center justify-center text-red-500">
+                        <XMarkIcon className="w-7 h-7" />
+                    </div>
+                    <p className="text-[8px] font-black uppercase tracking-widest text-red-500 mt-2 text-center">Close Chat</p>
+                </div>
+             )}
+
              {!isBubbleExpanded && (
                 <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                    <div className="relative">
@@ -2047,7 +2075,8 @@ export default function ApplicantDashboard() {
                         ))}
                         <div className="flex flex-col items-center gap-1 shrink-0 relative">
                             <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all border-2 ${activeBubbleView === 'inbox' ? 'border-blue-500 scale-110' : 'border-white dark:border-slate-700 opacity-60'} ${darkMode ? 'bg-slate-800' : 'bg-white'}`}><ChatBubbleOvalLeftEllipsisIcon className="w-7 h-7 text-blue-500" /></button>
-                            {unreadMsgCount > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-md z-10">{unreadMsgCount}</span>}
+                            {/* FIXED: MATCHED STYLE WITH INDIVIDUAL CHATS */}
+                            {unreadMsgCount > 0 && <span className="absolute -top-1 -left-1 min-w-[18px] h-[18px] bg-red-500 border-2 border-white rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-md z-10">{unreadMsgCount}</span>}
                         </div>
                     </div>
 
