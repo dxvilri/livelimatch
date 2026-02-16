@@ -107,6 +107,7 @@ export default function EmployerDashboard() {
   const [bubblePos, setBubblePos] = useState({ x: window.innerWidth - 60, y: 150 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const [bubbleSearch, setBubbleSearch] = useState("");
     
   // --- INTEGRATED CHAT HOOK ---
   const chat = useChat(auth.currentUser, isMobile);
@@ -933,6 +934,7 @@ export default function EmployerDashboard() {
     }
   };
   
+  
   // Mark announcement as read
   const handleViewAnnouncement = (annId) => {
      setActiveTab("Announcements");
@@ -951,6 +953,14 @@ export default function EmployerDashboard() {
       const name = c.names?.[otherId] || "User"; 
       return name.toLowerCase().includes(chatSearch.toLowerCase());
   });
+
+  const bubbleFilteredChats = conversations.filter(c => { 
+  const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); 
+  if (adminUser && otherId === adminUser.id) return false; 
+  const name = c.names?.[otherId] || "User"; 
+  return name.toLowerCase().includes(bubbleSearch.toLowerCase()); 
+});
+
 
   const filteredApps = receivedApplications.filter(app => app.applicantName.toLowerCase().includes(applicantSearch.toLowerCase()) || app.jobTitle.toLowerCase().includes(applicantSearch.toLowerCase()));
   
@@ -2509,7 +2519,7 @@ return (
       )}
 
       {/* MESSENGER STYLE BUBBLE STACK */}
-        {isBubbleVisible && (
+      {isBubbleVisible && (
     isMobile ? (
         <>
             {/* --- MOBILE: COLLAPSED BUBBLE (Single Floating Button) --- */}
@@ -2517,19 +2527,26 @@ return (
                 <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                     <div className="relative">
                         <button 
-                            onClick={(e) => { if (!isDragging) setIsBubbleExpanded(true); }} 
+                            onClick={(e) => { 
+                                if (!isDragging) { 
+                                    setIsBubbleExpanded(true); 
+                                    if(effectiveActiveChatUser) {
+                                        openChat(effectiveActiveChatUser);
+                                        markConversationAsRead(effectiveActiveChatUser.id);
+                                    }
+                                } 
+                            }} 
                             className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white'}`}
                         >
                             {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (
                                 (getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? 
-                                <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : 
+                                <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt=""/> : 
                                 <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>
                             ) : ( 
                                 <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} /> 
                             )}
                         </button>
                         
-                        {/* Mobile Collapsed Badge: On the circle */}
                         {(() => {
                              const activeUnread = activeBubbleView !== 'inbox' && effectiveActiveChatUser 
                                  ? (conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.[`unread_${auth.currentUser.uid}`] || 0)
@@ -2545,26 +2562,26 @@ return (
                 </div>
             )}
 
-            {/* --- MOBILE: DRAG ZONE --- */}
+            {/* --- MOBILE: DRAG ZONE (TRASH) --- */}
             {isDragging && (
                 <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] w-16 h-16 rounded-full flex items-center justify-center border-4 border-slate-400/30 bg-transparent animate-in zoom-in backdrop-blur-sm">
                     <XMarkIcon className="w-8 h-8 text-slate-400" />
                 </div>
             )}
 
-            {/* --- MOBILE: EXPANDED BUBBLE UI --- */}
+            {/* --- MOBILE: EXPANDED BUBBLE UI (Overlay) --- */}
             {isBubbleExpanded && (
                 <div className="fixed inset-0 z-[1000] flex flex-col bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    {/* Top Bubble Listing */}
                     <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
                         {openBubbles.map((chat) => {
                             const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
                             return (
                                 <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
                                     <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${activeBubbleView === chat.id ? 'border-blue-500 scale-110' : 'border-transparent opacity-60'}`}>
-                                        {(getAvatarUrl(chat) || chat.profilePic) ? <img src={getAvatarUrl(chat) || chat.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
+                                        {(getAvatarUrl(chat) || chat.profilePic) ? <img src={getAvatarUrl(chat) || chat.profilePic} className="w-full h-full object-cover" alt=""/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
                                     </button>
                                     
-                                    {/* MOBILE BADGE: On the circle profile picture (Active or Inactive) */}
                                     {unread > 0 && (
                                         <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-sm z-20">
                                             {unread}
@@ -2580,6 +2597,7 @@ return (
                         </div>
                     </div>
                     
+                    {/* Expanded Chat Window Area */}
                     <div className="flex-1 flex flex-col justify-end relative" onClick={() => setIsBubbleExpanded(false)}>
                         <div className={`w-full h-[80vh] rounded-t-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`} onClick={(e) => e.stopPropagation()}>
                             {activeBubbleView === 'inbox' ? (
@@ -2588,15 +2606,21 @@ return (
                                         <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
                                         <button onClick={() => setIsBubbleExpanded(false)} className="p-2 bg-slate-100 dark:bg-white/10 rounded-full"><ChevronDownIcon className="w-5 h-5 opacity-50"/></button> 
                                     </div>
+                                    <div className="px-5 pb-2">
+                                        <div className={`flex items-center p-2 rounded-xl border ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
+                                            <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
+                                            <input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold" />
+                                        </div>
+                                    </div>
                                     <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
-                                        {filteredChats.map(c => {
+                                        {bubbleFilteredChats.map(c => {
                                             const otherId = c.participants.find(p => p !== auth.currentUser.uid);
                                             const name = c.names?.[otherId] || "User";
                                             const otherPic = c.profilePics?.[otherId];
                                             const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                             return (
                                                 <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                                    <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                                    <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt=""/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                                     <div className="flex-1 text-left overflow-hidden">
                                                         <div className="flex justify-between items-center">
                                                             <span className="font-black text-sm truncate">{name}</span>
@@ -2618,7 +2642,7 @@ return (
                                         <div className={`p-4 flex justify-between items-center shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200">
-                                                    {(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}
+                                                    {(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt=""/> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}
                                                 </div>
                                                 <div>
                                                     <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{effectiveActiveChatUser.name}</h3>
@@ -2655,8 +2679,6 @@ return (
                                                                         <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
                                                                     </div>
                                                                 )}
-                                                                
-                                                                {/* REPLY BUTTON (Added) */}
                                                                 <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
                                                             </div>
                                                         </div>
@@ -2667,10 +2689,7 @@ return (
                                             <div ref={scrollRef}/>
                                         </div>
                                         <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                                            
-                                            {/* REPLY BANNER (Added) */}
                                             {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                                            
                                             <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
                                                 <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
                                                 <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
@@ -2687,10 +2706,10 @@ return (
             )}
         </>
     ) : (
-        // --- DESKTOP VIEW BUBBLES ---
+        // --- DESKTOP VIEW BUBBLES (Stacking) ---
         <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
             
-            {/* 1. MAIN INBOX BUTTON (Wrapped so Button stays Round & Badge is Visible) */}
+            {/* 1. MAIN INBOX BUTTON */}
             <div className="pointer-events-auto relative">
                 <button 
                     onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }}
@@ -2699,17 +2718,16 @@ return (
                     <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
                 </button>
                 
-                {hasGlobalUnread && (
+                {unreadMsgCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-20 animate-bounce">
                         {unreadMsgCount}
                     </span>
                 )}
             </div>
 
-            {/* 2. BUBBLE LISTING */}
+            {/* 2. OPEN BUBBLES LIST */}
             {openBubbles.map((chat) => {
                 const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
-                
                 return (
                 <div key={chat.id} className="pointer-events-auto relative group flex items-center gap-3">
                     <span className="absolute right-full mr-3 px-3 py-1.5 rounded-xl bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">{chat.name}</span>
@@ -2721,19 +2739,18 @@ return (
                             {(getAvatarUrl(chat) || chat.profilePic) ? (<img src={getAvatarUrl(chat) || chat.profilePic} alt="" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
                         </button>
                         
-                        {/* DESKTOP BADGE: On the circle profile picture (Active or Inactive) */}
                         {unread > 0 && (
                             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm z-20 animate-bounce">
                                 {unread}
                             </span>
                         )}
                         
-                        <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className="absolute -top-1 -left-1 w-5 h-5 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-white dark:border-slate-800"><XMarkIcon className="w-3 h-3 text-slate-600 dark:text-slate-300" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className="absolute -top-1 -left-1 w-5 h-5 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border-none"><XMarkIcon className="w-3 h-3 text-slate-600 dark:text-slate-300" /></button>
                     </div>
                 </div>
             )})}
 
-            {/* ... Desktop Inbox Visible Logic ... */}
+            {/* 3. DESKTOP INBOX POPUP */}
             {isDesktopInboxVisible && !activeChat && (
                 <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
                     <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
@@ -2744,18 +2761,18 @@ return (
                         <div className="p-3 pb-0">
                             <div className={`flex items-center p-1.5 rounded-xl border ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
                                 <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
-                                <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold" />
+                                <input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold" />
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
-                            {filteredChats.map(c => {
+                            {bubbleFilteredChats.map(c => {
                                 const otherId = c.participants.find(p => p !== auth.currentUser.uid);
                                 const name = c.names?.[otherId] || "User";
                                 const otherPic = c.profilePics?.[otherId];
                                 const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                 return (
                                     <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt=""/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                         <div className="flex-1 text-left overflow-hidden">
                                             <div className="flex justify-between items-center">
                                                 <span className="font-black text-sm truncate">{name}</span>
@@ -2774,16 +2791,15 @@ return (
                 </div>
             )}
 
-            {/* ... Desktop Active Chat Window ... */}
+            {/* 4. DESKTOP FLOATING CHAT WINDOW */}
             {!isChatMinimized && activeChat && activeTab !== "Support" && (
                 <div className={`fixed z-[210] pointer-events-auto bottom-6 right-24`}>
                     <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border animate-in slide-in-from-right-4 duration-300 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
                         <div className={`p-4 flex justify-between items-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0`}>
                             <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
+                                <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover" alt=""/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
                                 <div><span className="font-black text-xs uppercase block">{activeChat.name}</span><span className="text-[9px] opacity-90 font-bold block">Active Now</span></div>
                             </div>
-                            {/* REMOVED BADGE FROM HERE (HEADER) */}
                             <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className="p-1.5 hover:bg-white/20 rounded-lg"><ChevronDownIcon className="w-4 h-4"/></button><button onClick={handleCloseChat} className="p-1.5 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-4 h-4"/></button></div>
                         </div>
                         <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
@@ -2797,10 +2813,8 @@ return (
                                         <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                             <MessageAvatar isMe={isMe} />
                                             <div className="relative group/bubble flex flex-col gap-1">
-                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" alt=""/>}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
                                                 {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                                
-                                                {/* REPLY BUTTON (Added) */}
                                                 <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-8 hover:bg-black/5' : '-right-8 hover:bg-black/5'} text-slate-400`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
                                             </div>
                                         </div>
@@ -2811,10 +2825,7 @@ return (
                             <div ref={scrollRef}/>
                         </div>
                         <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                            
-                            {/* REPLY BANNER (Added) */}
                             {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                            
                             <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
                                 <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
                                 <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>

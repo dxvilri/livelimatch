@@ -152,6 +152,8 @@ export default function ApplicantDashboard() {
   const [isEditingImage, setIsEditingImage] = useState(false);
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  // NEW: Specific dropdown state for profile editing to avoid conflict with filters
+  const [isProfileCategoryDropdownOpen, setIsProfileCategoryDropdownOpen] = useState(false);
 
   // Ratings
   const [reviews, setReviews] = useState([]);
@@ -162,7 +164,8 @@ export default function ApplicantDashboard() {
   const [applicantData, setApplicantData] = useState({
     firstName: "", lastName: "", sitio: "", title: "Job Seeker",
     bio: "", skills: "", education: "", experience: "",
-    verificationStatus: "pending" 
+    verificationStatus: "pending",
+    category: "" 
   });
 
   const isVerified = applicantData.verificationStatus === 'verified';
@@ -240,6 +243,61 @@ export default function ApplicantDashboard() {
          markConversationAsRead(currentChatTarget.id);
     }
   }, [messages, currentChatTarget]);
+  
+  // --- CHAT NAME AUTO-CORRECTION EFFECT ---
+  // If any conversation has "User", "Employer", or "Applicant" as a name, fetch the real name/pic from 'employers'
+  useEffect(() => {
+    if (!auth.currentUser || conversations.length === 0) return;
+    
+    const fixConversationNames = async () => {
+        const batch = writeBatch(db);
+        let updatesNeeded = false;
+        
+        for (const conv of conversations) {
+            const myId = auth.currentUser.uid;
+            const otherId = conv.participants?.find(p => p !== myId);
+            if (!otherId) continue;
+            
+            const currentName = conv.names?.[otherId];
+            const currentPic = conv.profilePics?.[otherId];
+            
+            // Check if name is generic or missing
+            const isGenericName = !currentName || currentName === "User" || currentName === "Employer" || currentName === "Applicant";
+            
+            if (isGenericName) {
+                try {
+                    // Fetch real data from Employers collection
+                    const employerDoc = await getDoc(doc(db, "employers", otherId));
+                    if (employerDoc.exists()) {
+                        const data = employerDoc.data();
+                        const realName = `${data.firstName || ""} ${data.lastName || ""}`.trim() || "Employer";
+                        const realPic = data.profilePic || null;
+                        
+                        const convRef = doc(db, "conversations", conv.chatId);
+                        batch.update(convRef, {
+                            [`names.${otherId}`]: realName,
+                            [`profilePics.${otherId}`]: realPic
+                        });
+                        updatesNeeded = true;
+                    }
+                } catch (err) {
+                    console.error("Error correcting chat name:", err);
+                }
+            }
+        }
+        
+        if (updatesNeeded) {
+            try {
+                await batch.commit();
+                console.log("Auto-corrected chat names.");
+            } catch (err) {
+                console.error("Batch update failed:", err);
+            }
+        }
+    };
+    
+    fixConversationNames();
+  }, [conversations, auth.currentUser]);
 
   // Mark application updates as read
   useEffect(() => {
@@ -274,23 +332,23 @@ export default function ApplicantDashboard() {
 
      if(activeTab === "Ratings") {
         const fetchReviews = () => {
-             const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid), orderBy("createdAt", "desc"));
-             const unsub = onSnapshot(q, (snap) => {
-                 const revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                 setReviews(revs);
-                 
-                 if(revs.length > 0) {
-                     const total = revs.reduce((acc, curr) => acc + (Number(curr.rating) || 0), 0);
-                     setAverageRating((total / revs.length).toFixed(1));
-                 } else {
-                     setAverageRating(0);
-                 }
-             });
-             return unsub;
-         };
-         const unsubReviews = fetchReviews();
-         return () => unsubReviews && unsubReviews();
-     }
+        const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid), orderBy("createdAt", "desc"));
+        const unsub = onSnapshot(q, (snap) => {
+            const revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            setReviews(revs);
+            
+            if(revs.length > 0) {
+                const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
+                setAverageRating((total / revs.length).toFixed(1));
+            } else {
+                setAverageRating(0);
+            }
+        });
+        return unsub;
+    };
+    const unsubReviews = fetchReviews();
+    return () => unsubReviews && unsubReviews();
+}
    }, [activeTab]);
 
   useEffect(() => {
@@ -312,7 +370,8 @@ export default function ApplicantDashboard() {
             bio: data.bio || data.aboutMe || "",
             education: data.education || "",
             experience: data.workExperience || "",
-            verificationStatus: data.verificationStatus || "pending"
+            verificationStatus: data.verificationStatus || "pending",
+            category: data.category || "" 
         }));
       }
     });
@@ -422,30 +481,40 @@ export default function ApplicantDashboard() {
       const myId = auth.currentUser.uid;
       const chatId = [myId, otherUserId].sort().join("_");
       
-      // We optimistically assume unread count is handled by the hook/state derived from DB
-      // But we must update the DB to clear it.
       try { const convRef = doc(db, "conversations", chatId); await updateDoc(convRef, { [`unread_${myId}`]: 0 }); } catch (e) { }
   };
 
+  // [FIX] Name & Picture Resolution Logic
   const handleSendMessageWrapper = async (e) => {
     e.preventDefault();
-    
-    // Use correct chat target depending on mode (Bubble vs Standard)
     const targetChat = activeChat || (isBubbleVisible && activeBubbleView !== 'inbox' ? openBubbles.find(b => b.id === activeBubbleView) : null);
-
     if (!targetChat) return;
     
     const myId = auth.currentUser.uid;
     const otherId = targetChat.id;
     const chatId = [myId, otherId].sort().join("_");
 
-    // Name logic
-    let recipientName = targetChat.name || "Employer";
+    // NAME & PIC RESOLUTION LOGIC
+    let recipientName = targetChat.name;
     let recipientPic = targetChat.profilePic;
+
+    // If data is generic or missing, fetch fresh data from 'employers' collection
+    if (!recipientName || recipientName === "User" || recipientName === "Employer" || !recipientPic) {
+        try {
+            // Applicants chat with Employers
+            const userSnap = await getDoc(doc(db, "employers", otherId));
+            if (userSnap.exists()) {
+                const d = userSnap.data();
+                const realName = `${d.firstName || ""} ${d.lastName || ""}`.trim();
+                if(realName) recipientName = realName;
+                if(d.profilePic) recipientPic = d.profilePic;
+            }
+        } catch (err) { console.error("Error resolving name/pic", err); }
+    }
 
     const conversationMetaUpdate = {
         [`names.${myId}`]: displayName || "Applicant",
-        [`names.${otherId}`]: recipientName,
+        [`names.${otherId}`]: recipientName || "Employer",
         [`profilePics.${myId}`]: profileImage || null,
         [`profilePics.${otherId}`]: recipientPic || null,
         participants: [myId, otherId]
@@ -454,17 +523,19 @@ export default function ApplicantDashboard() {
     if (!attachment) {
         if (!newMessage.trim()) return;
         
+        // FIX: Mobile Bubble Chat Ghosting - Always use addDoc directly if we are in bubble mode to ensure send
         if (activeChat) {
-             // Standard hook send
+             // Standard hook send if main chat is active
              await sendMessage(newMessage, replyingTo);
         } else {
-             // Manual send for Bubble Mode (since hook depends on activeChat state)
+             // Manual send for Bubble Mode (bypassing potentially closed hook)
              await addDoc(collection(db, "messages"), {
                 chatId, text: newMessage, senderId: myId, receiverId: otherId, createdAt: serverTimestamp(),
                 replyTo: replyingTo ? { id: replyingTo.id, text: replyingTo.text, senderName: replyingTo.senderId === myId ? "You" : recipientName, type: replyingTo.fileType || 'text' } : null
              });
         }
         
+        // UPDATE METADATA WITH FRESH NAMES/PICS
         await setDoc(doc(db, "conversations", chatId), {
             chatId, lastMessage: newMessage, lastTimestamp: serverTimestamp(),
              [`unread_${otherId}`]: increment(1),
@@ -558,7 +629,21 @@ export default function ApplicantDashboard() {
   const handleImageUpload = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { setProfileImage(reader.result); setIsEditingImage(true); }; reader.readAsDataURL(file); } };
   const dataURLtoBlob = (dataurl) => { try { const arr = dataurl.split(','); const mime = arr[0].match(/:(.*?);/)[1]; const bstr = atob(arr[1]); let n = bstr.length; const u8arr = new Uint8Array(n); while(n--) u8arr[n] = bstr.charCodeAt(n); return new Blob([u8arr], {type:mime}); } catch (e) { return null; } };
   const saveProfileImage = async () => { if (!auth.currentUser || !profileImage) return; setLoading(true); try { const storage = getStorage(auth.app); const storageRef = ref(storage, `profile_pics/${auth.currentUser.uid}`); const blob = dataURLtoBlob(profileImage); if (!blob) throw new Error("Failed to process image data."); const uploadTask = await uploadBytes(storageRef, blob); const downloadURL = await getDownloadURL(uploadTask.ref); await setDoc(doc(db, "applicants", auth.currentUser.uid), { profilePic: downloadURL, imgScale: imgScale, uid: auth.currentUser.uid, updatedAt: serverTimestamp() }, { merge: true }); setIsEditingImage(false); alert("Profile picture updated!"); } catch (err) { alert(`Error: ${err.message}`); } finally { setLoading(false); } };
-  const handleSaveProfile = async () => { setLoading(true); try { await setDoc(doc(db, "applicants", auth.currentUser.uid), { title: applicantData.title, aboutMe: applicantData.bio, education: applicantData.education, workExperience: applicantData.experience, updatedAt: serverTimestamp() }, { merge: true }); setIsEditingProfile(false); } catch (err) { alert("Error saving profile: " + err.message); } finally { setLoading(false); } };
+  
+  const handleSaveProfile = async () => { 
+    setLoading(true); 
+    try { 
+        await setDoc(doc(db, "applicants", auth.currentUser.uid), { 
+            title: applicantData.title, 
+            aboutMe: applicantData.bio, 
+            education: applicantData.education, 
+            workExperience: applicantData.experience, 
+            category: applicantData.category,
+            updatedAt: serverTimestamp() 
+        }, { merge: true }); 
+        setIsEditingProfile(false); 
+    } catch (err) { alert("Error saving profile: " + err.message); } finally { setLoading(false); } 
+  };
 
   const handleViewApplicationDetails = async (app) => { setModalLoading(true); setViewingApplication(app); setModalJobDetails(null); try { if (app.jobId) { const jobSnap = await getDoc(doc(db, "jobs", app.jobId)); if (jobSnap.exists()) { setModalJobDetails(jobSnap.data()); } } } catch (err) { } finally { setModalLoading(false); } };
   
@@ -601,13 +686,56 @@ export default function ApplicantDashboard() {
     }
   };
 
-  const handleWithdrawApplication = async (appId) => { if(!window.confirm("Are you sure you want to withdraw this application?")) return; setLoading(true); try { await deleteDoc(doc(db, "applications", appId)); setViewingApplication(null); } catch (err) { alert("Error withdrawing: " + err.message); } finally { setLoading(false); } };
-  const handleToggleSaveJob = async (job) => { const existing = savedJobs.find(s => s.jobId === job.id); try { if(existing) { await deleteDoc(doc(db, "saved_jobs", existing.id)); } else { await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() }); } } catch(err) { } };
+  const handleWithdrawApplication = async (appId) => { 
+      if(!window.confirm("Are you sure you want to withdraw this application? Employers will see the status as Withdrawn.")) return; 
+      setLoading(true); 
+      try { 
+          // Soft delete - Change status to withdrawn
+          await updateDoc(doc(db, "applications", appId), {
+              status: 'withdrawn'
+          });
+          setViewingApplication(null); 
+      } catch (err) { 
+          alert("Error withdrawing: " + err.message); 
+      } finally { 
+          setLoading(false); 
+      } 
+  };
+
+  const handleDeleteApplication = async (appId) => {
+      if(!window.confirm("Delete this record permanently? You cannot undo this.")) return;
+      setLoading(true);
+      try {
+          // Hard delete
+          await deleteDoc(doc(db, "applications", appId));
+      } catch (err) {
+          alert("Error deleting: " + err.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  const handleToggleSaveJob = async (job) => { 
+      const existing = savedJobs.find(s => s.jobId === job.id); 
+      
+      const isAppliedActive = myApplications.some(app => app.jobId === job.id && app.status !== 'withdrawn');
+      if(isAppliedActive && existing) {
+          return alert("You cannot unsave a job you have an active application for. Withdraw the application first.");
+      }
+
+      try { 
+          if(existing) { 
+              await deleteDoc(doc(db, "saved_jobs", existing.id)); 
+          } else { 
+              await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() }); 
+          } 
+      } catch(err) { } 
+  };
   
   const handleViewAnnouncement = (annId) => { 
       setActiveTab("Announcements"); 
       setIsNotifOpen(false); 
-      setLastReadAnnouncementId(String(annId)); // Ensure string for consistent comparison
+      setLastReadAnnouncementId(String(annId)); 
       localStorage.setItem("lastReadAnnounceApp", String(annId)); 
   };
 
@@ -615,16 +743,10 @@ export default function ApplicantDashboard() {
     if (!auth.currentUser || !selectedEmployerToRate) return;
     setLoading(true);
     try {
-        await addDoc(collection(db, "reviews"), {
-            targetId: selectedEmployerToRate.employerId, 
-            employerId: selectedEmployerToRate.employerId, 
-            applicantId: auth.currentUser.uid, 
-            reviewerId: auth.currentUser.uid,
-            reviewerName: displayName,
-            reviewerPic: profileImage || null,
-            applicantName: displayName,
-            applicantPic: profileImage || null,
-            rating: ratingData.rating,
+         await addDoc(collection(db, "reviews"), {
+        targetId: selectedEmployerToRate.employerId, // THE PERSON BEING RATED
+        reviewerId: auth.currentUser.uid,
+        rating: ratingData.rating,
             comment: ratingData.comment,
             type: 'employer_review',
             createdAt: serverTimestamp()
@@ -662,9 +784,8 @@ export default function ApplicantDashboard() {
   const filteredApplications = myApplications.filter(app => app.jobTitle.toLowerCase().includes(applicationSearch.toLowerCase()) || (app.employerName && app.employerName.toLowerCase().includes(applicationSearch.toLowerCase())));
   const pendingApplications = filteredApplications.filter(app => app.status === 'pending');
   const acceptedApplications = filteredApplications.filter(app => app.status === 'accepted');
-  const rejectedApplications = filteredApplications.filter(app => app.status === 'rejected');
+  const rejectedApplications = filteredApplications.filter(app => app.status === 'rejected' || app.status === 'withdrawn');
   
-  // Notification Logic
   const hasUnreadUpdates = myApplications.some(app => app.isReadByApplicant === false && app.status !== 'pending');
   const unreadMsgCount = conversations.reduce((acc, curr) => { const otherId = curr.participants?.find(p => p !== auth.currentUser?.uid); if (adminUser && otherId === adminUser.id) return acc; return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0); }, 0);
   const latestAnnouncement = announcements.length > 0 ? announcements[0] : null;
@@ -719,6 +840,7 @@ export default function ApplicantDashboard() {
         </div>
       )}
 
+      {/* STYLES */}
       <style>{`
         .hide-scrollbar::-webkit-scrollbar { display: none; } 
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -862,7 +984,7 @@ export default function ApplicantDashboard() {
 
                 <div onClick={() => setActiveTab("Profile")} className="cursor-pointer group">
                     <div className={`w-10 h-10 rounded-full overflow-hidden border-2 shadow-sm transition-transform active:scale-95 ${darkMode ? 'border-slate-600 group-hover:border-white' : 'border-white group-hover:border-blue-500'}`}>
-                        {profileImage ? <img src={profileImage} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">{applicantData.firstName ? applicantData.firstName.charAt(0) : "A"}</div>}
+                        {profileImage ? <img src={profileImage} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">{applicantData.firstName ? applicantData.firstName.charAt(0) : "A"}</div>}
                     </div>
                 </div>
 
@@ -898,8 +1020,6 @@ export default function ApplicantDashboard() {
             <NavBtn active={activeTab==="Announcements"} onClick={()=>{setActiveTab("Announcements"); setIsSidebarOpen(false)}} icon={<MegaphoneIcon className="w-6 h-6"/>} label="Announcements" open={true} dark={darkMode} />
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
             <NavBtn active={activeTab==="Support"} onClick={()=>{setActiveTab("Support"); setIsSidebarOpen(false)}} icon={<QuestionMarkCircleIcon className="w-6 h-6"/>} label="Help & Support" open={true} dark={darkMode} />
-            <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
-            <NavBtn active={activeTab==="Profile"} onClick={()=>{setActiveTab("Profile"); setIsEditingProfile(true); setIsSidebarOpen(false); }} icon={<UserCircleIcon className="w-6 h-6"/>} label="Profile" open={true} dark={darkMode} />
         </nav>
 
         <div className="p-4 space-y-3">
@@ -958,6 +1078,58 @@ export default function ApplicantDashboard() {
                             <div>
                                 <h2 className="text-3xl font-black tracking-tight cursor-default mb-2">{displayName}</h2>
                                 {isEditingProfile ? <input type="text" value={applicantData.title} onChange={(e) => setApplicantData({...applicantData, title: e.target.value})} className={`bg-transparent border-b-2 outline-none font-bold text-sm uppercase tracking-wider w-full md:w-1/2 select-text ${darkMode ? 'border-white/20 text-blue-400' : 'border-slate-400 text-blue-600'}`} placeholder="Job Title (e.g. Carpenter)" /> : <p className="text-blue-500 font-bold text-sm uppercase tracking-wider cursor-default">{applicantData.title || "Job Seeker"}</p>}
+                                
+                                {/* [FIX] UI Match: Custom Dropdown for Profile Category */}
+                                {isEditingProfile && (
+                                    <div className="mt-4 relative z-50">
+                                        <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-1 mb-1 block">Work Categorization</label>
+                                        <button 
+                                            onClick={() => setIsProfileCategoryDropdownOpen(!isProfileCategoryDropdownOpen)} 
+                                            className={`w-full lg:w-64 flex items-center justify-between p-3 rounded-xl border outline-none font-bold text-sm transition-all text-left ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
+                                                    <TagIcon className="w-4 h-4" />
+                                                </div>
+                                                <span className="truncate">{applicantData.category ? JOB_CATEGORIES.find(c => c.id === applicantData.category)?.label : "Choose a category..."}</span>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}>
+                                                <ChevronDownIcon className={`w-3 h-3 transition-transform ${isProfileCategoryDropdownOpen ? 'rotate-180' : ''}`}/>
+                                            </div>
+                                        </button>
+                                        
+                                        {isProfileCategoryDropdownOpen && (
+                                            <>
+                                                <div className="fixed inset-0 z-40" onClick={() => setIsProfileCategoryDropdownOpen(false)}></div>
+                                                <div className={`absolute top-full left-0 mt-2 w-full lg:w-64 z-50 rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                                     <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
+                                                         <button onClick={() => { setApplicantData({...applicantData, category: ""}); setIsProfileCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!applicantData.category ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                                              <span className="text-xs font-bold block">No Category</span>
+                                                         </button>
+                                                         {JOB_CATEGORIES.map(c => (
+                                                              <button key={c.id} onClick={() => { setApplicantData({...applicantData, category: c.id}); setIsProfileCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors group ${applicantData.category === c.id ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+                                                                   <div className="flex flex-col">
+                                                                       <span className="text-xs font-bold block">{c.label}</span>
+                                                                       <span className={`text-[9px] mt-0.5 font-medium truncate ${applicantData.category === c.id ? 'text-white/70' : 'opacity-50'}`}>
+                                                                           {c.examples}
+                                                                       </span>
+                                                                   </div>
+                                                              </button>
+                                                         ))}
+                                                     </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                                
+                                {/* [FIX] Badge Display for Category in Profile View */}
+                                {!isEditingProfile && applicantData.category && (
+                                    <div className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wide bg-purple-500/10 text-purple-500 border border-purple-500/20 w-fit">
+                                        <TagIcon className="w-3.5 h-3.5" />
+                                        {JOB_CATEGORIES.find(c => c.id === applicantData.category)?.label || applicantData.category}
+                                    </div>
+                                )}
                             </div>
                             <div className="flex flex-wrap gap-6 text-xs font-bold text-slate-500 cursor-default select-none mt-4">
                                 <div className="flex items-center gap-2"><MapPinIcon className="w-4 h-4" /><span className={!applicantData.sitio ? 'opacity-50 italic' : ''}>{applicantData.sitio || "Sitio not set"}</span></div>
@@ -1140,7 +1312,7 @@ export default function ApplicantDashboard() {
                                     <div className="flex justify-between items-start mb-4">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden">
-                                                {rev.reviewerPic ? <img src={rev.reviewerPic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center font-bold text-slate-500">{rev.reviewerName?.charAt(0)}</div>}
+                                                {rev.reviewerPic ? <img src={rev.reviewerPic} className="w-full h-full object-cover" alt="revpfp"/> : <div className="w-full h-full flex items-center justify-center font-bold text-slate-500">{rev.reviewerName?.charAt(0)}</div>}
                                             </div>
                                             <div>
                                                 <h4 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-slate-900'}`}>{rev.reviewerName || "Anonymous"}</h4>
@@ -1180,7 +1352,7 @@ export default function ApplicantDashboard() {
         {/* SUPPORT TAB */}
         {activeTab === "Support" && (
             <div key="Support" className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (isSupportOpen ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
-                
+                {/* LEFT COLUMN: TICKET LIST */}
                 <div className={`lg:col-span-1 rounded-[2.5rem] overflow-hidden flex flex-col ${glassPanel} ${(isMobile && isSupportOpen) ? 'hidden' : 'flex'} ${isMobile ? 'h-full mb-4' : 'h-full'}`}>
                     <div className="p-4 md:p-6 border-b border-gray-500/10 flex justify-between items-center">
                         <div>
@@ -1233,6 +1405,7 @@ export default function ApplicantDashboard() {
                     </div>
                 </div>
 
+                {/* RIGHT COLUMN: CHAT INTERFACE */}
                 <div className={`
                   ${isMobile && isSupportOpen ? 'fixed inset-0 z-[60] rounded-none border-0' : 'lg:col-span-2 rounded-[2.5rem] border flex flex-col overflow-hidden relative'}
                   ${(isMobile && !isSupportOpen) ? 'hidden' : 'flex flex-col'} 
@@ -1363,7 +1536,7 @@ export default function ApplicantDashboard() {
              <RestrictedView />
         )}
 
-        {activeTab === "Announcements" && (
+         {activeTab === "Announcements" && (
             <div key="Announcements" className="animate-content space-y-6">
                 <div className={`p-6 lg:p-8 rounded-[2.5rem] relative overflow-hidden ${glassPanel} min-h-[50vh]`}>
                     <div className="flex items-center gap-3 mb-6 lg:mb-8">
@@ -1402,6 +1575,7 @@ export default function ApplicantDashboard() {
                 <div className="space-y-6 mb-8">
                       {/* Stats Cards (Mirrors Employer) */}
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
+                        {/* ... (Existing stats cards logic kept same) ... */}
                         <div onClick={() => setActiveTab("FindJobs")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{availableJobs.length}</h3>
@@ -1409,8 +1583,8 @@ export default function ApplicantDashboard() {
                             </div>
                             <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-900'}`}/>
                         </div>
-
-                        <div onClick={() => setActiveTab("Saved")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                        {/* ... Other stats cards ... */}
+                         <div onClick={() => setActiveTab("Saved")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                             <div className="relative z-10">
                                 <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{savedJobs.length}</h3>
                                 <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-blue-800'}`}>Saved</p>
@@ -1437,6 +1611,7 @@ export default function ApplicantDashboard() {
 
                     {/* Filter Bar */}
                     <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
+                        {/* ... (Filter Inputs - Same as before) ... */}
                         <div className="relative w-full lg:flex-1 min-w-0">
                             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input type="text" placeholder="Search job title or employer..." value={jobSearch} onChange={(e) => setJobSearch(e.target.value)} className={glassInput + " pl-9 pr-4 py-2.5"} />
@@ -1555,9 +1730,21 @@ export default function ApplicantDashboard() {
                                     <div className="mb-3 md:mb-6 space-y-2 pr-4">
                                         <h3 className={`font-black text-lg leading-tight truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
                                         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1 truncate">{job.employerName}</p>
-                                        <div className="flex items-center gap-2 text-slate-400">
-                                            <MapPinIcon className="w-4 h-4 text-blue-500" />
-                                            <p className={`text-[10px] md:text-[11px] font-bold uppercase tracking-wide opacity-80 ${!darkMode && 'text-slate-500'}`}>{job.sitio || "No Location"}</p>
+                                        <div className="flex flex-col gap-1.5 mt-2">
+                                            <div className="flex items-center gap-2 text-slate-400">
+                                                <MapPinIcon className="w-4 h-4 text-blue-500" />
+                                                <p className={`text-[10px] md:text-[11px] font-bold uppercase tracking-wide opacity-80 ${!darkMode && 'text-slate-500'}`}>{job.sitio || "No Location"}</p>
+                                            </div>
+                                            
+                                            {/* [FIX] Job Categorization visible on job cards */}
+                                            {job.category && (
+                                                <div className="flex items-center gap-2 text-slate-400">
+                                                    <TagIcon className="w-4 h-4 text-purple-500" />
+                                                    <p className={`text-[10px] md:text-[11px] font-bold uppercase tracking-wide opacity-80 ${!darkMode && 'text-slate-500'}`}>
+                                                        {JOB_CATEGORIES.find(c => c.id === job.category)?.label || job.category}
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="mt-auto pt-4 border-t border-dashed border-slate-500/20 flex items-center justify-between">
@@ -1577,16 +1764,17 @@ export default function ApplicantDashboard() {
             </div>
         )}
 
+        {/* SAVED JOBS TAB (Updated with Lock Logic) */}
         {isVerified && activeTab === "Saved" && (
           <div key="Saved" className="animate-content">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {savedJobs.length > 0 ? savedJobs.map(item => {
                 const job = item.jobData;
                 const style = getJobStyle(job.type);
-                const hasApplied = myApplications.some(app => app.jobId === job.id);
+                const hasApplied = myApplications.some(app => app.jobId === job.id && app.status !== 'withdrawn');
                 
                 return (
-                  <div key={item.id} className={`group relative p-6 rounded-[2rem] border transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl cursor-pointer overflow-hidden ${darkMode ? 'bg-slate-900/60 border-white/10 hover:border-blue-500/30' : 'bg-white/80 border-slate-200 hover:border-blue-400/50 hover:shadow-blue-100'} backdrop-blur-xl`}>
+                  <div key={item.id} className={`group relative p-6 rounded-[2rem] border transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl cursor-pointer overflow-hidden ${darkMode ? 'bg-slate-900/60 border-white/10 hover:border-blue-500/30' : 'bg-white border-slate-200 hover:border-blue-400/50 hover:shadow-blue-100'} backdrop-blur-xl`}>
                       <div className="absolute top-10 right-4 md:top-10 md:right-8 opacity-10 transform -rotate-12 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
                            {cloneElement(style.icon, { className: "w-32 h-32 md:w-56 md:h-56" })}
                       </div>
@@ -1596,11 +1784,27 @@ export default function ApplicantDashboard() {
                                    <span className={`${style.color} scale-90`}>{style.icon}</span>
                                    <span className={`text-[10px] font-black uppercase tracking-widest ${style.color}`}>{job.type}</span>
                                </div>
-                               <button onClick={() => handleToggleSaveJob(job)} className="text-blue-500 bg-blue-500/10 p-2 rounded-full"><BookmarkIcon className="w-5 h-5 fill-current"/></button>
+                               {/* Locked Bookmark logic */}
+                               <button 
+                                 onClick={() => handleToggleSaveJob(job)} 
+                                 className={`p-2 rounded-full transition-colors ${hasApplied ? 'opacity-50 cursor-not-allowed text-blue-500 bg-blue-500/10' : 'text-blue-500 bg-blue-500/10'}`}
+                                 disabled={hasApplied}
+                                 title={hasApplied ? "Cannot unsave applied jobs" : "Unsave"}
+                               >
+                                   {hasApplied ? <LockClosedIcon className="w-5 h-5"/> : <BookmarkIcon className="w-5 h-5 fill-current"/>}
+                               </button>
                           </div>
                           <div className="mb-4">
                               <h3 className={`text-lg md:text-xl font-black leading-tight mb-2 line-clamp-2 select-none cursor-default ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
-                              <p className="text-xs font-bold opacity-60 uppercase">{job.employerName}</p>
+                              <p className="text-xs font-bold opacity-60 uppercase mb-2">{job.employerName}</p>
+                              
+                               {/* [FIX] Job Categorization visible on saved cards */}
+                               {job.category && (
+                                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wide bg-purple-500/10 text-purple-500 border border-purple-500/20 w-fit">
+                                        <TagIcon className="w-3 h-3" />
+                                        {JOB_CATEGORIES.find(c => c.id === job.category)?.label || job.category}
+                                    </div>
+                               )}
                           </div>
                           <div className="mt-auto flex gap-4 pt-4 border-t border-dashed border-slate-500/20">
                                <button onClick={() => setSelectedJob(job)} className={`flex-1 justify-center flex p-3 rounded-xl transition-all active:scale-95 font-black text-[10px] uppercase tracking-widest ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>View Details</button>
@@ -1620,6 +1824,7 @@ export default function ApplicantDashboard() {
 
         {isVerified && activeTab === "Applications" && (
           <div key="Applications" className="animate-content space-y-10">
+            {/* ... (Applications Search Bar - Same) ... */}
             <div className={`flex items-center p-1.5 rounded-2xl border shadow-sm w-full md:w-96 ${glassPanel}`}>
                 <div className="relative flex-1">
                     <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1633,6 +1838,7 @@ export default function ApplicantDashboard() {
                     {pendingApplications.length > 0 ? pendingApplications.map(app => (
                         <ApplicationCard
                             key={app.id} app={app} darkMode={darkMode}
+                            // WITHDRAW ACTION
                             onWithdraw={() => handleWithdrawApplication(app.id)}
                             onView={() => handleViewApplicationDetails(app)}
                         />
@@ -1646,10 +1852,11 @@ export default function ApplicantDashboard() {
                     {acceptedApplications.length > 0 ? acceptedApplications.map(app => (
                         <ApplicationCard
                             key={app.id} app={app} darkMode={darkMode} isAccepted={true}
-                            onChat={() => handleStartChatFromExternal({ id: app.employerId, name: app.employerName || "Employer", profilePic: null })}
+                            onChat={() => handleStartChatFromExternal({ id: app.employerId, name: app.employerName || "Employer", profilePic: app.employerLogo || null })}
                             onView={() => handleViewApplicationDetails(app)}
                             unreadCount={conversations.find(c => c.chatId.includes(app.employerId))?.[`unread_${auth.currentUser.uid}`] || 0}
                             onRate={() => { setSelectedEmployerToRate(app); setIsRatingEmployerModalOpen(true); }}
+                            // WITHDRAW ACTION
                             onWithdraw={() => handleWithdrawApplication(app.id)} 
                         />
                     )) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No accepted applications</p></div>)}
@@ -1657,24 +1864,28 @@ export default function ApplicantDashboard() {
             </section>
 
             <section className="space-y-6">
-                <div className="flex items-center gap-3"><XMarkIcon className="w-5 h-5 text-red-500" /><h3 className="font-black text-sm uppercase tracking-[0.2em] text-red-500 select-none cursor-default">Rejected Applications ({rejectedApplications.length})</h3><div className="flex-1 h-px bg-red-500/10"></div></div>
+                <div className="flex items-center gap-3"><XMarkIcon className="w-5 h-5 text-red-500" /><h3 className="font-black text-sm uppercase tracking-[0.2em] text-red-500 select-none cursor-default">Rejected / Withdrawn ({rejectedApplications.length})</h3><div className="flex-1 h-px bg-red-500/10"></div></div>
                 <div className="space-y-4">
                     {rejectedApplications.length > 0 ? rejectedApplications.map(app => (
                         <ApplicationCard
                             key={app.id} app={app} darkMode={darkMode} isRejected={true}
-                            onWithdraw={() => handleWithdrawApplication(app.id)}
+                            // DELETE ACTION (Hard Delete)
+                            onWithdraw={() => handleDeleteApplication(app.id)}
                             onView={() => handleViewApplicationDetails(app)}
                         />
-                    )) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No rejected applications</p></div>)}
+                    )) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No history found</p></div>)}
                 </div>
             </section>
           </div>
         )}
 
+        {/* MESSAGES TAB */}
         {isVerified && activeTab === "Messages" && (
             <div key="Messages" className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (activeChat ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
+                {/* ... (Keep existing Left Column Conversation List) ... */}
                 {/* LEFT COLUMN: CONVERSATION LIST */}
                 <div className={`lg:col-span-1 rounded-[2.5rem] overflow-hidden flex flex-col ${glassPanel} ${(isMobile && activeChat) ? 'hidden' : 'flex'} ${isMobile ? 'h-full mb-4' : 'h-full'}`}>
+                    {/* ... (Same as original) ... */}
                     <div className="p-4 md:p-6 border-b border-gray-500/10 shrink-0">
                         <div className="flex justify-between items-center mb-4">
                             <div>
@@ -1693,6 +1904,7 @@ export default function ApplicantDashboard() {
                             filteredChats.map(c => {
                                 const otherId = c.participants.find(p => p !== auth.currentUser.uid);
                                 const name = c.names?.[otherId] || "User"; 
+                                // FIX: Use c.profilePics to display correct avatar
                                 const otherPic = c.profilePics?.[otherId];
                                 const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                 const isActive = activeChat?.id === otherId;
@@ -1742,6 +1954,7 @@ export default function ApplicantDashboard() {
                         <>
                             {/* Header */}
                             <div className="p-4 border-b border-gray-500/10 flex justify-between items-center bg-white/5 backdrop-blur-sm z-10 shrink-0">
+                                {/* ... (Same Header) ... */}
                                 <div className="flex items-center gap-3">
                                     {isMobile && (
                                         <button onClick={() => closeChat()} className="p-2 -ml-2 rounded-full hover:bg-white/10">
@@ -1749,7 +1962,7 @@ export default function ApplicantDashboard() {
                                         </button>
                                     )}
                                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold shadow-md overflow-hidden">
-                                        {activeChat.profilePic ? <img src={activeChat.profilePic} className="w-full h-full object-cover"/> : activeChat.name.charAt(0)}
+                                        {activeChat.profilePic ? <img src={activeChat.profilePic} className="w-full h-full object-cover" alt="chat-pfp"/> : activeChat.name.charAt(0)}
                                     </div>
                                     <div>
                                         <h4 className={`font-bold ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeChat.name}</h4>
@@ -1776,6 +1989,7 @@ export default function ApplicantDashboard() {
 
                             {/* Messages Area */}
                             <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 no-scrollbar" onClick={() => setIsChatOptionsOpen(false)}>
+                                {/* ... (Messages Mapping - Same) ... */}
                                 {messages.map((msg) => {
                                     const isMe = msg.senderId === auth.currentUser.uid;
                                     const isSystem = msg.type === 'system';
@@ -1794,7 +2008,7 @@ export default function ApplicantDashboard() {
                                                 <div className="relative group/bubble flex flex-col gap-1">
                                                     {msg.fileUrl && (
                                                         <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>
-                                                            {msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" />}
+                                                            {msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" alt="attachment" />}
                                                             {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
                                                             {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${!isMe && 'bg-black/5'}`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
                                                         </div>
@@ -1814,7 +2028,7 @@ export default function ApplicantDashboard() {
                                 <div ref={scrollRef}/>
                             </div>
 
-                            {/* Input Area */}
+                            {/* Input Area - Same */}
                             <div className="p-4 border-t border-gray-500/10 bg-white/5 backdrop-blur-sm shrink-0 pb-10 lg:pb-4">
                                 {replyingTo && (
                                     <div className={`mb-3 flex items-center justify-between p-3 rounded-2xl text-xs font-bold border-l-4 border-blue-500 animate-in slide-in-from-bottom-2 ${darkMode ? 'bg-slate-800' : 'bg-white/10'}`}>
@@ -1867,72 +2081,85 @@ export default function ApplicantDashboard() {
         )}
       </main>
 
-      {/* JOB DETAILS MODAL (SOLID STYLE) */}
+      {/* JOB DETAILS MODAL (SOLID STYLE - OVERHAULED TO MATCH EMPLOYER) */}
       {selectedJob && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
-            <div className={`max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border border-white/10 text-white' : 'bg-white border border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
-                
-                <div className="flex flex-col sm:flex-row gap-6 items-start mb-8 relative">
-                    <button onClick={() => setSelectedJob(null)} className={`absolute top-0 right-0 p-2 rounded-full ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'} sm:hidden`}><XMarkIcon className="w-6 h-6"/></button>
-                    
-                    <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden shadow-2xl border-4 shrink-0 ${darkMode ? 'border-slate-800 bg-slate-800' : 'border-white bg-slate-100'}`}>
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
+            <div 
+               onClick={(e) => e.stopPropagation()}
+               className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 items-center md:items-start overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+            >
+                <button onClick={() => setSelectedJob(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                    <XMarkIcon className="w-5 h-5"/>
+                </button>
+
+                {/* Left Column: Job/Employer Info */}
+                <div className="flex flex-col items-center md:w-1/3 md:shrink-0 w-full">
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-40 md:h-40 rounded-full md:rounded-[2rem] overflow-hidden shadow-sm mb-4 shrink-0 transition-all duration-300">
                         {selectedJob.employerLogo ? (
                             <img src={selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
                         ) : (
-                            <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20 uppercase">{selectedJob.employerName?.charAt(0)}</div>
+                            <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20 uppercase">{selectedJob.employerName?.charAt(0)}</div>
                         )}
                     </div>
-                    
-                    <div className="flex-1 w-full pt-2">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <h3 className={`text-2xl sm:text-4xl font-black uppercase tracking-tight leading-none mb-2`}>{selectedJob.title}</h3>
-                                <div className="flex items-center gap-2 mb-4">
-                                    <span className="text-blue-500 font-black uppercase tracking-widest text-xs">{selectedJob.employerName}</span>
-                                    <span className="text-slate-500">•</span>
-                                    <span className="text-slate-500 font-bold text-xs">{formatDateTime(selectedJob.createdAt || new Date())}</span>
-                                </div>
-                            </div>
-                            <button onClick={() => setSelectedJob(null)} className={`hidden sm:block p-2 rounded-full transition-colors ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-6 h-6"/></button>
-                        </div>
+                      
+                    <h2 className="text-2xl font-black mb-1 text-center">{selectedJob.title}</h2>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{selectedJob.employerName}</p>
 
-                        <div className="flex gap-2 flex-wrap">
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><MapPinIcon className="w-4 h-4 text-blue-500"/> {selectedJob.sitio || "No Location"}</span>
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><span className="text-green-500 font-black">₱</span> {selectedJob.salary}</span>
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><ClockIcon className="w-4 h-4 text-amber-500"/> {selectedJob.type}</span>
-                        </div>
+                    <div className="flex gap-2 mb-6 flex-wrap justify-center">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedJob.sitio || "No Location"}</span>
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedJob.type}</span>
+                        {/* [FIX] Category tag on detail modal */}
+                        {selectedJob.category && <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-purple-500/20 bg-purple-500/5 text-purple-400' : 'border-purple-100 bg-purple-50 text-purple-600'}`}>{JOB_CATEGORIES.find(c => c.id === selectedJob.category)?.label || selectedJob.category}</span>}
                     </div>
                 </div>
 
-                <div className={`p-6 sm:p-8 rounded-[2rem] border mb-8 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
-                    <div className="flex items-center gap-3 mb-4 opacity-50">
-                        <DocumentIcon className="w-5 h-5"/>
-                        <h4 className="text-xs font-black uppercase tracking-[0.2em]">Job Description</h4>
-                    </div>
-                    <p className={`text-sm leading-loose whitespace-pre-wrap font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{selectedJob.description}</p>
-                </div>
+                {/* Right Column: Details & Actions */}
+                <div className="w-full md:w-2/3 flex flex-col h-full">
+                    <div className="space-y-4 mb-8 flex-1">
+                         <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                            <span className="text-xl font-black text-green-500">₱</span>
+                            <span className="text-sm font-bold opacity-80">{selectedJob.salary} / Month</span>
+                        </div>
+                        
+                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                            <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">Job Description</p>
+                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedJob.description || "No description provided."}</p>
+                        </div>
 
-                <div className="flex gap-4">
-                    <button onClick={() => setSelectedJob(null)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">Close</button>
-                    {myApplications.some(app => app.jobId === selectedJob.id) ? (
-                        <button disabled className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-green-500/20 text-green-500 cursor-not-allowed">Applied</button>
-                    ) : (
-                        <button onClick={() => handleApplyToJob(selectedJob)} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">{loading ? 'Applying...' : 'Apply Now'}</button>
-                    )}
+                         <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                             <div className="mb-4">
+                                <p className="text-xs font-bold uppercase opacity-40 mb-1 text-purple-500">Requirements</p>
+                                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">See description for details.</p>
+                             </div>
+                        </div>
+                    </div>
+
+                    <div className="w-full flex gap-3 mt-auto">
+                        {myApplications.some(app => app.jobId === selectedJob.id) ? (
+                            <button disabled className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-green-500/20 text-green-500 cursor-not-allowed">Applied</button>
+                        ) : (
+                            <button onClick={() => handleApplyToJob(selectedJob)} className="flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all">Apply Now</button>
+                        )}
+                        <button onClick={() => handleToggleSaveJob(selectedJob)} className={`flex-none p-3 rounded-xl transition-all ${savedJobs.some(s => s.jobId === selectedJob.id) ? 'bg-blue-500/10 text-blue-500' : 'bg-slate-100 text-slate-500'}`}>
+                            <BookmarkIcon className="w-5 h-5"/>
+                        </button>
+                    </div>
                 </div>
-            </div>
+             </div>
         </div>
       )}
 
       {/* APPLICATION DETAILS MODAL (SOLID STYLE) */}
       {viewingApplication && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={() => setViewingApplication(null)}>
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-md animate-in fade-in" onClick={() => setViewingApplication(null)}>
             <div className={`relative max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border border-white/10 text-white' : 'bg-white border border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
                 
-                <div className="flex flex-col sm:flex-row gap-6 items-start mb-8 relative">
-                     <button onClick={() => setViewingApplication(null)} className={`absolute top-0 right-0 p-2 rounded-full ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'} sm:hidden`}><XMarkIcon className="w-6 h-6"/></button>
-                     
-                     <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden shadow-2xl border-4 shrink-0 ${darkMode ? 'border-slate-800 bg-slate-800' : 'border-white bg-slate-100'}`}>
+                {/* Header Background */}
+                <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-blue-500/10 to-transparent pointer-events-none"></div>
+                <button onClick={() => setViewingApplication(null)} className={`absolute top-6 right-6 p-2 rounded-full transition-colors z-20 ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-5 h-5"/></button>
+
+                <div className="relative z-10 flex flex-col items-center text-center mb-8">
+                     <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden shadow-2xl border-4 shrink-0 mb-4 ${darkMode ? 'border-slate-800 bg-slate-800' : 'border-white bg-slate-100'}`}>
                         {viewingApplication.employerLogo ? (
                             <img src={viewingApplication.employerLogo} alt={viewingApplication.employerName} className="w-full h-full object-cover" />
                         ) : (
@@ -1940,27 +2167,20 @@ export default function ApplicantDashboard() {
                         )}
                     </div>
 
-                    <div className="flex-1 w-full pt-2">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <h3 className={`text-2xl sm:text-4xl font-black uppercase tracking-tight leading-none mb-2`}>{viewingApplication.jobTitle}</h3>
-                                <div className="flex items-center gap-2 mb-4">
-                                    <span className="text-blue-500 font-black uppercase tracking-widest text-xs">{viewingApplication.employerName}</span>
-                                    <span className="text-slate-500">•</span>
-                                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${viewingApplication.status === 'accepted' ? 'bg-green-500/10 text-green-500' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                                        <span className={`w-2 h-2 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-green-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`}></span>
-                                        {viewingApplication.status}
-                                    </div>
-                                </div>
-                            </div>
-                            <button onClick={() => setViewingApplication(null)} className={`hidden sm:block p-2 rounded-full transition-colors ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-6 h-6"/></button>
-                        </div>
+                    <h3 className="text-3xl font-black uppercase tracking-tight leading-none mb-2">{viewingApplication.jobTitle}</h3>
+                    <div className="flex items-center gap-2 mb-4 justify-center">
+                         <span className="text-blue-500 font-black uppercase tracking-widest text-xs">{viewingApplication.employerName}</span>
+                         <span className="text-slate-500">•</span>
+                         <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${viewingApplication.status === 'accepted' ? 'bg-green-500/10 text-green-500' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                            <span className={`w-2 h-2 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-green-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`}></span>
+                            {viewingApplication.status}
+                         </div>
+                    </div>
 
-                         <div className="flex gap-2 flex-wrap">
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><MapPinIcon className="w-4 h-4 text-blue-500"/> {modalJobDetails?.sitio || "Location"}</span>
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><span className="text-purple-500 font-black">₱</span> {modalJobDetails?.salary || "Salary"}</span>
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><ClockIcon className="w-4 h-4 text-amber-500"/> Applied {formatDateTime(viewingApplication.appliedAt)}</span>
-                        </div>
+                     <div className="flex gap-2 flex-wrap justify-center">
+                        <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><MapPinIcon className="w-4 h-4 text-blue-500"/> {modalJobDetails?.sitio || "Location"}</span>
+                        <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><span className="text-purple-500 font-black">₱</span> {modalJobDetails?.salary || "Salary"}</span>
+                        <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}><ClockIcon className="w-4 h-4 text-amber-500"/> Applied {formatDateTime(viewingApplication.appliedAt)}</span>
                     </div>
                 </div>
 
@@ -1979,11 +2199,11 @@ export default function ApplicantDashboard() {
                         <p className={`text-sm leading-loose whitespace-pre-wrap font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{modalJobDetails?.description || "Description not available."}</p>
                     </div>
                     <div className="flex gap-4">
-                        <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">{viewingApplication.status === 'rejected' ? 'Remove Application' : 'Withdraw Application'}</button>
+                        <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">{viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw Application'}</button>
                         {viewingApplication.status === 'accepted' ? (
-                            <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: null }); setViewingApplication(null); }} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-transform">Message Employer</button>
+                            <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.02] active:scale-95 transition-all">Message Employer</button>
                         ) : (
-                            <button disabled className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-slate-500/10 text-slate-500 cursor-not-allowed opacity-50">{viewingApplication.status === 'rejected' ? 'Application Rejected' : 'Pending Review'}</button>
+                            <button disabled className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-slate-500/10 text-slate-500 cursor-not-allowed opacity-50">{viewingApplication.status === 'rejected' ? 'Application Rejected' : viewingApplication.status === 'withdrawn' ? 'Application Withdrawn' : 'Pending Review'}</button>
                         )}
                     </div>
                   </>
@@ -2010,12 +2230,21 @@ export default function ApplicantDashboard() {
                 <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                     <div className="relative">
                         <button 
-                            onClick={(e) => { if (!isDragging) setIsBubbleExpanded(true); }} 
+                            onClick={(e) => { 
+                                if (!isDragging) { 
+                                    setIsBubbleExpanded(true); 
+                                    // FIX: Trigger Read & Hook Re-connect on expand
+                                    if(effectiveActiveChatUser) {
+                                        openChat(effectiveActiveChatUser);
+                                        markConversationAsRead(effectiveActiveChatUser.id);
+                                    }
+                                } 
+                            }} 
                             className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white'}`}
                         >
                             {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (
                                 (getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? 
-                                <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : 
+                                <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="pfp" /> : 
                                 <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>
                             ) : ( 
                                 <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} /> 
@@ -2024,7 +2253,7 @@ export default function ApplicantDashboard() {
                         
                         {(() => {
                              const activeUnread = activeBubbleView !== 'inbox' && effectiveActiveChatUser 
-                                 ? (conversations.find(c => c.participants.includes(effectiveActiveChatUser.id) && c.participants.includes(auth.currentUser.uid))?.[`unread_${auth.currentUser.uid}`] || 0)
+                                 ? (conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.[`unread_${auth.currentUser.uid}`] || 0)
                                  : conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0);
                              
                              return activeUnread > 0 ? (
@@ -2050,10 +2279,17 @@ export default function ApplicantDashboard() {
                     <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
                         {openBubbles.map((chat) => {
                             const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
+                            // [FIX] Use correct avatar for bubbles
+                            const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
+                            
                             return (
                                 <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
-                                    <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${activeBubbleView === chat.id ? 'border-blue-500 scale-110' : 'border-transparent opacity-60'}`}>
-                                        {(getAvatarUrl(chat) || chat.profilePic) ? <img src={getAvatarUrl(chat) || chat.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
+                                    <button onClick={() => { 
+                                        setActiveBubbleView(chat.id); 
+                                        openChat(chat); // FIX: Ensure hook reconnects
+                                        markConversationAsRead(chat.id); 
+                                    }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${activeBubbleView === chat.id ? 'border-blue-500 scale-110' : 'border-transparent opacity-60'}`}>
+                                        {chatPic ? <img src={chatPic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
                                     </button>
                                     
                                     {unread > 0 && (
@@ -2093,7 +2329,7 @@ export default function ApplicantDashboard() {
                                             const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                             return (
                                                 <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                                    <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                                    <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="other-pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                                     <div className="flex-1 text-left overflow-hidden">
                                                         <div className="flex justify-between items-center">
                                                             <span className="font-black text-sm truncate">{name}</span>
@@ -2112,10 +2348,11 @@ export default function ApplicantDashboard() {
                             ) : (
                                 effectiveActiveChatUser && (
                                     <>
+                                        {/* Mobile Chat Header */}
                                         <div className={`p-4 flex justify-between items-center shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200">
-                                                    {(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}
+                                                    {(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="header-pfp" /> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}
                                                 </div>
                                                 <div>
                                                     <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{effectiveActiveChatUser.name}</h3>
@@ -2127,6 +2364,7 @@ export default function ApplicantDashboard() {
                                             </div>
                                         </div>
                                         
+                                        {/* Mobile Chat Messages */}
                                         <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
                                             {messages.map((msg) => {
                                                 const isMe = msg.senderId === auth.currentUser.uid;
@@ -2137,6 +2375,7 @@ export default function ApplicantDashboard() {
                                                 return (
                                                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
                                                         {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
+                                                        
                                                         <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                                             <MessageAvatar isMe={isMe} />
                                                             <div className="relative group/bubble flex flex-col gap-1">
@@ -2203,7 +2442,9 @@ export default function ApplicantDashboard() {
             {/* 2. BUBBLE LISTING */}
             {openBubbles.map((chat) => {
                 const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
-                
+                // [FIX] Use correct avatar for bubbles (Desktop)
+                const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
+
                 return (
                 <div key={chat.id} className="pointer-events-auto relative group flex items-center gap-3">
                     <span className="absolute right-full mr-3 px-3 py-1.5 rounded-xl bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">{chat.name}</span>
@@ -2212,7 +2453,7 @@ export default function ApplicantDashboard() {
                             onClick={() => { openChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); markConversationAsRead(chat.id); }}
                             className="w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl overflow-hidden transition-all hover:scale-110 active:scale-95"
                         >
-                            {(getAvatarUrl(chat) || chat.profilePic) ? (<img src={getAvatarUrl(chat) || chat.profilePic} alt="" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
+                            {chatPic ? (<img src={chatPic} alt="pfp" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
                         </button>
                         
                         {unread > 0 && (
@@ -2247,7 +2488,7 @@ export default function ApplicantDashboard() {
                                 const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                 return (
                                     <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover"/> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                         <div className="flex-1 text-left overflow-hidden">
                                             <div className="flex justify-between items-center">
                                                 <span className="font-black text-sm truncate">{name}</span>
@@ -2269,10 +2510,10 @@ export default function ApplicantDashboard() {
             {!isChatMinimized && activeChat && activeTab !== "Support" && (
                 <div className={`fixed z-[210] pointer-events-auto bottom-6 right-24`}>
                     <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border animate-in slide-in-from-right-4 duration-300 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
-                        {/* ... (Desktop Active Chat Window content kept mostly same) ... */}
+                        {/* Desktop Active Chat Header (FIXED: Added Profile Pic) */}
                         <div className={`p-4 flex justify-between items-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0`}>
                             <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
+                                <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover" alt="pfp"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
                                 <div><span className="font-black text-xs uppercase block">{activeChat.name}</span><span className="text-[9px] opacity-90 font-bold block">Active Now</span></div>
                             </div>
                             <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className="p-1.5 hover:bg-white/20 rounded-lg"><ChevronDownIcon className="w-4 h-4"/></button><button onClick={handleCloseChat} className="p-1.5 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-4 h-4"/></button></div>
@@ -2284,10 +2525,22 @@ export default function ApplicantDashboard() {
                                 if(isSystem) return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
                                 return (
                                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                        {/* ... (Message Bubbles) ... */}
-                                        {/* ... Content same as bubble view ... */}
-                                        {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                        {/* ... */}
+                                        {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
+                                        
+                                        {/* MESSAGE ROW */}
+                                        <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                            {/* MINI AVATAR */}
+                                            <MessageAvatar isMe={isMe} />
+                                            
+                                            <div className="relative group/bubble flex flex-col gap-1">
+                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                
+                                                {/* REPLY BUTTON */}
+                                                <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-8 hover:bg-black/5' : '-right-8 hover:bg-black/5'} text-slate-400`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
+                                            </div>
+                                        </div>
+                                        <p className={`text-[8px] font-black mt-1 opacity-30 ${isMe ? 'text-right mr-10' : 'text-left ml-10'}`}>{formatTime(msg.createdAt)}</p>
                                     </div>
                                 );
                             })}
@@ -2320,8 +2573,6 @@ export default function ApplicantDashboard() {
   );
 }
 
-// ... (Sub-components ApplicationCard, NavBtn, RateEmployerModal, MobileNavItem are expected to be present at the bottom of the file as before, I included them in the previous response but if you need them explicitly again let me know. The key fixes are in the main component logic above.)
-
 function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCount, isAccepted, isRejected, onRate }) {
     const borderColorClass = isAccepted ? 'border-l-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.1)]' : isRejected ? 'border-l-red-500 opacity-80' : 'border-l-amber-500';
     const iconBgClass = isAccepted ? 'bg-blue-500/10' : isRejected ? 'bg-red-500/10' : 'bg-amber-500/10';
@@ -2342,7 +2593,7 @@ function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCoun
                   <h4 className={`font-black text-base md:text-lg leading-none select-none cursor-default ${darkMode ? 'text-white' : 'text-slate-900'}`}>{app.jobTitle}</h4>
               </div>
               <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1.5 md:mt-2 select-none cursor-default truncate max-w-[200px]">{app.employerName}</p>
-              {isRejected && <p className="text-[9px] font-black text-red-500 uppercase tracking-widest mt-2">Application Rejected</p>}
+              {isRejected && <p className="text-[9px] font-black text-red-500 uppercase tracking-widest mt-2">{app.status === 'withdrawn' ? 'Withdrawn' : 'Rejected'}</p>}
           </div>
         </div>
         
@@ -2369,7 +2620,7 @@ function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCoun
           )}
 
           <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-white/10' : 'bg-slate-300'}`}></div>
-          <button title={isRejected ? "Remove Application" : "Withdraw Application"} onClick={(e) => { e.stopPropagation(); onWithdraw(); }} className={`flex-none p-3 rounded-2xl transition-all active:scale-95 group-hover:opacity-100 opacity-60 ${darkMode ? 'text-slate-500 hover:text-red-500 hover:bg-red-500/10' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}><TrashIcon className="w-5 h-5" /></button>
+          <button title={isRejected ? "Delete Record" : "Withdraw Application"} onClick={(e) => { e.stopPropagation(); onWithdraw(); }} className={`flex-none p-3 rounded-2xl transition-all active:scale-95 group-hover:opacity-100 opacity-60 ${darkMode ? 'text-slate-500 hover:text-red-500 hover:bg-red-500/10' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}><TrashIcon className="w-5 h-5" /></button>
         </div>
       </div>
     );
