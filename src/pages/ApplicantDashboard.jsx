@@ -119,6 +119,7 @@ export default function ApplicantDashboard() {
   const [isUploading, setIsUploading] = useState(false); 
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const chatFileRef = useRef(null); 
+  const bubbleFileRef = useRef(null); 
   const scrollRef = useRef(null);
   
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -566,7 +567,9 @@ export default function ApplicantDashboard() {
                 ...conversationMetaUpdate 
              }, { merge: true });
 
-             setNewMessage(""); setAttachment(null); setReplyingTo(null); if (chatFileRef.current) chatFileRef.current.value = "";
+            setNewMessage(""); setAttachment(null); setReplyingTo(null); 
+             if (chatFileRef.current) chatFileRef.current.value = "";
+             if (bubbleFileRef.current) bubbleFileRef.current.value = ""; // Clear bubble file ref too
         } catch (err) { alert("Failed to send file."); } finally { setIsUploading(false); }
     }
   };
@@ -2018,7 +2021,8 @@ export default function ApplicantDashboard() {
                                                             <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
                                                         </div>
                                                     )}
-                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
+                                                    {/* FIX: Removed opacity-0 so button is visible on mobile */}
+                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
                                                 </div>
                                             </div>
                                             <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
@@ -2046,9 +2050,9 @@ export default function ApplicantDashboard() {
                                     </div>
                                 )}
 
-                                <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-end">
-                                    <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
-                                    <button type="button" onClick={() => chatFileRef.current.click()} className={`p-3 rounded-xl transition-colors ${darkMode ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'}`}>
+                               <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-end">
+                                    <input type="file" ref={bubbleFileRef} onChange={handleFileSelect} className="hidden" />
+                                    <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-3 rounded-xl transition-colors ${darkMode ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'}`}>
                                         <PaperClipIcon className="w-5 h-5"/>
                                     </button>
                                     
@@ -2392,7 +2396,8 @@ export default function ApplicantDashboard() {
                                                                     </div>
                                                                 )}
                                                                 
-                                                                <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
+                                                               {/* FIX: Removed opacity-0 so button is visible on mobile */}
+                                                                <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
                                                             </div>
                                                         </div>
                                                         <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
