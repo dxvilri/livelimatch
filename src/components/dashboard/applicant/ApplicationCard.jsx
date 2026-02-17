@@ -1,4 +1,4 @@
-import { EyeIcon, StarIcon, TrashIcon, ChatBubbleLeftRightIcon } from "@heroicons/react/24/outline";
+import { CheckCircleIcon, ClockIcon, XMarkIcon, EyeIcon, ChatBubbleLeftRightIcon, StarIcon as StarIconOutline, TrashIcon } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
 export default function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCount, isAccepted, isRejected, onRate }) {
@@ -27,7 +27,7 @@ export default function ApplicationCard({ app, darkMode, onWithdraw, onView, onC
         
         <div className="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
           <button onClick={onView} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}><EyeIcon className="w-4 h-4" /> View</button>
-           
+            
           {isAccepted && (
             <>
               {app.isRatedByApplicant ? (
@@ -36,7 +36,7 @@ export default function ApplicationCard({ app, darkMode, onWithdraw, onView, onC
                   </button>
               ) : (
                   <button onClick={onRate} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                      <StarIcon className="w-4 h-4" /> Rate
+                      <StarIconOutline className="w-4 h-4" /> Rate
                   </button>
               )}
 
