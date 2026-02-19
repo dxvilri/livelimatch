@@ -1,4 +1,51 @@
+import { useState, useRef } from "react";
 import { MagnifyingGlassIcon, ChatBubbleLeftRightIcon, ChevronLeftIcon, EllipsisHorizontalIcon, ChevronDownIcon, XMarkIcon, PaperClipIcon, PaperAirplaneIcon, ArrowUturnLeftIcon, PhotoIcon, DocumentIcon, ChatBubbleOvalLeftEllipsisIcon } from "@heroicons/react/24/outline";
+
+// --- HELPER: Swipeable Message Component ---
+const SwipeableMessage = ({ isMe, onReply, children }) => {
+    const [touchStart, setTouchStart] = useState(null);
+    const [offset, setOffset] = useState(0);
+
+    const onTouchStart = (e) => setTouchStart(e.targetTouches[0].clientX);
+    
+    const onTouchMove = (e) => {
+        if (touchStart === null) return;
+        const current = e.targetTouches[0].clientX;
+        const diff = current - touchStart;
+
+        // Swipe Right (Contact Message) -> Trigger if diff > 0
+        if (!isMe && diff > 0) setOffset(Math.min(diff, 60)); // Cap at 60px
+        
+        // Swipe Left (Own Message) -> Trigger if diff < 0
+        if (isMe && diff < 0) setOffset(Math.max(diff, -60)); // Cap at -60px
+    };
+
+    const onTouchEnd = () => {
+        if (Math.abs(offset) > 40) { // Threshold to trigger reply
+            onReply();
+        }
+        setOffset(0);
+        setTouchStart(null);
+    };
+
+    return (
+        <div 
+            onTouchStart={onTouchStart} 
+            onTouchMove={onTouchMove} 
+            onTouchEnd={onTouchEnd}
+            style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.3s ease-out' : 'none' }}
+            className="relative touch-pan-y"
+        >
+             {/* Visual Cue for Reply */}
+             {offset !== 0 && (
+                <div className={`absolute top-1/2 -translate-y-1/2 ${isMe ? 'right-full mr-4' : 'left-full ml-4'} opacity-50`}>
+                    <ArrowUturnLeftIcon className="w-5 h-5 text-slate-400"/>
+                </div>
+            )}
+            {children}
+        </div>
+    );
+};
 
 export default function MessagesTab({ 
     isMobile, activeChat, conversations, openChat, closeChat, sendMessage, messages, setActiveChat, currentUser, adminUser, darkMode, setLightboxUrl,
@@ -20,10 +67,28 @@ export default function MessagesTab({
     const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
     const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
     
+    // --- UPDATED: Robust Avatar Fetching for BOTH users ---
     const MessageAvatar = ({ isMe }) => { 
-        const pic = isMe ? null : (getAvatarUrl(activeChat) || activeChat?.profilePic);
+        let pic = null;
+        if (isMe) {
+            // Fetch MY pic (Try currentUser prop or find me in participants)
+            pic = currentUser?.photoURL || currentUser?.profilePic || null; 
+            // Fallback: search conversations for my ID
+            if (!pic) pic = conversations.find(c => c.participants.includes(currentUser.uid))?.profilePics?.[currentUser.uid];
+        } else {
+            // Fetch OTHER pic
+            if (activeChat) {
+                pic = getAvatarUrl(activeChat) || activeChat.profilePic || conversations.find(c => c.chatId.includes(activeChat.id))?.profilePics?.[activeChat.id];
+            }
+        }
+        
         const initial = isMe ? "M" : (activeChat?.name?.charAt(0) || "U");
-        return ( <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> {pic ? <img src={pic} alt="User" className="w-full h-full object-cover" /> : initial} </div> ); 
+        
+        return ( 
+            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[10px] font-black uppercase"> 
+                {pic ? <img src={pic} alt="User" className="w-full h-full object-cover" /> : initial} 
+            </div> 
+        ); 
     };
 
     return (
@@ -121,32 +186,34 @@ export default function MessagesTab({
                                 if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
                                 
                                 return (
-                                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                        {msg.replyTo && (
-                                            <div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}>
-                                                <ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span>
+                                    <SwipeableMessage key={msg.id} isMe={isMe} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })}>
+                                        <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
+                                            {msg.replyTo && (
+                                                <div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}>
+                                                    <ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span>
+                                                </div>
+                                            )}
+                                            <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                                <MessageAvatar isMe={isMe} />
+                                                <div className="relative group/bubble flex flex-col gap-1">
+                                                    {msg.fileUrl && (
+                                                        <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>
+                                                            {msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" alt="attachment" />}
+                                                            {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
+                                                            {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${!isMe && 'bg-black/5'}`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
+                                                        </div>
+                                                    )}
+                                                    {msg.text && (
+                                                        <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}>
+                                                            <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                                                        </div>
+                                                    )}
+                                                    {/* Swipe Hint / Removed Button */}
+                                                </div>
                                             </div>
-                                        )}
-                                        <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                            <MessageAvatar isMe={isMe} />
-                                            <div className="relative group/bubble flex flex-col gap-1">
-                                                {msg.fileUrl && (
-                                                    <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>
-                                                        {msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" alt="attachment" />}
-                                                        {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
-                                                        {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${!isMe && 'bg-black/5'}`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
-                                                    </div>
-                                                )}
-                                                {msg.text && (
-                                                    <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}>
-                                                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                                                    </div>
-                                                )}
-                                                <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${isMe ? '-left-10 hover:bg-white/10 text-slate-400' : '-right-10 hover:bg-white/10 text-slate-400'}`}><ArrowUturnLeftIcon className="w-4 h-4"/></button>
-                                            </div>
+                                            <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
                                         </div>
-                                        <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
-                                    </div>
+                                    </SwipeableMessage>
                                 )
                             })}
                             <div ref={scrollRef}/>

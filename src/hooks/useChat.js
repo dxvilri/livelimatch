@@ -1,11 +1,11 @@
-// hooks/useChat.js
+// src/hooks/useChat.js
 import { useState, useEffect, useRef } from "react";
 import { 
   collection, query, where, onSnapshot, addDoc, 
   serverTimestamp, setDoc, doc, updateDoc, increment, getDoc 
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, auth } from "../firebase/config"; // Adjust path as needed
+import { db, auth } from "../firebase/config"; 
 
 export const useChat = (currentUser, isMobile) => {
   // State
@@ -33,7 +33,6 @@ export const useChat = (currentUser, isMobile) => {
       const convos = snap.docs.map(d => {
         const data = d.data();
         const otherId = data.participants.find(p => p !== currentUser.uid);
-        // Use existing names/pics in doc or fallback (simplified for brevity)
         return { id: d.id, ...data, otherId };
       });
       convos.sort((a, b) => (b.lastTimestamp?.seconds || 0) - (a.lastTimestamp?.seconds || 0));
@@ -101,7 +100,6 @@ export const useChat = (currentUser, isMobile) => {
       chatId, lastMessage: fileType !== 'text' ? `Sent a ${fileType}` : text, lastTimestamp: serverTimestamp(),
       participants: [currentUser.uid, effectiveActiveChatId],
       [`unread_${effectiveActiveChatId}`]: increment(1),
-      // Update names/pics here as needed
     }, { merge: true });
   };
 
@@ -121,14 +119,23 @@ export const useChat = (currentUser, isMobile) => {
 
   return {
     // State
-    activeChat, messages, conversations, openBubbles, 
+    activeChat, 
+    setActiveChat, // <--- ADDED THIS EXPORT
+    messages, 
+    conversations, 
+    openBubbles, 
+    setOpenBubbles, // <--- ADDED THIS EXPORT
+    
+    // UI State
     isBubbleVisible, setIsBubbleVisible,
     isChatMinimized, setIsChatMinimized,
     isBubbleExpanded, setIsBubbleExpanded,
     activeBubbleView, setActiveBubbleView,
     chatStatus, scrollRef,
+    
     // Actions
     sendMessage, openChat, closeChat,
+    
     // Derived
     effectiveActiveChatId
   };
