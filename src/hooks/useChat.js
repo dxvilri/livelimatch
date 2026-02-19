@@ -2,33 +2,29 @@
 import { useState, useEffect, useRef } from "react";
 import { 
   collection, query, where, onSnapshot, addDoc, 
-  serverTimestamp, setDoc, doc, updateDoc, increment, getDoc 
+  serverTimestamp, setDoc, doc, updateDoc, increment, getDoc,
+  deleteDoc, writeBatch, getDocs // <-- Added imports
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, auth } from "../firebase/config"; 
 
 export const useChat = (currentUser, isMobile) => {
-  // State
+  // ... (keep existing state and refs)
   const [activeChat, setActiveChat] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [openBubbles, setOpenBubbles] = useState([]);
-  
-  // UI State
   const [isBubbleVisible, setIsBubbleVisible] = useState(false);
   const [isChatMinimized, setIsChatMinimized] = useState(false);
   const [isBubbleExpanded, setIsBubbleExpanded] = useState(false);
   const [activeBubbleView, setActiveBubbleView] = useState('inbox');
   const [chatStatus, setChatStatus] = useState({ isOnline: false, lastSeen: null });
-
-  // Refs
   const scrollRef = useRef(null);
 
-  // 1. Fetch Conversations
+  // ... (keep existing useEffects: 1. Fetch Conversations, 2. Effective ID, 3. Fetch Messages)
   useEffect(() => {
     if (!currentUser) return;
     const q = query(collection(db, "conversations"), where("participants", "array-contains", currentUser.uid));
-    
     const unsubscribe = onSnapshot(q, (snap) => {
       const convos = snap.docs.map(d => {
         const data = d.data();
@@ -41,23 +37,18 @@ export const useChat = (currentUser, isMobile) => {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // 2. Determine Effective Chat ID (Mobile vs Desktop)
   const effectiveActiveChatId = (isBubbleVisible && isMobile) 
     ? (activeBubbleView !== 'inbox' ? activeBubbleView : null) 
     : activeChat?.id;
 
-  // 3. Fetch Messages & Mark Read
   useEffect(() => {
     if (!effectiveActiveChatId || !currentUser) return;
-    
     const chatId = [currentUser.uid, effectiveActiveChatId].sort().join("_");
 
-    // Mark as read
     if ((!isMobile && !isChatMinimized) || (isMobile && isBubbleVisible && isBubbleExpanded)) {
        updateDoc(doc(db, "conversations", chatId), { [`unread_${currentUser.uid}`]: 0 }).catch(() => {});
     }
 
-    // Listen to messages
     const qChat = query(collection(db, "messages"), where("chatId", "==", chatId));
     const unsubChat = onSnapshot(qChat, (snap) => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -66,7 +57,6 @@ export const useChat = (currentUser, isMobile) => {
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
 
-    // Listen to User Status
     const unsubStatus = onSnapshot(doc(db, "applicants", effectiveActiveChatId), (snap) => {
         if(snap.exists()) setChatStatus({ isOnline: snap.data().isOnline, lastSeen: snap.data().lastSeen });
     });
@@ -74,7 +64,8 @@ export const useChat = (currentUser, isMobile) => {
     return () => { unsubChat(); unsubStatus(); };
   }, [effectiveActiveChatId, isChatMinimized, isBubbleVisible, isBubbleExpanded, currentUser, isMobile]);
 
-  // 4. Send Message Handler
+
+  // ... (keep existing sendMessage)
   const sendMessage = async (text, attachment, replyingTo) => {
     if ((!text.trim() && !attachment) || !effectiveActiveChatId) return;
     
@@ -103,7 +94,41 @@ export const useChat = (currentUser, isMobile) => {
     }, { merge: true });
   };
 
-  // 5. Bubble Management Actions
+  // --- NEW: Unsend Message Function ---
+  const unsendMessage = async (messageId) => {
+    try {
+      await updateDoc(doc(db, "messages", messageId), {
+        isUnsent: true,
+        text: "Message unsent",
+        fileUrl: null,
+        fileType: 'text',
+        fileName: null
+      });
+    } catch (err) {
+      console.error("Error unsending message:", err);
+    }
+  };
+
+  // --- NEW: Delete Conversation Function ---
+  const deleteChat = async (otherUserId) => {
+    if (!currentUser || !otherUserId) return;
+    const chatId = [currentUser.uid, otherUserId].sort().join("_");
+    try {
+      // 1. Delete the conversation tracker document
+      await deleteDoc(doc(db, "conversations", chatId));
+      // 2. Batch delete all messages in that chat
+      const q = query(collection(db, "messages"), where("chatId", "==", chatId));
+      const snap = await getDocs(q);
+      const batch = writeBatch(db);
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      
+      setActiveChat(null); // Close the chat window
+    } catch (err) {
+      console.error("Error deleting chat:", err);
+    }
+  };
+
   const openChat = (user) => {
     setActiveChat(user);
     setIsChatMinimized(false);
@@ -118,25 +143,11 @@ export const useChat = (currentUser, isMobile) => {
   };
 
   return {
-    // State
-    activeChat, 
-    setActiveChat, // <--- ADDED THIS EXPORT
-    messages, 
-    conversations, 
-    openBubbles, 
-    setOpenBubbles, // <--- ADDED THIS EXPORT
-    
-    // UI State
-    isBubbleVisible, setIsBubbleVisible,
-    isChatMinimized, setIsChatMinimized,
-    isBubbleExpanded, setIsBubbleExpanded,
-    activeBubbleView, setActiveBubbleView,
-    chatStatus, scrollRef,
-    
-    // Actions
-    sendMessage, openChat, closeChat,
-    
-    // Derived
-    effectiveActiveChatId
+    activeChat, setActiveChat, messages, conversations, openBubbles, setOpenBubbles,
+    isBubbleVisible, setIsBubbleVisible, isChatMinimized, setIsChatMinimized,
+    isBubbleExpanded, setIsBubbleExpanded, activeBubbleView, setActiveBubbleView,
+    chatStatus, scrollRef, effectiveActiveChatId,
+    sendMessage, openChat, closeChat, 
+    unsendMessage, deleteChat // <-- Don't forget to export them!
   };
 };

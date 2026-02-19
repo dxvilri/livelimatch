@@ -1,6 +1,6 @@
+/* src/index.css */
 @import "tailwindcss";
 
-/* Ensuring the app takes up the full screen height */
 :root {
   height: 100%;
 }
@@ -9,4 +9,14 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
+}
+
+/* Hide scrollbars completely for all elements but keep scrolling functionality */
+::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
