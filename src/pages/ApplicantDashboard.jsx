@@ -25,7 +25,8 @@ import {
   PhotoIcon, DocumentIcon, UserCircleIcon,
   SparklesIcon,
   MegaphoneIcon, CpuChipIcon, TagIcon, StarIcon as StarIconOutline,
-  QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, IdentificationIcon, LockClosedIcon, BookmarkIcon
+  QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, IdentificationIcon, LockClosedIcon, BookmarkIcon,
+  EllipsisVerticalIcon // Added missing icon for 3-dots menu
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
@@ -75,6 +76,61 @@ const glassPanel = (darkMode) => `backdrop-blur-xl border transition-all duratio
 const glassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out group ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-500'}`;
 const activeGlassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out scale-110 -translate-y-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`;
 
+// --- MOBILE SWIPE HELPER ---
+const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) => {
+    const [touchStartPos, setTouchStartPos] = useState(null);
+    const [offset, setOffset] = useState(0);
+    const pressTimer = useRef(null);
+    const isSwiping = useRef(false);
+
+    if (!isMobile) return <div className="relative w-full group">{children}</div>;
+
+    const onTouchStart = (e) => {
+        const touch = e.targetTouches[0];
+        setTouchStartPos({ x: touch.clientX, y: touch.clientY });
+        isSwiping.current = false;
+        pressTimer.current = setTimeout(() => { if (!isSwiping.current) onLongPress(); }, 400);
+    };
+
+    const onTouchMove = (e) => {
+        if (!touchStartPos) return;
+        const touch = e.targetTouches[0];
+        const diffX = touch.clientX - touchStartPos.x;
+        const diffY = touch.clientY - touchStartPos.y;
+
+        if (Math.abs(diffX) > 10 || Math.abs(diffY) > 10) {
+            isSwiping.current = true;
+            clearTimeout(pressTimer.current);
+        }
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+            if (!isMe && diffX > 0) setOffset(Math.min(diffX, 60)); 
+            if (isMe && diffX < 0) setOffset(Math.max(diffX, -60)); 
+        }
+    };
+
+    const onTouchEnd = () => {
+        clearTimeout(pressTimer.current);
+        if (Math.abs(offset) > 40) onReply();
+        setOffset(0);
+        setTouchStartPos(null);
+    };
+
+    return (
+        <div 
+            onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
+            style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.3s ease-out' : 'none' }}
+            className="relative touch-pan-y w-full group"
+        >
+             {offset !== 0 && (
+                <div className={`absolute top-1/2 -translate-y-1/2 ${isMe ? 'right-full mr-4' : 'left-full ml-4'} opacity-50`}>
+                    <ArrowUturnLeftIcon className="w-5 h-5 text-slate-400"/>
+                </div>
+            )}
+            {children}
+        </div>
+    );
+};
+
 export default function ApplicantDashboard() {
   const { userData } = useAuth();
   const [activeTab, setActiveTab] = useState("FindJobs");
@@ -107,6 +163,7 @@ export default function ApplicantDashboard() {
   const [isRatingEmployerModalOpen, setIsRatingEmployerModalOpen] = useState(false);
   const [selectedEmployerToRate, setSelectedEmployerToRate] = useState(null);
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [activeMenuId, setActiveMenuId] = useState(null); // Fix: State for bubble chat options menu
 
   // --- PROFILE ---
   const [profileImage, setProfileImage] = useState(null);
@@ -139,7 +196,6 @@ export default function ApplicantDashboard() {
   
   // Chat Bubble State
   const [isDesktopInboxVisible, setIsDesktopInboxVisible] = useState(false); 
-  // FIX 1: Set default bubble position to Top-Right area
   const [bubblePos, setBubblePos] = useState({ x: window.innerWidth - 80, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -151,7 +207,7 @@ export default function ApplicantDashboard() {
       sendMessage, messages, setOpenBubbles, openBubbles,
       isBubbleVisible, setIsBubbleVisible, isChatMinimized, setIsChatMinimized,
       isBubbleExpanded, setIsBubbleExpanded, activeBubbleView, setActiveBubbleView,
-      scrollRef
+      scrollRef, unsendMessage
   } = chat;
 
   const [adminUser, setAdminUser] = useState(null);
@@ -197,8 +253,6 @@ export default function ApplicantDashboard() {
   const isFullScreenPage = isMobile && ((activeTab === "Messages" && activeChat) || (activeTab === "Support" && isSupportOpen));
 
   // --- EFFECTS ---
-  
-  // FIX 4: Lock scroll when bubble is expanded
   useEffect(() => {
     if (isBubbleExpanded) {
         document.body.style.overflow = "hidden";
@@ -211,10 +265,11 @@ export default function ApplicantDashboard() {
   useEffect(() => {
     if (activeTab === "Messages") {
         setIsBubbleVisible(false);
+        setOpenBubbles([]); // Fix: Resets the bubbles completely when entering main Messages Tab
     } else {
         if (typeof setActiveChat === 'function') setActiveChat(null); 
     }
-  }, [activeTab, setActiveChat, setIsBubbleVisible]);
+  }, [activeTab, setActiveChat, setIsBubbleVisible, setOpenBubbles]);
 
   useEffect(() => {
     if (announcements.length > 1) {
@@ -397,8 +452,6 @@ export default function ApplicantDashboard() {
     };
     if (!attachment) {
         if (!newMessage.trim()) return;
-        // FIX 5: FIXED SEND MESSAGE CALL - `replyingTo` was being passed as attachment!
-        // Correct signature: sendMessage(text, attachment, replyingTo)
         if (activeChat || effectiveActiveChatUser) { 
              await sendMessage(newMessage, null, replyingTo); 
         } 
@@ -407,8 +460,6 @@ export default function ApplicantDashboard() {
     } else {
         setIsUploading(true);
         try {
-            // ... (keep upload logic, ensure addDoc handles replyTo if using manual addDoc)
-            // But better to reuse sendMessage if possible. For now, keep manual logic but fix replyTo.
             const storage = getStorage(auth.app);
             const storageRef = ref(storage, `chat_attachments/${chatId}/${Date.now()}_${attachment.name}`);
             const uploadTask = await uploadBytes(storageRef, attachment);
@@ -429,7 +480,6 @@ export default function ApplicantDashboard() {
 
   const handleSupportFileSelect = (e) => { if (e.target.files[0]) setSupportAttachment(e.target.files[0]); };
   const handleSendFAQ = async (faq) => {
-      // ... (Same support logic)
       const userMsg = { sender: 'user', text: faq.question, timestamp: new Date() };
       const botMsg = { sender: 'admin', text: `🤖 ${faq.answer}`, timestamp: new Date() };
       try {
@@ -674,7 +724,6 @@ export default function ApplicantDashboard() {
                         setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); 
                         setActiveBubbleView(activeChat.id); 
                     }
-                    // FIX 2: Reset position to top-right on minimize
                     setBubblePos({ x: window.innerWidth - 80, y: 100 });
                     closeChat(); 
                     setActiveTab("FindJobs"); 
@@ -782,7 +831,6 @@ export default function ApplicantDashboard() {
       </main>
 
       {/* --- OVERLAYS: MODALS & BUBBLES --- */}
-      {/* ... (Modal code skipped for brevity, it's correct in previous responses) ... */}
       {/* 1. JOB DETAILS MODAL */}
       {selectedJob && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
@@ -790,7 +838,6 @@ export default function ApplicantDashboard() {
                onClick={(e) => e.stopPropagation()}
                className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 items-center md:items-start overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
             >
-                {/* ... (Keeping existing modal content) ... */}
                 <button onClick={() => setSelectedJob(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                     <XMarkIcon className="w-5 h-5"/>
                 </button>
@@ -841,7 +888,6 @@ export default function ApplicantDashboard() {
             <div className={`relative max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border border-white/10 text-white' : 'bg-white border border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
                 <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-blue-500/10 to-transparent pointer-events-none"></div>
                 <button onClick={() => setViewingApplication(null)} className={`absolute top-6 right-6 p-2 rounded-full transition-colors z-20 ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-5 h-5"/></button>
-                {/* ... (Application details content) ... */}
                 <div className="relative z-10 flex flex-col items-center text-center mb-8">
                      <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden shadow-2xl border-4 shrink-0 mb-4 ${darkMode ? 'border-slate-800 bg-slate-800' : 'border-white bg-slate-100'}`}>
                         {viewingApplication.employerLogo ? (
@@ -912,7 +958,6 @@ export default function ApplicantDashboard() {
                 {isDragging && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] w-16 h-16 rounded-full flex items-center justify-center border-4 border-slate-400/30 bg-transparent animate-in zoom-in backdrop-blur-sm"><XMarkIcon className="w-8 h-8 text-slate-400" /></div>}
                 {isBubbleExpanded && (
                     <div className="fixed inset-0 z-[1000] flex flex-col bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                        {/* ... (Header list kept same) ... */}
                         <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
                             {openBubbles.map((chat) => {
                                 const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
@@ -968,39 +1013,47 @@ export default function ApplicantDashboard() {
                                                 </div>
                                                 <div className="flex gap-4 text-blue-500"><button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button></div>
                                             </div>
-                                            <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                            <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50/50'}`} onClick={() => setActiveMenuId(null)}>
                                                 {messages.map((msg) => {
                                                     const isMe = msg.senderId === auth.currentUser.uid;
-                                                    // FIX 3: Get avatars for BOTH users
-                                                    const myPic = profileImage || applicantData.profilePic || null;
-                                                    const otherPic = effectiveActiveChatUser.profilePic || null;
+                                                    // FIX: Strict avatar fetching for Mobile bubbles
+                                                    const myPic = profileImage || applicantData?.profilePic || null;
+                                                    const otherPic = effectiveActiveChatUser?.profilePic || getAvatarUrl(effectiveActiveChatUser) || null;
                                                     
                                                     if(msg.type === 'system') return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
                                                     
                                                     return (
-                                                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
-                                                            <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                                {/* FIX 3: Render avatar for both sides */}
-                                                                <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
-                                                                    {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : effectiveActiveChatUser.name.charAt(0))} 
+                                                        <SwipeableMessage key={msg.id} isMe={isMe} isMobile={true} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} onLongPress={() => setActiveMenuId(msg.id)}>
+                                                            <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group relative`}>
+                                                                {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
+                                                                <div className={`flex items-end gap-3 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                                                    <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
+                                                                        {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : effectiveActiveChatUser.name.charAt(0))} 
+                                                                    </div>
+                                                                    <div className="relative group/bubble flex flex-col gap-1">
+                                                                        {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                                        {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                                    </div>
+                                                                    
+                                                                    {/* Mobile Context Menu via Long Press */}
+                                                                    {activeMenuId === msg.id && (
+                                                                        <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+                                                                            <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
+                                                                            {isMe && !msg.isUnsent && (
+                                                                                <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className="w-full text-left px-4 py-3 text-red-500 hover:bg-red-500/10 transition-colors">Unsend</button>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                                <div className="relative group/bubble flex flex-col gap-1">
-                                                                    {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                                    {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-8 hover:bg-black/5' : '-right-8 hover:bg-black/5'} text-slate-400`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
-                                                                </div>
+                                                                <p className={`text-[8px] font-black mt-1 opacity-30 ${isMe ? 'text-right mr-10' : 'text-left ml-10'}`}>{formatTime(msg.createdAt)}</p>
                                                             </div>
-                                                            <p className={`text-[8px] font-black mt-1 opacity-30 ${isMe ? 'text-right mr-10' : 'text-left ml-10'}`}>{formatTime(msg.createdAt)}</p>
-                                                        </div>
+                                                        </SwipeableMessage>
                                                     )
                                                 })}
                                                 <div ref={scrollRef}/>
                                             </div>
-                                            <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                            <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`} onClick={() => setActiveMenuId(null)}>
                                                 {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                                                
-                                                {/* FIX 3: ADD ATTACHMENT PREVIEW IN BUBBLE CHAT */}
                                                 {attachment && (
                                                     <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
                                                         <div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">
@@ -1010,7 +1063,6 @@ export default function ApplicantDashboard() {
                                                         <button onClick={() => {setAttachment(null); bubbleFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
                                                     </div>
                                                 )}
-
                                                 <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
                                                     <input type="file" ref={bubbleFileRef} onChange={handleFileSelect} className="hidden" />
                                                     <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
@@ -1035,7 +1087,6 @@ export default function ApplicantDashboard() {
                     </button>
                     {conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-20 animate-bounce border-none">{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0)}</span>}
                 </div>
-                {/* ... (Desktop bubble list kept same) ... */}
                 {openBubbles.map((chat) => {
                     const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
                     const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
@@ -1051,7 +1102,6 @@ export default function ApplicantDashboard() {
                         </div>
                     </div>
                 )})}
-                {/* ... (Desktop inbox list kept same) ... */}
                 {isDesktopInboxVisible && !activeChat && (
                     <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
                         <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
@@ -1072,7 +1122,8 @@ export default function ApplicantDashboard() {
                                     const otherPic = c.profilePics?.[otherId];
                                     const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                     return (
-                                        <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                                        // FIX: Removed the automatic adding to setOpenBubbles when clicking an inbox item!
+                                        <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
                                             <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                             <div className="flex-1 text-left overflow-hidden">
                                                 <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div>
@@ -1095,27 +1146,44 @@ export default function ApplicantDashboard() {
                                 </div>
                                 <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className="p-1.5 hover:bg-white/20 rounded-lg"><ChevronDownIcon className="w-4 h-4"/></button><button onClick={closeChat} className="p-1.5 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-4 h-4"/></button></div>
                             </div>
-                            <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
+                            <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`} onClick={() => setActiveMenuId(null)}>
                                 {messages.map((msg) => {
                                     const isMe = msg.senderId === auth.currentUser.uid;
-                                    // FIX 3: Desktop Avatar Logic (Mini-circle for BOTH)
-                                    const myPic = profileImage || applicantData.profilePic || null;
-                                    const otherPic = activeChat.profilePic || getAvatarUrl(activeChat) || null;
+                                    // FIX: Strict Avatar Fetching for Desktop
+                                    const myPic = profileImage || applicantData?.profilePic || null;
+                                    const otherPic = activeChat?.profilePic || getAvatarUrl(activeChat) || null;
 
                                     if(msg.type === 'system') return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
+                                    
                                     return (
                                         <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
                                             {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
-                                            <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                {/* Desktop Avatar */}
+                                            <div className={`flex items-end gap-2 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                                 <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
                                                     {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : activeChat.name.charAt(0))} 
                                                 </div>
                                                 <div className="relative group/bubble flex flex-col gap-1">
                                                     {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
                                                     {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full opacity-0 group-hover/bubble:opacity-100 transition-all ${isMe ? '-left-8 hover:bg-black/5' : '-right-8 hover:bg-black/5'} text-slate-400`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
                                                 </div>
+
+                                                {/* Desktop 3-Dots Hover Menu */}
+                                                <div className={`hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity gap-1 mb-2 items-center`}>
+                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-blue-400 bg-slate-800 hover:bg-slate-700' : 'text-blue-500 bg-white hover:bg-slate-100'}`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
+                                                    <div className="relative">
+                                                        <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700' : 'text-slate-500 bg-white hover:bg-slate-100'}`}><EllipsisVerticalIcon className="w-3.5 h-3.5"/></button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Context Menu for Desktop */}
+                                                {activeMenuId === msg.id && (
+                                                    <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+                                                        <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
+                                                        {isMe && !msg.isUnsent && (
+                                                            <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className="w-full text-left px-4 py-3 text-red-500 hover:bg-red-500/10 transition-colors">Unsend</button>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                             <p className={`text-[8px] font-black mt-1 opacity-30 ${isMe ? 'text-right mr-10' : 'text-left ml-10'}`}>{formatTime(msg.createdAt)}</p>
                                         </div>
@@ -1123,10 +1191,8 @@ export default function ApplicantDashboard() {
                                 })}
                                 <div ref={scrollRef}/>
                             </div>
-                            <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                            <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`} onClick={() => setActiveMenuId(null)}>
                                 {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                                
-                                {/* FIX 3: DESKTOP BUBBLE ATTACHMENT PREVIEW */}
                                 {attachment && (
                                     <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
                                         <div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">
@@ -1136,7 +1202,6 @@ export default function ApplicantDashboard() {
                                         <button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
                                     </div>
                                 )}
-
                                 <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
                                     <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
                                     <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
