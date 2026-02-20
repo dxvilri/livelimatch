@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, cloneElement } from "react";
 import { useAuth } from "../context/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config";
+import { createPortal } from "react-dom";
 import {
   collection, query, where, onSnapshot, orderBy,
   addDoc, serverTimestamp, setDoc, doc, updateDoc, increment, deleteDoc, 
@@ -23,10 +24,10 @@ import {
   CalendarDaysIcon, BoltIcon,
   EllipsisHorizontalIcon, PaperClipIcon, ArrowUturnLeftIcon,
   PhotoIcon, DocumentIcon, UserCircleIcon,
-  SparklesIcon,
+  SparklesIcon, EnvelopeIcon, PhoneIcon, 
   MegaphoneIcon, CpuChipIcon, TagIcon, StarIcon as StarIconOutline,
   QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, IdentificationIcon, LockClosedIcon, BookmarkIcon,
-  EllipsisVerticalIcon // Added missing icon for 3-dots menu
+  EllipsisVerticalIcon, Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
@@ -47,9 +48,10 @@ const PUROK_LIST = [ "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "B
 const JOB_CATEGORIES = [
     { id: "EDUCATION", label: "Education", examples: "Teachers, Tutors, Principals" },
     { id: "AGRICULTURE", label: "Agriculture", examples: "Corn/Rice Farmers, Livestock" },
-    { id: "AUTOMOTIVE", label: "Automotive", examples: "Mechanics, Mechanical Engineering" },
+    { id: "AUTOMOTIVE", label: "Automotive", examples: "Auto Mechanic, Motorcycle Mechanic" },
     { id: "CARPENTRY", label: "Carpentry", examples: "Carpenters, Furniture Makers" },
-    { id: "HOUSEHOLD", label: "Household Service", examples: "Maids, Caregivers, Nanny" }
+    { id: "HOUSEHOLD", label: "Household Service", examples: "Maids, Caregivers, Nanny" },
+    { id: "CUSTOMER_SERVICE", label: "Customer Service", examples: "Cashiers, Saleslady, Baggers" }
 ];
 
 const JOB_TYPES = [
@@ -70,6 +72,18 @@ const BOT_FAQ = [
 const getAvatarUrl = (user) => user?.profilePic || user?.photoURL || user?.avatar || user?.image || null;
 const formatTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
 const formatDateTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+
+const formatLastSeen = (timestamp) => {
+    if (!timestamp) return { text: "Offline", isOnline: false };
+    const now = new Date();
+    const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
+    const diffMins = Math.floor((now - date) / 60000);
+    
+    if (diffMins < 3) return { text: "Active Now", isOnline: true };
+    if (diffMins < 60) return { text: `Last seen ${diffMins}m ago`, isOnline: false };
+    if (diffMins < 1440) return { text: `Last seen ${Math.floor(diffMins/60)}h ago`, isOnline: false };
+    return { text: "Offline", isOnline: false };
+};
 
 // --- STYLES ---
 const glassPanel = (darkMode) => `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
@@ -138,6 +152,14 @@ export default function ApplicantDashboard() {
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  const togglePinMessage = async (msgId, currentPinnedStatus) => {
+      try {
+          await updateDoc(doc(db, "messages", msgId), { isPinned: !currentPinnedStatus });
+      } catch (err) {
+          console.error("Failed to pin message", err);
+      }
+  };
+
   // --- DATA ---
   const [availableJobs, setAvailableJobs] = useState([]);
   const [myApplications, setMyApplications] = useState([]);
@@ -152,6 +174,7 @@ export default function ApplicantDashboard() {
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [applicationSearch, setApplicationSearch] = useState("");
 
+
   // --- UI STATES ---
   const [lastReadAnnouncementId, setLastReadAnnouncementId] = useState(localStorage.getItem("lastReadAnnounceApp"));
   const [currentAnnounceIndex, setCurrentAnnounceIndex] = useState(0);
@@ -163,7 +186,8 @@ export default function ApplicantDashboard() {
   const [isRatingEmployerModalOpen, setIsRatingEmployerModalOpen] = useState(false);
   const [selectedEmployerToRate, setSelectedEmployerToRate] = useState(null);
   const [lightboxUrl, setLightboxUrl] = useState(null);
-  const [activeMenuId, setActiveMenuId] = useState(null); // Fix: State for bubble chat options menu
+  const [activeMenuId, setActiveMenuId] = useState(null);
+  const [employerContact, setEmployerContact] = useState(null);
 
   // --- PROFILE ---
   const [profileImage, setProfileImage] = useState(null);
@@ -254,13 +278,33 @@ export default function ApplicantDashboard() {
 
   // --- EFFECTS ---
   useEffect(() => {
-    if (isBubbleExpanded) {
+    if (isBubbleExpanded || selectedJob || viewingApplication || isRatingEmployerModalOpen || lightboxUrl) {
         document.body.style.overflow = "hidden";
     } else {
         document.body.style.overflow = "";
     }
     return () => { document.body.style.overflow = ""; };
-  }, [isBubbleExpanded]);
+  }, [isBubbleExpanded, selectedJob, viewingApplication, isRatingEmployerModalOpen, lightboxUrl]);
+
+  // Fetch Employer Contact Info when a Job OR Application is selected
+  useEffect(() => {
+      const activeItem = selectedJob || viewingApplication;
+      if (activeItem && activeItem.employerId) {
+          const fetchEmployerInfo = async () => {
+              try {
+                  const snap = await getDoc(doc(db, "employers", activeItem.employerId));
+                  if (snap.exists()) {
+                      setEmployerContact(snap.data());
+                  }
+              } catch (err) {
+                  console.error("Error fetching employer contact:", err);
+              }
+          };
+          fetchEmployerInfo();
+      } else {
+          setEmployerContact(null);
+      }
+  }, [selectedJob, viewingApplication]);
 
   useEffect(() => {
     if (activeTab === "Messages") {
@@ -706,7 +750,10 @@ export default function ApplicantDashboard() {
         {isVerified && activeTab === "Messages" && (
             <MessagesTab 
                 isMobile={isMobile}
+                myProfileImage={profileImage || applicantData?.profilePic}
                 activeChat={activeChat}
+                togglePinMessage={togglePinMessage}
+                chatStatus={activeChat ? formatLastSeen(conversations.find(c => c.chatId.includes(activeChat.id))?.lastTimestamp) : null}
                 conversations={conversations}
                 openChat={openChat}
                 closeChat={closeChat}
@@ -831,104 +878,273 @@ export default function ApplicantDashboard() {
       </main>
 
       {/* --- OVERLAYS: MODALS & BUBBLES --- */}
-      {/* 1. JOB DETAILS MODAL */}
+     {/* 1. JOB DETAILS MODAL */}
       {selectedJob && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
             <div 
                onClick={(e) => e.stopPropagation()}
-               className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 items-center md:items-start overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}
+               className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
             >
                 <button onClick={() => setSelectedJob(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                     <XMarkIcon className="w-5 h-5"/>
                 </button>
-                <div className="flex flex-col items-center md:w-1/3 md:shrink-0 w-full">
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-40 md:h-40 rounded-full md:rounded-[2rem] overflow-hidden shadow-sm mb-4 shrink-0 transition-all duration-300">
+                
+                {/* --- LEFT SIDE: Employer Info --- */}
+                <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
+                    <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
                         {selectedJob.employerLogo ? (
                             <img src={selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
                         ) : (
-                            <div className="w-full h-full bg-slate-200 flex items-center justify-center text-4xl font-black opacity-20 uppercase">{selectedJob.employerName?.charAt(0)}</div>
+                            <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
                         )}
                     </div>
-                    <h2 className="text-2xl font-black mb-1 text-center">{selectedJob.title}</h2>
-                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">{selectedJob.employerName}</p>
-                    <div className="flex gap-2 mb-6 flex-wrap justify-center">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedJob.sitio || "No Location"}</span>
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10 bg-white/5' : 'border-black/10 bg-slate-50'}`}>{selectedJob.type}</span>
-                        {selectedJob.category && <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-purple-500/20 bg-purple-500/5 text-purple-400' : 'border-purple-100 bg-purple-50 text-purple-600'}`}>{JOB_CATEGORIES.find(c => c.id === selectedJob.category)?.label || selectedJob.category}</span>}
+                    
+                    <h2 className="text-2xl font-black mb-4 text-center leading-tight w-full">{selectedJob.employerName}</h2>
+                    
+                    <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
+                        
+                        {/* INLINE: Location & Contact */}
+                        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
+                            <div className="flex items-center gap-1.5">
+                                <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                <span className={!selectedJob.sitio ? 'opacity-50 italic' : ''}>{selectedJob.sitio || "Location not set"}</span>
+                            </div>
+                            
+                            {(() => {
+                                const contactInfo = employerContact?.contact || selectedJob.contact;
+                                if (!contactInfo) return null;
+                                const contactStr = String(contactInfo);
+                                const isEmail = contactStr.includes('@');
+                                const ContactIcon = isEmail ? EnvelopeIcon : PhoneIcon;
+                                return (
+                                    <div className="flex items-center gap-1.5">
+                                        <ContactIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                        <span className="text-slate-500 truncate max-w-[150px]">{contactStr}</span>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
+                        {/* INLINE: Job Type & Category Badges */}
+                        <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
+                            {/* Job Type Badge */}
+                            {(() => {
+                                const typeStyle = getJobStyle(selectedJob.type);
+                                return (
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${typeStyle.bgLight || typeStyle.bg} ${typeStyle.border} ${typeStyle.color}`}>
+                                        <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
+                                        {selectedJob.type}
+                                    </span>
+                                )
+                            })()}
+
+                            {/* Category Badge */}
+                            {selectedJob.category && (() => {
+                                const getLocalCatStyles = (id) => {
+                                    const map = {
+                                        'EDUCATION': { icon: AcademicCapIcon, text: 'text-blue-500', bgLight: 'bg-blue-500/10', border: 'border-blue-500/20' },
+                                        'AGRICULTURE': { icon: SunIcon, text: 'text-green-500', bgLight: 'bg-green-500/10', border: 'border-green-500/20' },
+                                        'AUTOMOTIVE': { icon: Cog8ToothIcon, text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/20' },
+                                        'CARPENTRY': { icon: WrenchScrewdriverIcon, text: 'text-yellow-600 dark:text-yellow-500', bgLight: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
+                                        'HOUSEHOLD': { icon: HomeIcon, text: 'text-pink-500', bgLight: 'bg-pink-500/10', border: 'border-pink-500/20' },
+                                        'CUSTOMER_SERVICE': { icon: UserGroupIcon, text: 'text-purple-500', bgLight: 'bg-purple-500/10', border: 'border-purple-500/20' },
+                                    };
+                                    return map[id] || { icon: TagIcon, text: 'text-slate-500', bgLight: 'bg-slate-500/10', border: 'border-slate-500/20' };
+                                };
+                                const catStyle = getLocalCatStyles(selectedJob.category);
+                                const CatIcon = catStyle.icon;
+                                return (
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${catStyle.bgLight} ${catStyle.border} ${catStyle.text}`}>
+                                        <CatIcon className="w-3.5 h-3.5" />
+                                        {JOB_CATEGORIES.find(c => c.id === selectedJob.category)?.label || selectedJob.category}
+                                    </span>
+                                );
+                            })()}
+                        </div>
                     </div>
                 </div>
-                <div className="w-full md:w-2/3 flex flex-col h-full">
-                    <div className="space-y-4 mb-8 flex-1">
-                         <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                            <span className="text-xl font-black text-green-500">₱</span>
-                            <span className="text-sm font-bold opacity-80">{selectedJob.salary} / Month</span>
-                        </div>
-                        <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                            <p className="text-xs font-bold uppercase opacity-40 mb-2 text-blue-500">Job Description</p>
-                            <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{selectedJob.description || "No description provided."}</p>
+
+                {/* --- RIGHT SIDE: Job Details --- */}
+                <div className="w-full md:w-2/3 flex flex-col h-full space-y-4">
+                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Job Title</p>
+                        <h2 className="text-3xl sm:text-4xl font-black mb-1">{selectedJob.title}</h2>
+                    </div>
+
+                    <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xl font-black">₱</span>
+                                <span className="text-xl font-black">{selectedJob.salary}</span>
+                            </div>
                         </div>
                     </div>
-                    <div className="w-full flex gap-3 mt-auto">
+
+                    <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2">
+                            <BriefcaseIcon className="w-4 h-4 text-blue-500" /> Job Description
+                        </p>
+                        <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedJob.description || "No description provided."}</p>
+                    </div>
+
+                    <div className="w-full flex gap-3 pt-2">
                         {myApplications.some(app => app.jobId === selectedJob.id) ? (
-                            <button disabled className="flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest bg-green-500/20 text-green-500 cursor-not-allowed">Applied</button>
+                            <button disabled className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-green-500/10 text-green-500 cursor-not-allowed">Application Sent</button>
                         ) : (
-                            <button onClick={() => handleApplyToJob(selectedJob)} className="flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all">Apply Now</button>
+                            <button onClick={() => handleApplyToJob(selectedJob)} className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 active:scale-95 transition-all">Apply Now</button>
                         )}
-                        <button onClick={() => handleToggleSaveJob(selectedJob)} className={`flex-none p-3 rounded-xl transition-all ${savedJobs.some(s => s.jobId === selectedJob.id) ? 'bg-blue-500/10 text-blue-500' : 'bg-slate-100 text-slate-500'}`}>
-                            <BookmarkIcon className="w-5 h-5"/>
+                        <button onClick={() => handleToggleSaveJob(selectedJob)} className={`flex-none p-4 rounded-xl transition-all border ${savedJobs.some(s => s.jobId === selectedJob.id) ? 'bg-blue-500 border-blue-500 text-white' : darkMode ? 'bg-slate-800 border-transparent text-slate-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                            <BookmarkIcon className={`w-6 h-6 ${savedJobs.some(s => s.jobId === selectedJob.id) ? 'fill-current' : ''}`}/>
                         </button>
                     </div>
                 </div>
-             </div>
+            </div>
         </div>
       )}
 
+      {/* 2. APPLICATION DETAILS MODAL */}
       {viewingApplication && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-md animate-in fade-in" onClick={() => setViewingApplication(null)}>
-            <div className={`relative max-w-2xl w-full p-6 sm:p-10 rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh] hide-scrollbar animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border border-white/10 text-white' : 'bg-white border border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
-                <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-blue-500/10 to-transparent pointer-events-none"></div>
-                <button onClick={() => setViewingApplication(null)} className={`absolute top-6 right-6 p-2 rounded-full transition-colors z-20 ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-5 h-5"/></button>
-                <div className="relative z-10 flex flex-col items-center text-center mb-8">
-                     <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden shadow-2xl border-4 shrink-0 mb-4 ${darkMode ? 'border-slate-800 bg-slate-800' : 'border-white bg-slate-100'}`}>
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setViewingApplication(null)}>
+            <div className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:items-start md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
+                
+                <button onClick={() => setViewingApplication(null)} className={`absolute top-4 right-4 z-20 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-5 h-5"/></button>
+                
+                {/* --- LEFT SIDE: Employer Info --- */}
+                <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
+                    <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
                         {viewingApplication.employerLogo ? (
                             <img src={viewingApplication.employerLogo} alt={viewingApplication.employerName} className="w-full h-full object-cover" />
                         ) : (
-                            <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20 uppercase">{viewingApplication.employerName?.charAt(0)}</div>
+                            <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{viewingApplication.employerName?.charAt(0)}</div>
                         )}
                     </div>
-                    <h3 className="text-3xl font-black uppercase tracking-tight leading-none mb-2">{viewingApplication.jobTitle}</h3>
-                    <div className="flex items-center gap-2 mb-4 justify-center">
-                         <span className="text-blue-500 font-black uppercase tracking-widest text-xs">{viewingApplication.employerName}</span>
-                         <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${viewingApplication.status === 'accepted' ? 'bg-green-500/10 text-green-500' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                            <span className={`w-2 h-2 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-green-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`}></span>
-                            {viewingApplication.status}
-                         </div>
-                    </div>
-                </div>
-                {modalLoading ? (
-                    <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
-                        <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                        <p className="text-[10px] font-black uppercase tracking-widest">Loading Details...</p>
-                    </div>
-                ) : (
-                  <>
-                    <div className={`p-6 sm:p-8 rounded-[2rem] border mb-8 ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
-                        <div className="flex items-center gap-3 mb-4 opacity-50">
-                             <DocumentIcon className="w-5 h-5"/>
-                             <h4 className="text-xs font-black uppercase tracking-[0.2em]">Job Description</h4>
+                    
+                    <h2 className="text-2xl font-black mb-4 text-center leading-tight w-full">{viewingApplication.employerName}</h2>
+                    
+                    {modalLoading ? (
+                        <div className="w-full flex justify-center opacity-50 pt-2"><div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div></div>
+                    ) : (
+                        <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
+                            
+                            {/* INLINE: Location & Contact */}
+                            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
+                                <div className="flex items-center gap-1.5">
+                                    <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <span className={!modalJobDetails?.sitio ? 'opacity-50 italic' : ''}>{modalJobDetails?.sitio || "Location not set"}</span>
+                                </div>
+                                
+                                {(() => {
+                                    const contactInfo = employerContact?.contact || modalJobDetails?.contact;
+                                    if (!contactInfo) return null;
+                                    const contactStr = String(contactInfo);
+                                    const isEmail = contactStr.includes('@');
+                                    const ContactIcon = isEmail ? EnvelopeIcon : PhoneIcon;
+                                    return (
+                                        <div className="flex items-center gap-1.5">
+                                            <ContactIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                            <span className="text-slate-500 truncate max-w-[150px]">{contactStr}</span>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* INLINE: Job Type & Category Badges */}
+                            {(modalJobDetails?.type || modalJobDetails?.category) && (
+                                <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
+                                    {/* Job Type Badge */}
+                                    {modalJobDetails?.type && (() => {
+                                        const typeStyle = getJobStyle(modalJobDetails.type);
+                                        return (
+                                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${typeStyle.bgLight || typeStyle.bg} ${typeStyle.border} ${typeStyle.color}`}>
+                                                <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
+                                                {modalJobDetails.type}
+                                            </span>
+                                        )
+                                    })()}
+
+                                    {/* Category Badge */}
+                                    {modalJobDetails?.category && (() => {
+                                        const getLocalCatStyles = (id) => {
+                                            const map = {
+                                                'EDUCATION': { icon: AcademicCapIcon, text: 'text-blue-500', bgLight: 'bg-blue-500/10', border: 'border-blue-500/20' },
+                                                'AGRICULTURE': { icon: SunIcon, text: 'text-green-500', bgLight: 'bg-green-500/10', border: 'border-green-500/20' },
+                                                'AUTOMOTIVE': { icon: Cog8ToothIcon, text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/20' },
+                                                'CARPENTRY': { icon: WrenchScrewdriverIcon, text: 'text-yellow-600 dark:text-yellow-500', bgLight: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
+                                                'HOUSEHOLD': { icon: HomeIcon, text: 'text-pink-500', bgLight: 'bg-pink-500/10', border: 'border-pink-500/20' },
+                                                'CUSTOMER_SERVICE': { icon: UserGroupIcon, text: 'text-purple-500', bgLight: 'bg-purple-500/10', border: 'border-purple-500/20' },
+                                            };
+                                            return map[id] || { icon: TagIcon, text: 'text-slate-500', bgLight: 'bg-slate-500/10', border: 'border-slate-500/20' };
+                                        };
+                                        const catStyle = getLocalCatStyles(modalJobDetails.category);
+                                        const CatIcon = catStyle.icon;
+                                        return (
+                                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${catStyle.bgLight} ${catStyle.border} ${catStyle.text}`}>
+                                                <CatIcon className="w-3.5 h-3.5" />
+                                                {JOB_CATEGORIES.find(c => c.id === modalJobDetails.category)?.label || modalJobDetails.category}
+                                            </span>
+                                        );
+                                    })()}
+                                </div>
+                            )}
                         </div>
-                        <p className={`text-sm leading-loose whitespace-pre-wrap font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{modalJobDetails?.description || "Description not available."}</p>
-                    </div>
-                    <div className="flex gap-4">
-                        <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">{viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw Application'}</button>
-                        {viewingApplication.status === 'accepted' ? (
-                            <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.02] active:scale-95 transition-all">Message Employer</button>
-                        ) : (
-                            <button disabled className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-slate-500/10 text-slate-500 cursor-not-allowed opacity-50">{viewingApplication.status === 'rejected' ? 'Application Rejected' : viewingApplication.status === 'withdrawn' ? 'Application Withdrawn' : 'Pending Review'}</button>
-                        )}
-                    </div>
-                  </>
-                )}
+                    )}
+                </div>
+
+                {/* --- RIGHT SIDE: Job Details --- */}
+                <div className="w-full md:w-2/3 flex flex-col h-full space-y-4">
+                    {modalLoading ? (
+                        <div className="flex flex-col items-center justify-center h-full gap-4 opacity-50 py-20">
+                            <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                            <p className="text-[10px] font-black uppercase tracking-widest">Loading Details...</p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <div className="flex justify-between items-start mb-1">
+                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Job Title</p>
+                                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${viewingApplication.status === 'accepted' ? 'bg-green-500/10 text-green-500 border border-green-500/20' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500/10 text-slate-500 border border-slate-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-green-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500' : 'bg-amber-500'}`}></span>
+                                        {viewingApplication.status}
+                                    </div>
+                                </div>
+                                <h2 className="text-3xl sm:text-4xl font-black mb-1">{viewingApplication.jobTitle}</h2>
+                            </div>
+
+                            <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xl font-black">₱</span>
+                                        <span className="text-xl font-black">{modalJobDetails?.salary || "N/A"}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2">
+                                    <BriefcaseIcon className="w-4 h-4 text-blue-500" /> Job Description
+                                </p>
+                                <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalJobDetails?.description || "Description not available."}</p>
+                            </div>
+
+                            <div className="flex gap-4 pt-2 mt-auto">
+                                <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">
+                                    {viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw Application'}
+                                </button>
+                                {viewingApplication.status === 'accepted' ? (
+                                    <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 active:scale-95 transition-all">
+                                        Message Employer
+                                    </button>
+                                ) : (
+                                    <button disabled className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-slate-500/10 text-slate-500 cursor-not-allowed opacity-50">
+                                        {viewingApplication.status === 'rejected' ? 'Application Rejected' : viewingApplication.status === 'withdrawn' ? 'Application Withdrawn' : 'Pending Review'}
+                                    </button>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
       )}
@@ -964,7 +1180,7 @@ export default function ApplicantDashboard() {
                                 const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
                                 return (
                                     <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
-                                        <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${activeBubbleView === chat.id ? 'border-blue-500 scale-110' : 'border-transparent opacity-60'}`}>
+                                        <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all ${activeBubbleView === chat.id ? 'scale-110 shadow-blue-500/50' : 'opacity-60'}`}>
                                             {chatPic ? <img src={chatPic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
                                         </button>
                                         {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-sm z-20 border-none">{unread}</span>}
@@ -1009,17 +1225,38 @@ export default function ApplicantDashboard() {
                                             <div className={`p-4 flex justify-between items-center shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200">{(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="header-pfp" /> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}</div>
-                                                    <div><h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{effectiveActiveChatUser.name}</h3><p className="text-[10px] font-bold opacity-60 uppercase">Active Now</p></div>
+                                                    <div>
+                                                        <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{effectiveActiveChatUser.name}</h3>
+                                                        <p className="text-[10px] font-bold opacity-60 uppercase flex items-center gap-1 mt-0.5">
+                                                            {(() => {
+                                                                const status = formatLastSeen(conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.lastTimestamp);
+                                                                return <><span className={`w-2 h-2 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
+                                                            })()}
+                                                        </p>
+                                                    </div>
                                                 </div>
                                                 <div className="flex gap-4 text-blue-500"><button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button></div>
                                             </div>
+                                            
                                             <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50/50'}`} onClick={() => setActiveMenuId(null)}>
-                                                {messages.map((msg) => {
+                                                {messages.map((msg, index) => {
                                                     const isMe = msg.senderId === auth.currentUser.uid;
-                                                    // FIX: Strict avatar fetching for Mobile bubbles
                                                     const myPic = profileImage || applicantData?.profilePic || null;
                                                     const otherPic = effectiveActiveChatUser?.profilePic || getAvatarUrl(effectiveActiveChatUser) || null;
                                                     
+                                                    // Seen/Delivered Status logic
+                                                    const currentConv = conversations.find(c => c.participants?.includes(auth.currentUser.uid) && c.participants?.includes(effectiveActiveChatUser.id));
+                                                    const unreadByOther = currentConv ? (currentConv[`unread_${effectiveActiveChatUser.id}`] || 0) : 0;
+                                                    const isUnseen = (messages.length - 1 - index) < unreadByOther;
+                                                    const status = formatLastSeen(currentConv?.lastTimestamp);
+                                                    
+                                                    let statusText = "";
+                                                    if (isMe && !msg.isUnsent) {
+                                                        if (!isUnseen) statusText = "Seen";
+                                                        else if (status.isOnline) statusText = "Delivered";
+                                                        else statusText = "Sent";
+                                                    }
+
                                                     if(msg.type === 'system') return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
                                                     
                                                     return (
@@ -1031,29 +1268,43 @@ export default function ApplicantDashboard() {
                                                                         {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : effectiveActiveChatUser.name.charAt(0))} 
                                                                     </div>
                                                                     <div className="relative group/bubble flex flex-col gap-1">
-                                                                        {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                                        {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                                        {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-500 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
+                                                                        {msg.isUnsent ? (
+                                                                            <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
+                                                                        ) : (
+                                                                            <>
+                                                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                                                {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                                            </>
+                                                                        )}
                                                                     </div>
                                                                     
-                                                                    {/* Mobile Context Menu via Long Press */}
+                                                                    {/* Mobile Context Menu */}
                                                                     {activeMenuId === msg.id && (
                                                                         <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                                                                             <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
+                                                                            <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-500' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
                                                                             {isMe && !msg.isUnsent && (
-                                                                                <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className="w-full text-left px-4 py-3 text-red-500 hover:bg-red-500/10 transition-colors">Unsend</button>
+                                                                                <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 transition-colors ${darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'}`}>Unsend</button>
                                                                             )}
                                                                         </div>
                                                                     )}
                                                                 </div>
-                                                                <p className={`text-[8px] font-black mt-1 opacity-30 ${isMe ? 'text-right mr-10' : 'text-left ml-10'}`}>{formatTime(msg.createdAt)}</p>
+                                                                <p className={`text-[8px] font-black mt-1.5 opacity-40 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
+                                                                    <span>{formatTime(msg.createdAt)}</span>
+                                                                    {isMe && !msg.isUnsent && (
+                                                                        <><span>•</span><span className={statusText === 'Seen' ? 'text-blue-500' : ''}>{statusText}</span></>
+                                                                    )}
+                                                                </p>
                                                             </div>
                                                         </SwipeableMessage>
                                                     )
                                                 })}
                                                 <div ref={scrollRef}/>
                                             </div>
+                                            
                                             <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`} onClick={() => setActiveMenuId(null)}>
-                                                {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
+                                                {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : effectiveActiveChatUser.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
                                                 {attachment && (
                                                     <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
                                                         <div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">
@@ -1077,6 +1328,7 @@ export default function ApplicantDashboard() {
                         </div>
                     </div>
                 )}
+
             </>
         ) : (
             // --- DESKTOP VIEW BUBBLES ---
@@ -1104,7 +1356,7 @@ export default function ApplicantDashboard() {
                 )})}
                 {isDesktopInboxVisible && !activeChat && (
                     <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
-                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
+                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
                             <div className={`p-5 flex justify-between items-center ${darkMode ? 'bg-slate-900 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
                                 <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
                                 <button onClick={() => setIsDesktopInboxVisible(false)} className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg"><XMarkIcon className="w-5 h-5 opacity-50"/></button>
@@ -1137,21 +1389,45 @@ export default function ApplicantDashboard() {
                     </div>
                 )}
                 {!isChatMinimized && activeChat && activeTab !== "Support" && (
-                    <div className={`fixed z-[210] pointer-events-auto bottom-6 right-24`}>
-                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border animate-in slide-in-from-right-4 duration-300 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
+                    <div className="fixed z-[210] pointer-events-auto bottom-6 right-24">
+                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                            
+                            {/* Desktop Chat Header */}
                             <div className={`p-4 flex justify-between items-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0`}>
                                 <div className="flex items-center gap-3">
                                     <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover" alt="pfp"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
-                                    <div><span className="font-black text-xs uppercase block">{activeChat.name}</span><span className="text-[9px] opacity-90 font-bold block">Active Now</span></div>
+                                    <div>
+                                        <span className="font-black text-xs uppercase block">{activeChat.name}</span>
+                                        <span className="text-[9px] opacity-90 font-bold flex items-center gap-1 mt-0.5">
+                                            {(() => {
+                                                const status = formatLastSeen(conversations.find(c => c.chatId.includes(activeChat.id))?.lastTimestamp);
+                                                return <><span className={`w-1.5 h-1.5 rounded-full ${status.isOnline ? 'bg-green-400' : 'bg-slate-300'}`}></span> {status.text}</>;
+                                            })()}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className="p-1.5 hover:bg-white/20 rounded-lg"><ChevronDownIcon className="w-4 h-4"/></button><button onClick={closeChat} className="p-1.5 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-4 h-4"/></button></div>
                             </div>
+                            
+                            {/* Desktop Chat Messages */}
                             <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`} onClick={() => setActiveMenuId(null)}>
-                                {messages.map((msg) => {
+                                {messages.map((msg, index) => {
                                     const isMe = msg.senderId === auth.currentUser.uid;
-                                    // FIX: Strict Avatar Fetching for Desktop
                                     const myPic = profileImage || applicantData?.profilePic || null;
                                     const otherPic = activeChat?.profilePic || getAvatarUrl(activeChat) || null;
+
+                                    // Seen/Delivered Status logic
+                                    const currentConv = conversations.find(c => c.participants?.includes(auth.currentUser.uid) && c.participants?.includes(activeChat.id));
+                                    const unreadByOther = currentConv ? (currentConv[`unread_${activeChat.id}`] || 0) : 0;
+                                    const isUnseen = (messages.length - 1 - index) < unreadByOther;
+                                    const status = formatLastSeen(currentConv?.lastTimestamp);
+                                    
+                                    let statusText = "";
+                                    if (isMe && !msg.isUnsent) {
+                                        if (!isUnseen) statusText = "Seen";
+                                        else if (status.isOnline) statusText = "Delivered";
+                                        else statusText = "Sent";
+                                    }
 
                                     if(msg.type === 'system') return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
                                     
@@ -1163,8 +1439,15 @@ export default function ApplicantDashboard() {
                                                     {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : activeChat.name.charAt(0))} 
                                                 </div>
                                                 <div className="relative group/bubble flex flex-col gap-1">
-                                                    {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                    {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                    {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-500 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
+                                                    {msg.isUnsent ? (
+                                                        <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
+                                                    ) : (
+                                                        <>
+                                                            {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                            {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                        </>
+                                                    )}
                                                 </div>
 
                                                 {/* Desktop 3-Dots Hover Menu */}
@@ -1179,18 +1462,26 @@ export default function ApplicantDashboard() {
                                                 {activeMenuId === msg.id && (
                                                     <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                                                         <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
+                                                        <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-500' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
                                                         {isMe && !msg.isUnsent && (
-                                                            <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className="w-full text-left px-4 py-3 text-red-500 hover:bg-red-500/10 transition-colors">Unsend</button>
+                                                            <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 transition-colors ${darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'}`}>Unsend</button>
                                                         )}
                                                     </div>
                                                 )}
                                             </div>
-                                            <p className={`text-[8px] font-black mt-1 opacity-30 ${isMe ? 'text-right mr-10' : 'text-left ml-10'}`}>{formatTime(msg.createdAt)}</p>
+                                            <p className={`text-[8px] font-black mt-1.5 opacity-40 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
+                                                <span>{formatTime(msg.createdAt)}</span>
+                                                {isMe && !msg.isUnsent && (
+                                                    <><span>•</span><span className={statusText === 'Seen' ? 'text-blue-500' : ''}>{statusText}</span></>
+                                                )}
+                                            </p>
                                         </div>
                                     )
                                 })}
                                 <div ref={scrollRef}/>
                             </div>
+                            
+                            {/* Desktop Chat Input */}
                             <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`} onClick={() => setActiveMenuId(null)}>
                                 {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
                                 {attachment && (
@@ -1224,6 +1515,30 @@ export default function ApplicantDashboard() {
          <button onClick={() => setActiveTab("Messages")}><div className="relative"><ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-500' : 'text-slate-500'}`}/>{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 min-w-[16px] h-[16px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-none">{unreadMsgCount}</span>}</div></button>
       </nav>
 
+        {/* 5. IMAGE LIGHTBOX OVERLAY */}
+      {lightboxUrl && createPortal(
+        <div 
+            className="fixed inset-0 flex items-center justify-center bg-black/95 backdrop-blur-sm animate-in fade-in duration-200"
+            style={{ zIndex: 999999 }} 
+            onClick={(e) => { e.stopPropagation(); setLightboxUrl(null); }}
+        >
+            <button 
+                onClick={(e) => { e.stopPropagation(); setLightboxUrl(null); }} 
+                className="absolute top-6 right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+                style={{ zIndex: 9999999 }}
+            >
+                <XMarkIcon className="w-8 h-8"/>
+            </button>
+            <img 
+                src={lightboxUrl} 
+                alt="Enlarged attachment" 
+                className="max-w-[95vw] max-h-[90vh] object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-200"
+                style={{ zIndex: 9999999 }}
+                onClick={(e) => e.stopPropagation()} 
+            />
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

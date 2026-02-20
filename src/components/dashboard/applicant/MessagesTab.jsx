@@ -1,5 +1,5 @@
 // src/components/dashboard/applicant/MessagesTab.jsx
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { MagnifyingGlassIcon, ChatBubbleLeftRightIcon, ChevronLeftIcon, EllipsisHorizontalIcon, ChevronDownIcon, XMarkIcon, PaperClipIcon, PaperAirplaneIcon, ArrowUturnLeftIcon, PhotoIcon, DocumentIcon, ChatBubbleOvalLeftEllipsisIcon, TrashIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 
 // --- STRICT HELPER: Mobile ONLY Swipe & Hold ---
@@ -63,18 +63,25 @@ const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) =>
 };
 
 export default function MessagesTab({ 
-    chatStatus, unsendMessage, deleteChat, togglePinMessage,
+    chatStatus, unsendMessage, deleteChat, togglePinMessage, myProfileImage,
     isMobile, activeChat, conversations, openChat, closeChat, sendMessage, messages, setActiveChat, currentUser, adminUser, darkMode, setLightboxUrl, onMinimize, isChatMinimized, setIsChatMinimized, isBubbleVisible, setIsBubbleVisible, openBubbles, setOpenBubbles, activeBubbleView, setActiveBubbleView, markConversationAsRead, bubbleSearch, setBubbleSearch, isDesktopInboxVisible, setIsDesktopInboxVisible, chatSearch, setChatSearch, newMessage, setNewMessage, attachment, setAttachment, isUploading, replyingTo, setReplyingTo, chatFileRef, bubbleFileRef, scrollRef, handleSendMessageWrapper, handleFileSelect, formatTime, getAvatarUrl, isChatOptionsOpen, setIsChatOptionsOpen
 }) {
     const [activeMenuId, setActiveMenuId] = useState(null); 
     
+    // FIX: Force context menus & chat options to close when changing chats
+    useEffect(() => {
+        setIsChatOptionsOpen(false);
+        setActiveMenuId(null);
+    }, [activeChat?.id, setIsChatOptionsOpen]);
+
     const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
     const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
     
+    // FIX: Utilize myProfileImage passed from parent for the logged-in user
     const MessageAvatar = ({ isMe }) => { 
         let pic = null;
         if (isMe) {
-            pic = currentUser?.photoURL || currentUser?.profilePic || null; 
+            pic = myProfileImage || currentUser?.photoURL || currentUser?.profilePic || null; 
             if (!pic) pic = conversations.find(c => c.participants.includes(currentUser.uid))?.profilePics?.[currentUser.uid];
         } else {
             if (activeChat) pic = getAvatarUrl(activeChat) || activeChat.profilePic || conversations.find(c => c.chatId.includes(activeChat.id))?.profilePics?.[activeChat.id];
@@ -141,7 +148,7 @@ export default function MessagesTab({
                 {activeChat ? (
                     <>
                         {/* Header */}
-                        <div className="p-4 border-b border-gray-500/10 flex justify-between items-center bg-white/5 backdrop-blur-sm z-10 shrink-0">
+                        <div className="p-4 border-b border-gray-500/10 flex justify-between items-center bg-white/5 backdrop-blur-sm z-50 shrink-0 relative">
                             <div className="flex items-center gap-3">
                                 {isMobile && (
                                     <button onClick={() => closeChat()} className="p-2 -ml-2 rounded-full hover:bg-white/10"><ChevronLeftIcon className="w-6 h-6"/></button>
@@ -152,8 +159,8 @@ export default function MessagesTab({
                                 <div>
                                     <h4 className={`font-bold ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeChat.name}</h4>
                                     <p className="text-xs opacity-50 font-bold uppercase flex items-center gap-1">
-                                        <span className={`w-2 h-2 rounded-full ${chatStatus?.isOnline ? 'bg-green-500' : 'bg-gray-400'}`}></span> 
-                                        {chatStatus?.isOnline ? 'Active Now' : 'Offline'}
+                                    <span className={`w-2 h-2 rounded-full ${chatStatus?.isOnline ? 'bg-green-500' : 'bg-gray-400'}`}></span> 
+                                    {chatStatus?.text || (chatStatus?.isOnline ? 'Active Now' : 'Offline')}
                                     </p>
                                 </div>
                             </div>
@@ -166,7 +173,7 @@ export default function MessagesTab({
                                             <button onClick={onMinimize} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5 text-blue-400' : 'hover:bg-blue-50 text-blue-500'}`}><ChevronDownIcon className="w-4 h-4" /> Minimize to Bubble</button>
                                             <div className={`h-px my-1 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}></div>
                                             <button onClick={closeChat} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}><XMarkIcon className="w-4 h-4" /> Close Chat</button>
-                                            <button onClick={() => { setIsChatOptionsOpen(false); deleteChat(activeChat.id); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5 text-red-400' : 'hover:bg-red-50 text-red-500'}`}><TrashIcon className="w-4 h-4" /> Delete Conversation</button>
+                                            <button onClick={() => { setIsChatOptionsOpen(false); if(deleteChat) deleteChat(activeChat.id); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs uppercase tracking-wider transition-colors ${darkMode ? 'hover:bg-white/5 text-red-400' : 'hover:bg-red-50 text-red-500'}`}><TrashIcon className="w-4 h-4" /> Delete Conversation</button>
                                         </div>
                                     </div>
                                 )}
@@ -175,10 +182,23 @@ export default function MessagesTab({
 
                         {/* Messages Area */}
                         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 no-scrollbar" onClick={() => {setIsChatOptionsOpen(false); setActiveMenuId(null);}}>
-                            {messages.map((msg) => {
+                            {messages.map((msg, index) => {
                                 const isMe = msg.senderId === currentUser.uid;
                                 const isSystem = msg.type === 'system';
                                 const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
+                                
+                                // FIX: Compute Seen/Delivered/Sent logic
+                                const currentConv = conversations.find(c => c.participants?.includes(currentUser?.uid) && c.participants?.includes(activeChat?.id));
+                                const unreadByOther = currentConv ? (currentConv[`unread_${activeChat?.id}`] || 0) : 0;
+                                const isUnseen = (messages.length - 1 - index) < unreadByOther;
+                                
+                                let statusText = "";
+                                if (isMe && !msg.isUnsent) {
+                                    if (!isUnseen) statusText = "Seen";
+                                    else if (chatStatus?.isOnline) statusText = "Delivered";
+                                    else statusText = "Sent";
+                                }
+
                                 if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
                                 
                                 return (
@@ -204,7 +224,7 @@ export default function MessagesTab({
                                                         <>
                                                             {msg.fileUrl && (
                                                                 <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>
-                                                                    {msg.fileType === 'image' && <img src={msg.fileUrl} onClick={() => setLightboxUrl(msg.fileUrl)} className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" alt="attachment" />}
+                                                                    {msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" alt="attachment" />}
                                                                     {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
                                                                     {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${!isMe && 'bg-black/5'}`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
                                                                 </div>
@@ -219,32 +239,43 @@ export default function MessagesTab({
                                                 </div>
 
                                                 {/* DESKTOP HOVER ACTIONS - ONLY IF NOT MOBILE */}
-                                                {!isMobile && (
-                                                    <div className="hidden md:flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity mb-2">
-                                                        <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} className="p-1.5 bg-slate-100 dark:bg-slate-700/50 rounded-full text-blue-500 hover:scale-110 transition-transform shadow-sm" title="Reply">
-                                                            <ArrowUturnLeftIcon className="w-3.5 h-3.5"/>
+                                               {!isMobile && (
+                                                <div className="hidden md:flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity mb-2">
+                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-blue-400 bg-slate-800 hover:bg-slate-700' : 'text-blue-500 bg-white hover:bg-slate-100'}`} title="Reply">
+                                                        <ArrowUturnLeftIcon className="w-3.5 h-3.5"/>
+                                                    </button>
+                                                    <div className="relative">
+                                                        <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700' : 'text-slate-500 bg-white hover:bg-slate-100'}`} title="More">
+                                                            <EllipsisVerticalIcon className="w-3.5 h-3.5"/>
                                                         </button>
-                                                        <div className="relative">
-                                                            <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className="p-1.5 bg-slate-100 dark:bg-slate-700/50 rounded-full text-slate-500 hover:scale-110 transition-transform shadow-sm" title="More">
-                                                                <EllipsisVerticalIcon className="w-3.5 h-3.5"/>
-                                                            </button>
-                                                        </div>
                                                     </div>
-                                                )}
-                                                
-                                                {/* FIXED MENU FOR BOTH DESKTOP (Click) AND MOBILE (Hold) */}
-                                                {activeMenuId === msg.id && (
-                                                    <div className={`absolute z-50 bottom-full mb-1 ${isMe ? 'right-12' : 'left-12'} w-40 bg-white dark:bg-slate-800 shadow-xl rounded-xl border ${darkMode ? 'border-white/10' : 'border-slate-200'} overflow-hidden text-xs font-bold animate-in zoom-in-95`}>
-                                                        <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent }); setActiveMenuId(null)}} className="w-full text-left px-4 py-3 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 border-b border-black/5 dark:border-white/5">Reply to</button>
-                                                        <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 border-b border-black/5 dark:border-white/5 ${msg.isPinned ? 'text-yellow-600 dark:text-yellow-400' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin a message"}</button>
-                                                        {isMe && !msg.isUnsent && (
-                                                            <button onClick={(e) => {e.stopPropagation(); unsendMessage(msg.id); setActiveMenuId(null)}} className="w-full text-left px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">Unsend message</button>
-                                                        )}
-                                                    </div>
-                                                )}
+                                                </div>
+                                            )}
+
+                                            {/* FIXED MENU FOR BOTH DESKTOP (Click) AND MOBILE (Hold) */}
+                                            {activeMenuId === msg.id && (
+                                                <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-12' : 'left-12'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+                                                    <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
+                                                    <button onClick={(e) => {e.stopPropagation(); if(togglePinMessage) togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-600 dark:text-yellow-400' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
+                                                    {isMe && !msg.isUnsent && (
+                                                        <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 transition-colors ${darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'}`}>Unsend message</button>
+                                                    )}
+                                                </div>
+                                            )}
 
                                             </div>
-                                            <p className={`text-[9px] font-bold mt-1.5 opacity-30 select-none ${isMe ? 'text-right mr-12' : 'text-left ml-12'}`}>{formatTime(msg.createdAt)}</p>
+                                            
+                                            {/* FIX: Seen / Delivered / Sent Indicator Added Here */}
+                                            <p className={`text-[9px] font-bold mt-1.5 opacity-40 select-none flex items-center gap-1.5 ${isMe ? 'justify-end mr-12' : 'justify-start ml-12'}`}>
+                                                <span>{formatTime(msg.createdAt)}</span>
+                                                {isMe && !msg.isUnsent && (
+                                                    <>
+                                                        <span>•</span>
+                                                        <span className={statusText === 'Seen' ? 'text-blue-500 font-black' : ''}>{statusText}</span>
+                                                    </>
+                                                )}
+                                            </p>
+
                                         </div>
                                     </SwipeableMessage>
                                 )
@@ -262,7 +293,6 @@ export default function MessagesTab({
                                 </div>
                             )}
 
-                            {/* THE MISSING ATTACHMENT PREVIEW BLOCK IS BACK! */}
                             {attachment && (
                                 <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
                                     <div className={`p-2 pr-8 border rounded-xl flex items-center gap-3 ${darkMode ? 'bg-blue-500/20 border-blue-500/30' : 'bg-blue-50 border-blue-200'}`}>
