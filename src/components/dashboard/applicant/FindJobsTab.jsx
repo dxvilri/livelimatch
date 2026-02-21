@@ -242,26 +242,20 @@ export default function FindJobsTab({
                     const typeStyle = getJobStyle(job.type);
                     const isSaved = savedJobs.some(s => s.jobId === job.id);
 
-                    // --- UNIFIED CATEGORY THEME ---
-                    // Grabs the color based on the Category and applies it to EVERYTHING on the card!
-                    const getTheme = (id) => {
-                        const map = {
-                            'EDUCATION': { text: 'text-blue-600 dark:text-blue-400', badge: 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400', btnLight: 'bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 dark:text-blue-400', btnSolid: 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20', saveActive: 'text-blue-600 bg-blue-500/20 dark:text-blue-400', saveIdle: 'text-blue-600/50 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400/50 dark:hover:text-blue-400', border: 'border-blue-500/20 dark:border-blue-400/20' },
-                            'AGRICULTURE': { text: 'text-green-600 dark:text-green-400', badge: 'bg-green-500/10 text-green-600 border-green-500/20 dark:text-green-400', btnLight: 'bg-green-500/10 text-green-600 hover:bg-green-500/20 dark:text-green-400', btnSolid: 'bg-green-600 hover:bg-green-500 text-white shadow-green-500/20', saveActive: 'text-green-600 bg-green-500/20 dark:text-green-400', saveIdle: 'text-green-600/50 hover:bg-green-500/10 hover:text-green-600 dark:text-green-400/50 dark:hover:text-green-400', border: 'border-green-500/20 dark:border-green-400/20' },
-                            'AUTOMOTIVE': { text: 'text-slate-600 dark:text-slate-400', badge: 'bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400', btnLight: 'bg-slate-500/10 text-slate-600 hover:bg-slate-500/20 dark:text-slate-400', btnSolid: 'bg-slate-600 hover:bg-slate-500 text-white shadow-slate-500/20', saveActive: 'text-slate-600 bg-slate-500/20 dark:text-slate-400', saveIdle: 'text-slate-600/50 hover:bg-slate-500/10 hover:text-slate-600 dark:text-slate-400/50 dark:hover:text-slate-400', border: 'border-slate-500/20 dark:border-slate-400/20' },
-                            'CARPENTRY': { text: 'text-yellow-600 dark:text-yellow-400', badge: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20 dark:text-yellow-400', btnLight: 'bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 dark:text-yellow-400', btnSolid: 'bg-yellow-500 hover:bg-yellow-400 text-white shadow-yellow-500/20', saveActive: 'text-yellow-600 bg-yellow-500/20 dark:text-yellow-400', saveIdle: 'text-yellow-600/50 hover:bg-yellow-500/10 hover:text-yellow-600 dark:text-yellow-400/50 dark:hover:text-yellow-400', border: 'border-yellow-500/20 dark:border-yellow-400/20' },
-                            'HOUSEHOLD': { text: 'text-pink-600 dark:text-pink-400', badge: 'bg-pink-500/10 text-pink-600 border-pink-500/20 dark:text-pink-400', btnLight: 'bg-pink-500/10 text-pink-600 hover:bg-pink-500/20 dark:text-pink-400', btnSolid: 'bg-pink-600 hover:bg-pink-500 text-white shadow-pink-500/20', saveActive: 'text-pink-600 bg-pink-500/20 dark:text-pink-400', saveIdle: 'text-pink-600/50 hover:bg-pink-500/10 hover:text-pink-600 dark:text-pink-400/50 dark:hover:text-pink-400', border: 'border-pink-500/20 dark:border-pink-400/20' },
-                            'CUSTOMER_SERVICE': { text: 'text-purple-600 dark:text-purple-400', badge: 'bg-purple-500/10 text-purple-600 border-purple-500/20 dark:text-purple-400', btnLight: 'bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 dark:text-purple-400', btnSolid: 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-500/20', saveActive: 'text-purple-600 bg-purple-500/20 dark:text-purple-400', saveIdle: 'text-purple-600/50 hover:bg-purple-500/10 hover:text-purple-600 dark:text-purple-400/50 dark:hover:text-purple-400', border: 'border-purple-500/20 dark:border-purple-400/20' }
-                        };
-                        return map[id] || map['EDUCATION']; // Defaults to blue if no category
-                    };
-                    const theme = getTheme(job.category);
+                    // --- UNIFIED SALARY THEME ---
+                    // Grabs the exact color used for "Salary" (blue-800 in Light, blue-200 in Dark)
+                    const salaryColor = darkMode ? 'text-blue-200' : 'text-blue-800';
+                    const salaryBadge = darkMode ? 'bg-blue-200/10 text-blue-200 border-blue-200/30' : 'bg-blue-800/10 text-blue-800 border-blue-800/20';
+                    const salaryBtn = darkMode ? 'bg-blue-200 text-slate-900 hover:bg-blue-300 shadow-blue-200/20' : 'bg-blue-800 text-white hover:bg-blue-700 shadow-blue-800/20';
+                    const saveActive = darkMode ? 'text-blue-200 bg-blue-200/20' : 'text-blue-800 bg-blue-800/10';
+                    const saveIdle = darkMode ? 'text-blue-200/50 hover:bg-blue-200/10 hover:text-blue-200' : 'text-blue-800/50 hover:bg-blue-800/10 hover:text-blue-800';
+                    const detailsBtn = darkMode ? 'text-blue-200 bg-blue-200/10 hover:bg-blue-200/20' : 'text-blue-800 bg-blue-800/10 hover:bg-blue-800/20';
 
                     return (
                         <div key={job.id} onClick={() => onSelectJob(job)} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 hover:shadow-xl cursor-pointer flex flex-col justify-between min-h-[220px] border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`}>
                             
                             {/* Large Background Icon */}
-                            <div className={`absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${theme.text}`}>
+                            <div className={`absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${darkMode ? 'text-white' : 'text-blue-900'}`}>
                                 {cloneElement(typeStyle.icon, { className: "w-32 h-32 md:w-48 md:h-48" })}
                             </div>
 
@@ -269,25 +263,25 @@ export default function FindJobsTab({
                                 
                                 {/* 1. Job Title & Bookmark */}
                                 <div className="flex justify-between items-start gap-4 mb-2">
-                                    <h3 className={`font-black text-xl leading-tight line-clamp-2 pt-1 ${theme.text}`}>{job.title}</h3>
-                                    <button onClick={(e) => { e.stopPropagation(); onToggleSave(job); }} className={`p-2 rounded-full transition-colors shrink-0 -mt-1 -mr-1 ${isSaved ? theme.saveActive : theme.saveIdle}`}>
+                                    <h3 className={`font-black text-xl leading-tight line-clamp-2 pt-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
+                                    <button onClick={(e) => { e.stopPropagation(); onToggleSave(job); }} className={`p-2 rounded-full transition-colors shrink-0 -mt-1 -mr-1 ${isSaved ? saveActive : saveIdle}`}>
                                         {isSaved ? <BookmarkIcon className="w-5 h-5 fill-current"/> : <BookmarkIcon className="w-5 h-5"/>}
                                     </button>
                                 </div>
                                 
-                                {/* 2. Location */}
-                                <div className={`flex items-center gap-1.5 mb-4 ${theme.text}`}>
+                                {/* 2. Location (Now uses Salary Color) */}
+                                <div className={`flex items-center gap-1.5 mb-4 ${salaryColor}`}>
                                     <MapPinIcon className="w-4 h-4 shrink-0" />
                                     <p className="text-[11px] font-bold uppercase tracking-wide opacity-80 truncate">{job.sitio || "No Location"}</p>
                                 </div>
 
-                                {/* 3. Badges (Category & Type Leveled Together) */}
+                                {/* 3. Badges (Category & Type Leveled Together - Now uses Salary Color) */}
                                 <div className="flex flex-wrap items-center gap-2 mb-6">
                                     {/* Category Badge */}
                                     {job.category && (() => {
                                         const CatIcon = getCatStyles(job.category).icon;
                                         return (
-                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm ${theme.badge}`}>
+                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm ${salaryBadge}`}>
                                                 <CatIcon className="w-3 h-3" />
                                                 {JOB_CATEGORIES.find(c => c.id === job.category)?.label || job.category}
                                             </span>
@@ -295,27 +289,26 @@ export default function FindJobsTab({
                                     })()}
 
                                     {/* Job Type Badge */}
-                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm ${theme.badge}`}>
+                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm ${salaryBadge}`}>
                                         <span className="scale-75 w-3 h-3 flex items-center justify-center">{typeStyle.icon}</span>
                                         {job.type}
                                     </span>
                                 </div>
 
                                 {/* 4. Salary & Actions */}
-                                <div className={`mt-auto pt-4 border-t border-dashed flex flex-wrap items-end justify-between gap-3 ${theme.border}`}>
+                                <div className={`mt-auto pt-4 border-t border-dashed flex flex-wrap items-end justify-between gap-3 ${darkMode ? 'border-blue-200/20' : 'border-blue-800/20'}`}>
                                     <div className="mb-1">
-                                        <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${theme.text}`}>Salary</p>
+                                        <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${salaryColor}`}>Salary</p>
                                         <div className="flex items-center gap-1">
-                                            {/* Peso Sign & Numbers Colored by Category */}
-                                            <span className={`text-sm font-black ${theme.text}`}>₱</span>
-                                            <span className={`text-lg font-black leading-none ${theme.text}`}>{job.salary}</span>
+                                            <span className={`text-sm font-black ${darkMode ? 'text-blue-200/70' : 'text-blue-800/70'}`}>₱</span>
+                                            <span className={`text-lg font-black leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.salary}</span>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <button onClick={(e) => { e.stopPropagation(); onSelectJob(job); }} className={`px-3 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${theme.btnLight}`}>
+                                        <button onClick={(e) => { e.stopPropagation(); onSelectJob(job); }} className={`px-3 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${detailsBtn}`}>
                                             Details
                                         </button>
-                                        <button onClick={(e) => { e.stopPropagation(); onApply(job); }} className={`px-4 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-lg active:scale-95 transition-all ${theme.btnSolid}`}>
+                                        <button onClick={(e) => { e.stopPropagation(); onApply(job); }} className={`px-4 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-lg active:scale-95 transition-all ${salaryBtn}`}>
                                             Apply
                                         </button>
                                     </div>
