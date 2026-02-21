@@ -86,9 +86,10 @@ const formatLastSeen = (timestamp) => {
 };
 
 // --- STYLES ---
+// --- STYLES ---
 const glassPanel = (darkMode) => `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
-const glassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out group ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-500'}`;
-const activeGlassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out scale-110 -translate-y-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`;
+const glassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out group ${darkMode ? 'text-slate-400 hover:text-blue-400' : 'text-slate-400 hover:text-blue-800'}`;
+const activeGlassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out scale-110 -translate-y-1 ${darkMode ? 'text-blue-400' : 'text-blue-800'}`;
 
 // --- MOBILE SWIPE HELPER ---
 const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) => {
@@ -597,7 +598,11 @@ export default function ApplicantDashboard() {
 
       {/* Header */}
       <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isFullScreenPage) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified && !isFullScreenPage ? 'top-10' : 'top-0'}`}>
-           <div className="flex items-center gap-3"><h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>LIVELI<span className="text-blue-500">MATCH</span></h1></div>
+          <div className="flex items-center gap-3">
+                <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                    LIVELI<span className={darkMode ? 'text-blue-200' : 'text-blue-800'}>MATCH</span>
+                </h1>
+            </div>
            <div className="hidden lg:flex items-center gap-24">
                 {['FindJobs', 'Saved', 'Applications', 'Messages'].map(tab => (
                     <button key={tab} onClick={() => isVerified && setActiveTab(tab)} className={`${activeTab === tab ? activeGlassNavBtn(darkMode) : glassNavBtn(darkMode)} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
@@ -631,7 +636,7 @@ export default function ApplicantDashboard() {
                 </div>
                 <div onClick={() => setActiveTab("Profile")} className="cursor-pointer group">
                     <div className={`w-10 h-10 rounded-full overflow-hidden border-2 shadow-sm ${darkMode ? 'border-slate-600 group-hover:border-white' : 'border-white group-hover:border-blue-500'}`}>
-                        {profileImage ? <img src={profileImage} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">{applicantData.firstName?.charAt(0)}</div>}
+                        {profileImage ? <img src={profileImage} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-blue-800 flex items-center justify-center text-white font-bold">{applicantData.firstName?.charAt(0)}</div>}
                     </div>
                 </div>
                 <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-900 hover:bg-slate-100'}`}><Bars3BottomRightIcon className="w-7 h-7" /></button>
@@ -642,7 +647,7 @@ export default function ApplicantDashboard() {
       <aside className={`fixed top-0 right-0 h-full w-64 z-[100] rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel(darkMode)} ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}>
            <div className="h-24 flex items-center justify-center relative mt-8 cursor-pointer" onClick={() => { setActiveTab("Profile"); setIsSidebarOpen(false); }}>
                <div className="flex items-center gap-3 p-2 pr-4 rounded-2xl hover:bg-white/10 group">
-                   <div className="w-12 h-12 rounded-2xl overflow-hidden">{profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">A</div>}</div>
+                   <div className="w-12 h-12 rounded-2xl overflow-hidden">{profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-blue-800 flex items-center justify-center text-white font-bold">A</div>}</div>
                    <div><h1 className="font-black text-sm tracking-tight">{displayName}</h1><p className="text-[10px] opacity-60 font-bold uppercase group-hover:text-blue-500">View Profile</p></div>
                </div>
                <button onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }} className="absolute top-0 right-4 p-2 opacity-50 hover:opacity-100"><XMarkIcon className="w-6 h-6" /></button>
@@ -664,15 +669,16 @@ export default function ApplicantDashboard() {
         {!isFullScreenPage && (
             <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 rounded-2xl ${glassPanel(darkMode)}`}>
                 <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-xl hidden md:block ${darkMode ? 'bg-white/5' : 'bg-blue-50'}`}>
-                        {activeTab === "FindJobs" && <BriefcaseIcon className="w-6 h-6 text-blue-500"/>}
-                        {activeTab === "Saved" && <BookmarkIcon className="w-6 h-6 text-blue-500"/>}
-                        {activeTab === "Applications" && <PaperAirplaneIcon className="w-6 h-6 text-blue-500"/>}
-                        {activeTab === "Messages" && <ChatBubbleLeftRightIcon className="w-6 h-6 text-blue-500"/>}
-                        {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6 text-blue-500"/>}
-                        {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6 text-blue-500"/>}
-                        {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500"/>}
-                        {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6 text-blue-500"/>}
+                    {/* Updated background and icon colors to match the deep blue theme */}
+                    <div className={`p-2 rounded-xl hidden md:block ${darkMode ? 'bg-blue-200/10 text-blue-200' : 'bg-blue-800/10 text-blue-800'}`}>
+                        {activeTab === "FindJobs" && <BriefcaseIcon className="w-6 h-6"/>}
+                        {activeTab === "Saved" && <BookmarkIcon className="w-6 h-6"/>}
+                        {activeTab === "Applications" && <PaperAirplaneIcon className="w-6 h-6"/>}
+                        {activeTab === "Messages" && <ChatBubbleLeftRightIcon className="w-6 h-6"/>}
+                        {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6"/>}
+                        {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6"/>}
+                        {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6"/>}
+                        {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6"/>}
                     </div>
                     <div>
                         <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeTab === "Support" ? "Help & Support" : activeTab === "FindJobs" ? "Find Jobs" : activeTab}</h2>
@@ -871,7 +877,7 @@ export default function ApplicantDashboard() {
             <div className="flex flex-col items-center justify-center h-full min-h-[50vh] animate-in fade-in zoom-in-95">
                 <div className="w-24 h-24 rounded-full bg-red-500/10 flex items-center justify-center mb-6"><LockClosedIcon className="w-10 h-10 text-red-500"/></div>
                 <h2 className={`text-2xl font-black mb-2 uppercase tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>Feature Locked</h2>
-                <button onClick={() => setActiveTab("Support")} className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-blue-500 shadow-lg">Contact Support</button>
+                <button onClick={() => setActiveTab("Support")} className="px-8 py-3 bg-blue-800 text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-blue-500 shadow-lg">Contact Support</button>
             </div>
         )}
 
@@ -884,7 +890,7 @@ export default function ApplicantDashboard() {
           // Syncs the Apply Button, Save Button, and Job Type Badge to the Category color!
           const getModalTheme = (cat) => {
               const map = {
-                  'EDUCATION': { solid: 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20 text-white', badge: 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400', saveActive: 'bg-blue-500 border-blue-500 text-white', saveIdle: 'hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 dark:hover:border-blue-800/50' },
+                  'EDUCATION': { solid: 'bg-blue-800 hover:bg-blue-500 shadow-blue-500/20 text-white', badge: 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400', saveActive: 'bg-blue-500 border-blue-500 text-white', saveIdle: 'hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 dark:hover:border-blue-800/50' },
                   'AGRICULTURE': { solid: 'bg-green-600 hover:bg-green-500 shadow-green-500/20 text-white', badge: 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400', saveActive: 'bg-green-500 border-green-500 text-white', saveIdle: 'hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-green-900/30 dark:hover:text-green-400 dark:hover:border-green-800/50' },
                   'AUTOMOTIVE': { solid: 'bg-slate-600 hover:bg-slate-500 shadow-slate-500/20 text-white', badge: 'bg-slate-500/10 border-slate-500/20 text-slate-600 dark:text-slate-400', saveActive: 'bg-slate-500 border-slate-500 text-white', saveIdle: 'hover:bg-slate-50 hover:text-slate-600 hover:border-slate-200 dark:hover:bg-slate-800/50 dark:hover:text-slate-400 dark:hover:border-slate-700/50' },
                   'CARPENTRY': { solid: 'bg-yellow-500 hover:bg-yellow-400 shadow-yellow-500/20 text-white', badge: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-600 dark:text-yellow-400', saveActive: 'bg-yellow-500 border-yellow-500 text-white', saveIdle: 'hover:bg-yellow-50 hover:text-yellow-600 hover:border-yellow-200 dark:hover:bg-yellow-900/30 dark:hover:text-yellow-400 dark:hover:border-yellow-800/50' },
@@ -914,7 +920,7 @@ export default function ApplicantDashboard() {
                             {selectedJob.employerLogo ? (
                                 <img src={selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
                             ) : (
-                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
+                                <div className="w-full h-full bg-blue-800 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
                             )}
                         </div>
                         
@@ -1035,7 +1041,7 @@ export default function ApplicantDashboard() {
                         {viewingApplication.employerLogo ? (
                             <img src={viewingApplication.employerLogo} alt={viewingApplication.employerName} className="w-full h-full object-cover" />
                         ) : (
-                            <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{viewingApplication.employerName?.charAt(0)}</div>
+                            <div className="w-full h-full bg-blue-800 flex items-center justify-center text-4xl font-black text-white uppercase">{viewingApplication.employerName?.charAt(0)}</div>
                         )}
                     </div>
                     
@@ -1152,7 +1158,7 @@ export default function ApplicantDashboard() {
                                     {viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw Application'}
                                 </button>
                                 {viewingApplication.status === 'accepted' ? (
-                                    <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 active:scale-95 transition-all">
+                                    <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-800 text-white hover:bg-blue-500 active:scale-95 transition-all">
                                         Message Employer
                                     </button>
                                 ) : (
@@ -1281,7 +1287,7 @@ export default function ApplicantDashboard() {
                                                     return (
                                                         <SwipeableMessage key={msg.id} isMe={isMe} isMobile={true} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} onLongPress={() => setActiveMenuId(msg.id)}>
                                                             <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group relative`}>
-                                                                {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
+                                                                {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-800/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
                                                                 <div className={`flex items-end gap-3 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                                                     <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
                                                                         {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : effectiveActiveChatUser.name.charAt(0))} 
@@ -1292,8 +1298,8 @@ export default function ApplicantDashboard() {
                                                                             <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
                                                                         ) : (
                                                                             <>
-                                                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                                                {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-800' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                                                {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-800 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
                                                                             </>
                                                                         )}
                                                                     </div>
@@ -1353,7 +1359,7 @@ export default function ApplicantDashboard() {
             // --- DESKTOP VIEW BUBBLES ---
             <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
                 <div className="pointer-events-auto relative">
-                    <button onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }} className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden ${darkMode ? 'bg-blue-600' : 'bg-blue-600'}`}>
+                    <button onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }} className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden ${darkMode ? 'bg-blue-800' : 'bg-blue-800'}`}>
                         <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
                     </button>
                     {conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-20 animate-bounce border-none">{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0)}</span>}
@@ -1452,7 +1458,7 @@ export default function ApplicantDashboard() {
                                     
                                     return (
                                         <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
+                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-800/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
                                             <div className={`flex items-end gap-2 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                                 <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
                                                     {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : activeChat.name.charAt(0))} 
@@ -1463,8 +1469,8 @@ export default function ApplicantDashboard() {
                                                         <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
                                                     ) : (
                                                         <>
-                                                            {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                            {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                            {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-800' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                            {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-800 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
                                                         </>
                                                     )}
                                                 </div>

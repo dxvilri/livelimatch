@@ -2,16 +2,17 @@ import { XMarkIcon, ArrowLeftOnRectangleIcon, StarIcon as StarIconOutline, Megap
 
 function NavBtn({ icon, label, active, onClick, darkMode, open }) {
   return (
-    <button onClick={onClick} title={!open ? label : ''} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 group relative ${active ? 'bg-transparent' : `${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-blue-600'}`} ${!open && 'lg:justify-center'}`}>
-        <div className={`relative z-10 shrink-0 ${active ? 'text-blue-600 dark:text-blue-400' : ''}`}>{icon}</div>
-        <span className={`relative z-10 font-bold text-xs uppercase tracking-widest whitespace-nowrap overflow-hidden transition-all duration-300 ${!open ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'} ${active ? 'text-blue-600 dark:text-blue-400' : ''}`}>{label}</span>
+    <button onClick={onClick} title={!open ? label : ''} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 group relative ${active ? 'bg-transparent' : `${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-blue-800'}`} ${!open && 'lg:justify-center'}`}>
+        <div className={`relative z-10 shrink-0 ${active ? 'text-blue-800 dark:text-blue-400' : ''}`}>{icon}</div>
+        <span className={`relative z-10 font-bold text-xs uppercase tracking-widest whitespace-nowrap overflow-hidden transition-all duration-300 ${!open ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'} ${active ? 'text-blue-800 dark:text-blue-400' : ''}`}>{label}</span>
     </button>
   );
 }
 
 const ProfilePicComponent = ({ profileImage, applicantData }) => (
     <div className={`w-12 h-12 rounded-2xl overflow-hidden shadow-lg border select-none shrink-0`}>
-        {profileImage ? <img src={profileImage} alt="Profile" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-blue-600 text-white flex items-center justify-center font-black text-lg">{applicantData.firstName ? applicantData.firstName.charAt(0) : "A"}</div>}
+        {/* Change bg-blue-600 to bg-blue-800 */}
+{profileImage ? <img src={profileImage} alt="Profile" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-blue-800 text-white flex items-center justify-center font-black text-lg">{applicantData.firstName ? applicantData.firstName.charAt(0) : "A"}</div>}
     </div>
 );
 

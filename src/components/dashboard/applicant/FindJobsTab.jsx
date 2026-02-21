@@ -24,11 +24,15 @@ export default function FindJobsTab({
         const map = {
             'EDUCATION': { 
                 icon: AcademicCapIcon,
-                text: 'text-blue-500', bgLight: 'bg-blue-500/10', border: 'border-blue-500/30', borderActive: 'border-blue-500',
-                hover: 'hover:bg-blue-500/10 hover:border-blue-500/50 hover:shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]',
-                hoverText: 'group-hover:text-blue-500', 
-                active: 'bg-blue-500/10 border-blue-500 text-blue-500 shadow-[0_0_20px_-3px_rgba(59,130,246,0.4)]' 
+                text: darkMode ? 'text-blue-400' : 'text-blue-800', 
+                bgLight: darkMode ? 'bg-blue-400/10' : 'bg-blue-800/10', 
+                border: darkMode ? 'border-blue-400/30' : 'border-blue-800/30', 
+                borderActive: darkMode ? 'border-blue-400' : 'border-blue-800',
+                hover: darkMode ? 'hover:bg-blue-400/10 hover:border-blue-400/50 hover:shadow-[0_0_15px_-3px_rgba(96,165,250,0.3)]' : 'hover:bg-blue-800/10 hover:border-blue-800/50 hover:shadow-[0_0_15px_-3px_rgba(30,64,175,0.3)]',
+                hoverText: darkMode ? 'group-hover:text-blue-400' : 'group-hover:text-blue-800', 
+                active: darkMode ? 'bg-blue-400/10 border-blue-400 text-blue-400 shadow-[0_0_20px_-3px_rgba(96,165,250,0.4)]' : 'bg-blue-800/10 border-blue-800 text-blue-800 shadow-[0_0_20px_-3px_rgba(30,64,175,0.4)]' 
             },
+            // ... (leave the other categories as they are)
             'AGRICULTURE': { 
                 icon: SunIcon,
                 text: 'text-green-500', bgLight: 'bg-green-500/10', border: 'border-green-500/30', borderActive: 'border-green-500',
@@ -120,7 +124,8 @@ export default function FindJobsTab({
                 {/* Filter Bar */}
                 <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
                     <div className="relative w-full lg:flex-1 min-w-0">
-                        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        {/* Tinted the magnifying glass to match the brand */}
+                        <MagnifyingGlassIcon className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${darkMode ? 'text-blue-400/50' : 'text-blue-800/50'}`} />
                         <input type="text" placeholder="Search job title or employer..." value={jobSearch} onChange={(e) => setJobSearch(e.target.value)} className={glassInput + " pl-9 pr-4 py-2.5"} />
                     </div>
                     
@@ -130,7 +135,8 @@ export default function FindJobsTab({
                     <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
                         <button onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
                             <div className="flex items-center gap-3">
-                                <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500 shrink-0"><MapPinIcon className="w-4 h-4" /></div>
+                                {/* Updated Location Icon background and text */}
+                                <div className={`p-1.5 rounded-lg shrink-0 ${darkMode ? 'bg-blue-400/10 text-blue-400' : 'bg-blue-800/10 text-blue-800'}`}><MapPinIcon className="w-4 h-4" /></div>
                                 <span className="truncate">{jobLocationFilter || "All Locations"}</span>
                             </div>
                             <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}>
@@ -140,9 +146,9 @@ export default function FindJobsTab({
                         {isSitioDropdownOpen && (
                             <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
                                 <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
-                                    <button onClick={() => { setJobLocationFilter(""); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!jobLocationFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><span className="text-xs font-bold block">All Locations</span></button>
+                                    <button onClick={() => { setJobLocationFilter(""); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!jobLocationFilter ? (darkMode ? 'bg-blue-500 text-white' : 'bg-blue-800 text-white') : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><span className="text-xs font-bold block">All Locations</span></button>
                                     {PUROK_LIST.map(p => (
-                                        <button key={p} onClick={() => { setJobLocationFilter(p); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${jobLocationFilter === p ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><span className="text-xs font-bold block">{p}</span></button>
+                                        <button key={p} onClick={() => { setJobLocationFilter(p); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${jobLocationFilter === p ? (darkMode ? 'bg-blue-500 text-white' : 'bg-blue-800 text-white') : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><span className="text-xs font-bold block">{p}</span></button>
                                     ))}
                                 </div>
                             </div>
@@ -156,14 +162,14 @@ export default function FindJobsTab({
                     <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
                         <button onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
                             {(() => {
-                                const activeStyle = jobCategoryFilter ? getCatStyles(jobCategoryFilter) : { icon: TagIcon, text: 'text-blue-500', bgLight: 'bg-blue-500/10' };
+                                // Updated the fallback fallback to our new brand colors
+                                const activeStyle = jobCategoryFilter ? getCatStyles(jobCategoryFilter) : { icon: TagIcon, text: darkMode ? 'text-blue-400' : 'text-blue-800', bgLight: darkMode ? 'bg-blue-400/10' : 'bg-blue-800/10' };
                                 const ActiveIcon = activeStyle.icon;
                                 return (
                                     <div className="flex items-center gap-3">
                                         <div className={`p-1.5 rounded-lg shrink-0 ${activeStyle.bgLight} ${activeStyle.text}`}>
                                             <ActiveIcon className="w-4 h-4" />
                                         </div>
-                                        {/* FIX: Removed fading text-color classes so it inherits the dark/bold default text styling */}
                                         <span className={`truncate ${jobCategoryFilter ? activeStyle.text : ''}`}>
                                             {jobCategoryFilter ? JOB_CATEGORIES.find(c => c.id === jobCategoryFilter)?.label : "All Categories"}
                                         </span>
@@ -179,12 +185,12 @@ export default function FindJobsTab({
                             <div className={`absolute top-full left-0 mt-2 w-full lg:w-64 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
                                 <div className="max-h-60 overflow-y-auto p-2 space-y-1.5 hide-scrollbar">
                                     
-                                    {/* Glass styled "All Categories" option */}
-                                    <button onClick={() => { setJobCategoryFilter(""); setIsCategoryDropdownOpen(false); }} className={`relative overflow-hidden w-full text-left p-3 rounded-xl transition-all duration-300 group border backdrop-blur-sm ${!jobCategoryFilter ? 'bg-blue-500/10 border-blue-500 text-blue-500 shadow-[0_0_20px_-3px_rgba(59,130,246,0.4)]' : `border-transparent ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}`}>
+                                    {/* Glass styled "All Categories" option - Updated to deep blue / light blue */}
+                                    <button onClick={() => { setJobCategoryFilter(""); setIsCategoryDropdownOpen(false); }} className={`relative overflow-hidden w-full text-left p-3 rounded-xl transition-all duration-300 group border backdrop-blur-sm ${!jobCategoryFilter ? (darkMode ? 'bg-blue-400/10 border-blue-400 text-blue-400 shadow-[0_0_20px_-3px_rgba(96,165,250,0.4)]' : 'bg-blue-800/10 border-blue-800 text-blue-800 shadow-[0_0_20px_-3px_rgba(30,64,175,0.4)]') : `border-transparent ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}`}>
                                         <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/30 dark:via-white/10 to-transparent transition-transform duration-700 ease-in-out z-0 pointer-events-none" />
                                         <div className="flex items-center gap-3 relative z-10">
-                                            <TagIcon className={`w-5 h-5 transition-colors ${!jobCategoryFilter ? 'text-blue-500' : 'text-slate-400'}`} />
-                                            <span className={`text-xs font-black block transition-colors ${!jobCategoryFilter ? 'text-blue-500' : darkMode ? 'text-white group-hover:text-blue-400' : 'text-slate-700 group-hover:text-blue-600'}`}>All Categories</span>
+                                            <TagIcon className={`w-5 h-5 transition-colors ${!jobCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-800') : 'text-slate-400'}`} />
+                                            <span className={`text-xs font-black block transition-colors ${!jobCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-800') : darkMode ? 'text-white group-hover:text-blue-400' : 'text-slate-700 group-hover:text-blue-800'}`}>All Categories</span>
                                         </div>
                                     </button>
                                     
@@ -225,10 +231,18 @@ export default function FindJobsTab({
                         <>
                             <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
                             <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all group overflow-hidden text-left relative w-full lg:w-64 shrink-0 ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}>
-                                <div className={`p-1.5 rounded-lg shrink-0 bg-pink-500/10 text-pink-500`}><MegaphoneIcon className="w-4 h-4"/></div>
+                                {/* Updated Megaphone Icon Background & Text */}
+                                <div className={`p-1.5 rounded-lg shrink-0 ${darkMode ? 'bg-blue-400/10 text-blue-400' : 'bg-blue-800/10 text-blue-800'}`}>
+                                    <MegaphoneIcon className="w-4 h-4"/>
+                                </div>
                                 <div className="flex flex-col overflow-hidden min-w-0 flex-1 animate-in fade-in slide-in-from-bottom-1 duration-500 key={displayAnnouncement.id}">
-                                    <span className="text-[9px] font-black uppercase tracking-wider text-pink-500 leading-none mb-0.5 whitespace-nowrap">Heads Up</span>
-                                    <span className={`text-[11px] font-bold truncate leading-tight ${darkMode ? 'text-white' : 'text-slate-700'}`}>{displayAnnouncement.title}</span>
+                                    {/* Updated "Heads Up" Text */}
+                                    <span className={`text-[9px] font-black uppercase tracking-wider leading-none mb-0.5 whitespace-nowrap ${darkMode ? 'text-blue-400' : 'text-blue-800'}`}>
+                                        Heads Up
+                                    </span>
+                                    <span className={`text-[11px] font-bold truncate leading-tight ${darkMode ? 'text-white' : 'text-slate-700'}`}>
+                                        {displayAnnouncement.title}
+                                    </span>
                                 </div>
                             </button>
                         </>
@@ -242,8 +256,7 @@ export default function FindJobsTab({
                     const typeStyle = getJobStyle(job.type);
                     const isSaved = savedJobs.some(s => s.jobId === job.id);
 
-                    // --- UNIFIED SALARY THEME ---
-                    // Grabs the exact color used for "Salary" (blue-800 in Light, blue-200 in Dark)
+                    // --- UNIFIED SALARY THEME (Old Look) ---
                     const salaryColor = darkMode ? 'text-blue-200' : 'text-blue-800';
                     const salaryBadge = darkMode ? 'bg-blue-200/10 text-blue-200 border-blue-200/30' : 'bg-blue-800/10 text-blue-800 border-blue-800/20';
                     const salaryBtn = darkMode ? 'bg-blue-200 text-slate-900 hover:bg-blue-300 shadow-blue-200/20' : 'bg-blue-800 text-white hover:bg-blue-700 shadow-blue-800/20';
@@ -269,13 +282,13 @@ export default function FindJobsTab({
                                     </button>
                                 </div>
                                 
-                                {/* 2. Location (Now uses Salary Color) */}
+                                {/* 2. Location (Uses Salary Color) */}
                                 <div className={`flex items-center gap-1.5 mb-4 ${salaryColor}`}>
                                     <MapPinIcon className="w-4 h-4 shrink-0" />
                                     <p className="text-[11px] font-bold uppercase tracking-wide opacity-80 truncate">{job.sitio || "No Location"}</p>
                                 </div>
 
-                                {/* 3. Badges (Category & Type Leveled Together - Now uses Salary Color) */}
+                                {/* 3. Badges */}
                                 <div className="flex flex-wrap items-center gap-2 mb-6">
                                     {/* Category Badge */}
                                     {job.category && (() => {
