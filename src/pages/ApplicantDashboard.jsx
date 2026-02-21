@@ -879,129 +879,148 @@ export default function ApplicantDashboard() {
 
       {/* --- OVERLAYS: MODALS & BUBBLES --- */}
      {/* 1. JOB DETAILS MODAL */}
-      {selectedJob && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
-            <div 
-               onClick={(e) => e.stopPropagation()}
-               className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
-            >
-                <button onClick={() => setSelectedJob(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
-                    <XMarkIcon className="w-5 h-5"/>
-                </button>
-                
-                {/* --- LEFT SIDE: Employer Info --- */}
-                <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
-                    <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
-                        {selectedJob.employerLogo ? (
-                            <img src={selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
-                        )}
-                    </div>
+      {selectedJob && (() => {
+          // --- DYNAMIC MODAL THEME ---
+          // Syncs the Apply Button, Save Button, and Job Type Badge to the Category color!
+          const getModalTheme = (cat) => {
+              const map = {
+                  'EDUCATION': { solid: 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20 text-white', badge: 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400', saveActive: 'bg-blue-500 border-blue-500 text-white', saveIdle: 'hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 dark:hover:border-blue-800/50' },
+                  'AGRICULTURE': { solid: 'bg-green-600 hover:bg-green-500 shadow-green-500/20 text-white', badge: 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400', saveActive: 'bg-green-500 border-green-500 text-white', saveIdle: 'hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-green-900/30 dark:hover:text-green-400 dark:hover:border-green-800/50' },
+                  'AUTOMOTIVE': { solid: 'bg-slate-600 hover:bg-slate-500 shadow-slate-500/20 text-white', badge: 'bg-slate-500/10 border-slate-500/20 text-slate-600 dark:text-slate-400', saveActive: 'bg-slate-500 border-slate-500 text-white', saveIdle: 'hover:bg-slate-50 hover:text-slate-600 hover:border-slate-200 dark:hover:bg-slate-800/50 dark:hover:text-slate-400 dark:hover:border-slate-700/50' },
+                  'CARPENTRY': { solid: 'bg-yellow-500 hover:bg-yellow-400 shadow-yellow-500/20 text-white', badge: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-600 dark:text-yellow-400', saveActive: 'bg-yellow-500 border-yellow-500 text-white', saveIdle: 'hover:bg-yellow-50 hover:text-yellow-600 hover:border-yellow-200 dark:hover:bg-yellow-900/30 dark:hover:text-yellow-400 dark:hover:border-yellow-800/50' },
+                  'HOUSEHOLD': { solid: 'bg-pink-600 hover:bg-pink-500 shadow-pink-500/20 text-white', badge: 'bg-pink-500/10 border-pink-500/20 text-pink-600 dark:text-pink-400', saveActive: 'bg-pink-500 border-pink-500 text-white', saveIdle: 'hover:bg-pink-50 hover:text-pink-600 hover:border-pink-200 dark:hover:bg-pink-900/30 dark:hover:text-pink-400 dark:hover:border-pink-800/50' },
+                  'CUSTOMER_SERVICE': { solid: 'bg-purple-600 hover:bg-purple-500 shadow-purple-500/20 text-white', badge: 'bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-400', saveActive: 'bg-purple-500 border-purple-500 text-white', saveIdle: 'hover:bg-purple-50 hover:text-purple-600 hover:border-purple-200 dark:hover:bg-purple-900/30 dark:hover:text-purple-400 dark:hover:border-purple-800/50' }
+              };
+              return map[cat] || map['EDUCATION'];
+          };
+
+          const theme = getModalTheme(selectedJob.category);
+          const typeStyle = getJobStyle(selectedJob.type);
+          const isSaved = savedJobs.some(s => s.jobId === selectedJob.id);
+
+          return (
+            <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
+                <div 
+                   onClick={(e) => e.stopPropagation()}
+                   className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                >
+                    <button onClick={() => setSelectedJob(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                        <XMarkIcon className="w-5 h-5"/>
+                    </button>
                     
-                    <h2 className="text-2xl font-black mb-4 text-center leading-tight w-full">{selectedJob.employerName}</h2>
-                    
-                    <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
+                    {/* --- LEFT SIDE: Employer Info --- */}
+                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
+                            {selectedJob.employerLogo ? (
+                                <img src={selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
+                            )}
+                        </div>
                         
-                        {/* INLINE: Location & Contact */}
-                        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
-                            <div className="flex items-center gap-1.5">
-                                <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                <span className={!selectedJob.sitio ? 'opacity-50 italic' : ''}>{selectedJob.sitio || "Location not set"}</span>
-                            </div>
+                        <h2 className="text-2xl font-black mb-4 text-center leading-tight w-full">{selectedJob.employerName}</h2>
+                        
+                        <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
                             
-                            {(() => {
-                                const contactInfo = employerContact?.contact || selectedJob.contact;
-                                if (!contactInfo) return null;
-                                const contactStr = String(contactInfo);
-                                const isEmail = contactStr.includes('@');
-                                const ContactIcon = isEmail ? EnvelopeIcon : PhoneIcon;
-                                return (
-                                    <div className="flex items-center gap-1.5">
-                                        <ContactIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                        <span className="text-slate-500 truncate max-w-[150px]">{contactStr}</span>
-                                    </div>
-                                );
-                            })()}
-                        </div>
+                            {/* INLINE: Location & Contact */}
+                            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
+                                <div className="flex items-center gap-1.5">
+                                    <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <span className={!selectedJob.sitio ? 'opacity-50 italic' : ''}>{selectedJob.sitio || "Location not set"}</span>
+                                </div>
+                                
+                                {(() => {
+                                    const contactInfo = employerContact?.contact || selectedJob.contact;
+                                    if (!contactInfo) return null;
+                                    const contactStr = String(contactInfo);
+                                    const isEmail = contactStr.includes('@');
+                                    const ContactIcon = isEmail ? EnvelopeIcon : PhoneIcon;
+                                    return (
+                                        <div className="flex items-center gap-1.5">
+                                            <ContactIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                            <span className="text-slate-500 truncate max-w-[150px]">{contactStr}</span>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
 
-                        {/* INLINE: Job Type & Category Badges */}
-                        <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
-                            {/* Job Type Badge */}
-                            {(() => {
-                                const typeStyle = getJobStyle(selectedJob.type);
-                                return (
-                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${typeStyle.bgLight || typeStyle.bg} ${typeStyle.border} ${typeStyle.color}`}>
-                                        <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
-                                        {selectedJob.type}
-                                    </span>
-                                )
-                            })()}
+                            {/* INLINE: Job Type & Category Badges */}
+                            <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
+                                {/* Job Type Badge (Now uses Category color via theme.badge) */}
+                                <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
+                                    <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
+                                    {selectedJob.type}
+                                </span>
 
-                            {/* Category Badge */}
-                            {selectedJob.category && (() => {
-                                const getLocalCatStyles = (id) => {
-                                    const map = {
-                                        'EDUCATION': { icon: AcademicCapIcon, text: 'text-blue-500', bgLight: 'bg-blue-500/10', border: 'border-blue-500/20' },
-                                        'AGRICULTURE': { icon: SunIcon, text: 'text-green-500', bgLight: 'bg-green-500/10', border: 'border-green-500/20' },
-                                        'AUTOMOTIVE': { icon: Cog8ToothIcon, text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/20' },
-                                        'CARPENTRY': { icon: WrenchScrewdriverIcon, text: 'text-yellow-600 dark:text-yellow-500', bgLight: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
-                                        'HOUSEHOLD': { icon: HomeIcon, text: 'text-pink-500', bgLight: 'bg-pink-500/10', border: 'border-pink-500/20' },
-                                        'CUSTOMER_SERVICE': { icon: UserGroupIcon, text: 'text-purple-500', bgLight: 'bg-purple-500/10', border: 'border-purple-500/20' },
+                                {/* Category Badge */}
+                                {selectedJob.category && (() => {
+                                    const getLocalCatStyles = (id) => {
+                                        const map = {
+                                            'EDUCATION': { icon: AcademicCapIcon, text: 'text-blue-500', bgLight: 'bg-blue-500/10', border: 'border-blue-500/20' },
+                                            'AGRICULTURE': { icon: SunIcon, text: 'text-green-500', bgLight: 'bg-green-500/10', border: 'border-green-500/20' },
+                                            'AUTOMOTIVE': { icon: Cog8ToothIcon, text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/20' },
+                                            'CARPENTRY': { icon: WrenchScrewdriverIcon, text: 'text-yellow-600 dark:text-yellow-500', bgLight: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
+                                            'HOUSEHOLD': { icon: HomeIcon, text: 'text-pink-500', bgLight: 'bg-pink-500/10', border: 'border-pink-500/20' },
+                                            'CUSTOMER_SERVICE': { icon: UserGroupIcon, text: 'text-purple-500', bgLight: 'bg-purple-500/10', border: 'border-purple-500/20' },
+                                        };
+                                        return map[id] || { icon: TagIcon, text: 'text-slate-500', bgLight: 'bg-slate-500/10', border: 'border-slate-500/20' };
                                     };
-                                    return map[id] || { icon: TagIcon, text: 'text-slate-500', bgLight: 'bg-slate-500/10', border: 'border-slate-500/20' };
-                                };
-                                const catStyle = getLocalCatStyles(selectedJob.category);
-                                const CatIcon = catStyle.icon;
-                                return (
-                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${catStyle.bgLight} ${catStyle.border} ${catStyle.text}`}>
-                                        <CatIcon className="w-3.5 h-3.5" />
-                                        {JOB_CATEGORIES.find(c => c.id === selectedJob.category)?.label || selectedJob.category}
-                                    </span>
-                                );
-                            })()}
-                        </div>
-                    </div>
-                </div>
-
-                {/* --- RIGHT SIDE: Job Details --- */}
-                <div className="w-full md:w-2/3 flex flex-col h-full space-y-4">
-                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Job Title</p>
-                        <h2 className="text-3xl sm:text-4xl font-black mb-1">{selectedJob.title}</h2>
-                    </div>
-
-                    <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xl font-black">₱</span>
-                                <span className="text-xl font-black">{selectedJob.salary}</span>
+                                    const catStyle = getLocalCatStyles(selectedJob.category);
+                                    const CatIcon = catStyle.icon;
+                                    return (
+                                        <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${catStyle.bgLight} ${catStyle.border} ${catStyle.text}`}>
+                                            <CatIcon className="w-3.5 h-3.5" />
+                                            {JOB_CATEGORIES.find(c => c.id === selectedJob.category)?.label || selectedJob.category}
+                                        </span>
+                                    );
+                                })()}
                             </div>
                         </div>
                     </div>
 
-                    <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2">
-                            <BriefcaseIcon className="w-4 h-4 text-blue-500" /> Job Description
-                        </p>
-                        <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedJob.description || "No description provided."}</p>
-                    </div>
+                    {/* --- RIGHT SIDE: Job Details --- */}
+                    <div className="w-full md:w-2/3 flex flex-col h-full space-y-4">
+                        <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                            <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Job Title</p>
+                            <h2 className="text-3xl sm:text-4xl font-black mb-1">{selectedJob.title}</h2>
+                        </div>
 
-                    <div className="w-full flex gap-3 pt-2">
-                        {myApplications.some(app => app.jobId === selectedJob.id) ? (
-                            <button disabled className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-green-500/10 text-green-500 cursor-not-allowed">Application Sent</button>
-                        ) : (
-                            <button onClick={() => handleApplyToJob(selectedJob)} className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 active:scale-95 transition-all">Apply Now</button>
-                        )}
-                        <button onClick={() => handleToggleSaveJob(selectedJob)} className={`flex-none p-4 rounded-xl transition-all border ${savedJobs.some(s => s.jobId === selectedJob.id) ? 'bg-blue-500 border-blue-500 text-white' : darkMode ? 'bg-slate-800 border-transparent text-slate-400 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                            <BookmarkIcon className={`w-6 h-6 ${savedJobs.some(s => s.jobId === selectedJob.id) ? 'fill-current' : ''}`}/>
-                        </button>
+                        <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl font-black">₱</span>
+                                    <span className="text-xl font-black">{selectedJob.salary}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                            {/* REMOVED: BriefcaseIcon and gap classes from this p tag */}
+                            <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">
+                                Job Description
+                            </p>
+                            <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedJob.description || "No description provided."}</p>
+                        </div>
+
+                        {/* --- THEMED ACTIONS --- */}
+                        <div className="w-full flex gap-3 pt-2">
+                            {myApplications.some(app => app.jobId === selectedJob.id) ? (
+                                <button disabled className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-green-500/10 text-green-500 cursor-not-allowed border border-green-500/20">Application Sent</button>
+                            ) : (
+                                <button onClick={() => handleApplyToJob(selectedJob)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg ${theme.solid}`}>
+                                    Apply Now
+                                </button>
+                            )}
+                            <button onClick={() => handleToggleSaveJob(selectedJob)} className={`flex-none p-4 rounded-xl transition-all border ${isSaved ? theme.saveActive : `${darkMode ? 'bg-slate-800 border-transparent text-slate-400' : 'bg-white border-slate-200 text-slate-500'} ${theme.saveIdle}`}`}>
+                                <BookmarkIcon className={`w-6 h-6 ${isSaved ? 'fill-current' : ''}`}/>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-      )}
+          );
+      })()}
 
       {/* 2. APPLICATION DETAILS MODAL */}
       {viewingApplication && (

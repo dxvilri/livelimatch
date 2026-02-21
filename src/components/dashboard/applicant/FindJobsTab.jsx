@@ -241,56 +241,53 @@ export default function FindJobsTab({
                 {filteredJobs.length > 0 ? filteredJobs.map(job => {
                     const typeStyle = getJobStyle(job.type);
                     const isSaved = savedJobs.some(s => s.jobId === job.id);
-                    
-                    // Generate glowing shadow classes based on Category
-                    const getCatGlow = (id) => {
+
+                    // --- UNIFIED CATEGORY THEME ---
+                    // Grabs the color based on the Category and applies it to EVERYTHING on the card!
+                    const getTheme = (id) => {
                         const map = {
-                            'EDUCATION': 'hover:shadow-[0_0_30px_-5px_rgba(59,130,246,0.4)] hover:border-blue-400/50',
-                            'AGRICULTURE': 'hover:shadow-[0_0_30px_-5px_rgba(34,197,94,0.4)] hover:border-green-400/50',
-                            'AUTOMOTIVE': 'hover:shadow-[0_0_30px_-5px_rgba(148,163,184,0.4)] hover:border-slate-400/50',
-                            'CARPENTRY': 'hover:shadow-[0_0_30px_-5px_rgba(234,179,8,0.4)] hover:border-yellow-400/50',
-                            'HOUSEHOLD': 'hover:shadow-[0_0_30px_-5px_rgba(236,72,153,0.4)] hover:border-pink-400/50',
-                            'CUSTOMER_SERVICE': 'hover:shadow-[0_0_30px_-5px_rgba(168,85,247,0.4)] hover:border-purple-400/50',
+                            'EDUCATION': { text: 'text-blue-600 dark:text-blue-400', badge: 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400', btnLight: 'bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 dark:text-blue-400', btnSolid: 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20', saveActive: 'text-blue-600 bg-blue-500/20 dark:text-blue-400', saveIdle: 'text-blue-600/50 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400/50 dark:hover:text-blue-400', border: 'border-blue-500/20 dark:border-blue-400/20' },
+                            'AGRICULTURE': { text: 'text-green-600 dark:text-green-400', badge: 'bg-green-500/10 text-green-600 border-green-500/20 dark:text-green-400', btnLight: 'bg-green-500/10 text-green-600 hover:bg-green-500/20 dark:text-green-400', btnSolid: 'bg-green-600 hover:bg-green-500 text-white shadow-green-500/20', saveActive: 'text-green-600 bg-green-500/20 dark:text-green-400', saveIdle: 'text-green-600/50 hover:bg-green-500/10 hover:text-green-600 dark:text-green-400/50 dark:hover:text-green-400', border: 'border-green-500/20 dark:border-green-400/20' },
+                            'AUTOMOTIVE': { text: 'text-slate-600 dark:text-slate-400', badge: 'bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400', btnLight: 'bg-slate-500/10 text-slate-600 hover:bg-slate-500/20 dark:text-slate-400', btnSolid: 'bg-slate-600 hover:bg-slate-500 text-white shadow-slate-500/20', saveActive: 'text-slate-600 bg-slate-500/20 dark:text-slate-400', saveIdle: 'text-slate-600/50 hover:bg-slate-500/10 hover:text-slate-600 dark:text-slate-400/50 dark:hover:text-slate-400', border: 'border-slate-500/20 dark:border-slate-400/20' },
+                            'CARPENTRY': { text: 'text-yellow-600 dark:text-yellow-400', badge: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20 dark:text-yellow-400', btnLight: 'bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 dark:text-yellow-400', btnSolid: 'bg-yellow-500 hover:bg-yellow-400 text-white shadow-yellow-500/20', saveActive: 'text-yellow-600 bg-yellow-500/20 dark:text-yellow-400', saveIdle: 'text-yellow-600/50 hover:bg-yellow-500/10 hover:text-yellow-600 dark:text-yellow-400/50 dark:hover:text-yellow-400', border: 'border-yellow-500/20 dark:border-yellow-400/20' },
+                            'HOUSEHOLD': { text: 'text-pink-600 dark:text-pink-400', badge: 'bg-pink-500/10 text-pink-600 border-pink-500/20 dark:text-pink-400', btnLight: 'bg-pink-500/10 text-pink-600 hover:bg-pink-500/20 dark:text-pink-400', btnSolid: 'bg-pink-600 hover:bg-pink-500 text-white shadow-pink-500/20', saveActive: 'text-pink-600 bg-pink-500/20 dark:text-pink-400', saveIdle: 'text-pink-600/50 hover:bg-pink-500/10 hover:text-pink-600 dark:text-pink-400/50 dark:hover:text-pink-400', border: 'border-pink-500/20 dark:border-pink-400/20' },
+                            'CUSTOMER_SERVICE': { text: 'text-purple-600 dark:text-purple-400', badge: 'bg-purple-500/10 text-purple-600 border-purple-500/20 dark:text-purple-400', btnLight: 'bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 dark:text-purple-400', btnSolid: 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-500/20', saveActive: 'text-purple-600 bg-purple-500/20 dark:text-purple-400', saveIdle: 'text-purple-600/50 hover:bg-purple-500/10 hover:text-purple-600 dark:text-purple-400/50 dark:hover:text-purple-400', border: 'border-purple-500/20 dark:border-purple-400/20' }
                         };
-                        return map[id] || 'hover:shadow-[0_0_30px_-5px_rgba(148,163,184,0.3)] hover:border-slate-300/50';
+                        return map[id] || map['EDUCATION']; // Defaults to blue if no category
                     };
-                    const catGlowClass = getCatGlow(job.category);
+                    const theme = getTheme(job.category);
 
                     return (
-                        <div key={job.id} onClick={() => onSelectJob(job)} className={`group relative p-6 rounded-[2rem] border transition-all duration-300 hover:-translate-y-1 cursor-pointer overflow-hidden backdrop-blur-xl ${darkMode ? `bg-slate-900/60 border-white/10 ${catGlowClass}` : `bg-white/80 border-slate-200 ${catGlowClass}`}`}>
+                        <div key={job.id} onClick={() => onSelectJob(job)} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 hover:shadow-xl cursor-pointer flex flex-col justify-between min-h-[220px] border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`}>
                             
-                            {/* Large Background Icon (Colored by Job Type) */}
-                            <div className={`absolute top-10 right-4 md:top-10 md:right-8 opacity-10 transform -rotate-12 group-hover:scale-110 transition-transform duration-500 pointer-events-none ${typeStyle.color}`}>
-                                {cloneElement(typeStyle.icon, { className: "w-32 h-32 md:w-56 md:h-56" })}
+                            {/* Large Background Icon */}
+                            <div className={`absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${theme.text}`}>
+                                {cloneElement(typeStyle.icon, { className: "w-32 h-32 md:w-48 md:h-48" })}
                             </div>
 
                             <div className="relative z-10 flex flex-col h-full">
                                 
-                                {/* 1. Employer Name & Bookmark */}
-                                <div className="flex justify-between items-start mb-1">
-                                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 truncate mt-2 pr-4">{job.employerName}</p>
-                                    <button onClick={(e) => { e.stopPropagation(); onToggleSave(job); }} className={`p-2 rounded-full transition-colors shrink-0 -mt-1 -mr-1 ${isSaved ? 'text-blue-500 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}>
+                                {/* 1. Job Title & Bookmark */}
+                                <div className="flex justify-between items-start gap-4 mb-2">
+                                    <h3 className={`font-black text-xl leading-tight line-clamp-2 pt-1 ${theme.text}`}>{job.title}</h3>
+                                    <button onClick={(e) => { e.stopPropagation(); onToggleSave(job); }} className={`p-2 rounded-full transition-colors shrink-0 -mt-1 -mr-1 ${isSaved ? theme.saveActive : theme.saveIdle}`}>
                                         {isSaved ? <BookmarkIcon className="w-5 h-5 fill-current"/> : <BookmarkIcon className="w-5 h-5"/>}
                                     </button>
                                 </div>
                                 
-                                {/* 2. Job Title */}
-                                <h3 className={`font-black text-xl leading-tight truncate mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.title}</h3>
-                                
-                                {/* 3. Location */}
-                                <div className="flex items-center gap-1.5 text-slate-500 mb-4">
+                                {/* 2. Location */}
+                                <div className={`flex items-center gap-1.5 mb-4 ${theme.text}`}>
                                     <MapPinIcon className="w-4 h-4 shrink-0" />
-                                    <p className={`text-[11px] font-bold uppercase tracking-wide opacity-80 truncate`}>{job.sitio || "No Location"}</p>
+                                    <p className="text-[11px] font-bold uppercase tracking-wide opacity-80 truncate">{job.sitio || "No Location"}</p>
                                 </div>
 
-                                {/* 4. Badges (Category & Type Leveled Together) */}
+                                {/* 3. Badges (Category & Type Leveled Together) */}
                                 <div className="flex flex-wrap items-center gap-2 mb-6">
                                     {/* Category Badge */}
                                     {job.category && (() => {
-                                        const catStyle = getCatStyles(job.category);
-                                        const CatIcon = catStyle.icon;
+                                        const CatIcon = getCatStyles(job.category).icon;
                                         return (
-                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm ${catStyle.bgLight} ${catStyle.border} ${catStyle.text}`}>
+                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm ${theme.badge}`}>
                                                 <CatIcon className="w-3 h-3" />
                                                 {JOB_CATEGORIES.find(c => c.id === job.category)?.label || job.category}
                                             </span>
@@ -298,22 +295,30 @@ export default function FindJobsTab({
                                     })()}
 
                                     {/* Job Type Badge */}
-                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm ${typeStyle.bgLight || typeStyle.bg} ${typeStyle.border} ${typeStyle.color}`}>
+                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm ${theme.badge}`}>
                                         <span className="scale-75 w-3 h-3 flex items-center justify-center">{typeStyle.icon}</span>
                                         {job.type}
                                     </span>
                                 </div>
 
-                                {/* 5. Salary & Apply Button */}
-                                <div className="mt-auto pt-4 border-t border-dashed border-slate-500/20 flex items-center justify-between">
-                                    <div>
-                                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Salary</p>
+                                {/* 4. Salary & Actions */}
+                                <div className={`mt-auto pt-4 border-t border-dashed flex flex-wrap items-end justify-between gap-3 ${theme.border}`}>
+                                    <div className="mb-1">
+                                        <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${theme.text}`}>Salary</p>
                                         <div className="flex items-center gap-1">
-                                            <span className="text-sm font-black text-slate-500 dark:text-slate-400">₱</span>
-                                            <span className={`text-lg md:text-xl font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>{job.salary}</span>
+                                            {/* Peso Sign & Numbers Colored by Category */}
+                                            <span className={`text-sm font-black ${theme.text}`}>₱</span>
+                                            <span className={`text-lg font-black leading-none ${theme.text}`}>{job.salary}</span>
                                         </div>
                                     </div>
-                                    <button className="px-4 py-2 rounded-xl bg-blue-600 text-white font-black text-[9px] uppercase tracking-widest shadow-lg shadow-blue-500/20 hover:bg-blue-500 active:scale-95 transition-all">Apply</button>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={(e) => { e.stopPropagation(); onSelectJob(job); }} className={`px-3 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${theme.btnLight}`}>
+                                            Details
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); onApply(job); }} className={`px-4 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-lg active:scale-95 transition-all ${theme.btnSolid}`}>
+                                            Apply
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
