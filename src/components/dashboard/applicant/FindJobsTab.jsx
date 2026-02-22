@@ -4,7 +4,7 @@ import {
     ChatBubbleLeftRightIcon, MegaphoneIcon, AcademicCapIcon, 
     SunIcon, Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon 
 } from "@heroicons/react/24/outline";
-import { cloneElement } from "react";
+import { cloneElement, useRef, useEffect } from "react"; // Added useRef and useEffect
 
 export default function FindJobsTab({
     availableJobs, savedJobs, myApplications, conversations, currentUser, applicantData,
@@ -16,6 +16,62 @@ export default function FindJobsTab({
 }) {
 
     const unreadCount = conversations.reduce((acc, c) => acc + (c[`unread_${currentUser?.uid}`] || 0), 0);
+
+    // --- DESKTOP SCROLL FIXES ---
+    const suggestedRef = useRef(null);
+    const recentRef = useRef(null);
+
+    // 1. Convert Vertical Mouse Wheel to Horizontal Scroll
+    useEffect(() => {
+        const handleWheelScroll = (e) => {
+            if (e.deltaY !== 0) {
+                e.preventDefault(); // Prevent page from scrolling down
+                e.currentTarget.scrollLeft += e.deltaY;
+            }
+        };
+
+        const suggestedNode = suggestedRef.current;
+        const recentNode = recentRef.current;
+
+        // Use { passive: false } so preventDefault() works in React
+        if (suggestedNode) suggestedNode.addEventListener('wheel', handleWheelScroll, { passive: false });
+        if (recentNode) recentNode.addEventListener('wheel', handleWheelScroll, { passive: false });
+
+        return () => {
+            if (suggestedNode) suggestedNode.removeEventListener('wheel', handleWheelScroll);
+            if (recentNode) recentNode.removeEventListener('wheel', handleWheelScroll);
+        };
+    }, []);
+
+    // 2. Mouse Drag-to-Scroll Logic
+    const handleMouseDown = (e, ref) => {
+        if (!ref.current) return;
+        ref.current.isDown = true;
+        ref.current.startX = e.pageX - ref.current.offsetLeft;
+        ref.current.scrollLeftPos = ref.current.scrollLeft;
+        ref.current.style.cursor = 'grabbing';
+        ref.current.style.userSelect = 'none';
+    };
+    const handleMouseLeave = (e, ref) => {
+        if (!ref.current) return;
+        ref.current.isDown = false;
+        ref.current.style.cursor = 'grab';
+        ref.current.style.userSelect = 'auto';
+    };
+    const handleMouseUp = (e, ref) => {
+        if (!ref.current) return;
+        ref.current.isDown = false;
+        ref.current.style.cursor = 'grab';
+        ref.current.style.userSelect = 'auto';
+    };
+    const handleMouseMove = (e, ref) => {
+        if (!ref.current || !ref.current.isDown) return;
+        e.preventDefault();
+        const x = e.pageX - ref.current.offsetLeft;
+        const walk = (x - ref.current.startX) * 1.5; // Scroll speed multiplier
+        ref.current.scrollLeft = ref.current.scrollLeftPos - walk;
+    };
+
 
     // --- 1. FILTERING LOGIC ---
     const filteredJobs = availableJobs.filter(job => {
@@ -78,7 +134,6 @@ export default function FindJobsTab({
                 cardBg: 'bg-slate-900 border border-white/10 shadow-sm'
             };
         } else {
-            // --- LIGHT MODE: GLOSSY SOLID BLUE THEME ---
             return {
                 title: 'text-white drop-shadow-md', 
                 location: 'text-blue-100', 
@@ -344,7 +399,15 @@ export default function FindJobsTab({
                         </div>
 
                         {suggestedJobs.length > 0 ? (
-                            <div className="flex overflow-x-auto gap-4 md:gap-5 pb-6 hide-scrollbar snap-x snap-mandatory w-full px-2">
+                            <div 
+                                ref={suggestedRef}
+                                onMouseDown={(e) => handleMouseDown(e, suggestedRef)}
+                                onMouseLeave={(e) => handleMouseLeave(e, suggestedRef)}
+                                onMouseUp={(e) => handleMouseUp(e, suggestedRef)}
+                                onMouseMove={(e) => handleMouseMove(e, suggestedRef)}
+                                // Added `md:snap-none` to prevent CSS snap from fighting JS scroll, and `cursor-grab`
+                                className="flex overflow-x-auto gap-4 md:gap-5 pb-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab"
+                            >
                                 {/* Passes 'true' to renderJobCard so it knows to use the fixed horizontal width */}
                                 {suggestedJobs.map(job => renderJobCard(job, true))}
                             </div>
@@ -364,7 +427,15 @@ export default function FindJobsTab({
                                 Recently Posted
                             </h2>
                         </div>
-                        <div className="flex overflow-x-auto gap-4 md:gap-5 pb-6 hide-scrollbar snap-x snap-mandatory w-full px-2">
+                        <div 
+                            ref={recentRef}
+                            onMouseDown={(e) => handleMouseDown(e, recentRef)}
+                            onMouseLeave={(e) => handleMouseLeave(e, recentRef)}
+                            onMouseUp={(e) => handleMouseUp(e, recentRef)}
+                            onMouseMove={(e) => handleMouseMove(e, recentRef)}
+                            // Added `md:snap-none` to prevent CSS snap from fighting JS scroll, and `cursor-grab`
+                            className="flex overflow-x-auto gap-4 md:gap-5 pb-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab"
+                        >
                              {/* Passes 'true' to renderJobCard so it knows to use the fixed horizontal width */}
                             {recentJobs.length > 0 ? recentJobs.map(job => renderJobCard(job, true)) : (
                                 <div className="w-full text-center py-20"><SparklesIcon className="w-12 h-12 mx-auto text-slate-300 mb-4" /><p className="opacity-50 font-black uppercase text-xs tracking-[0.3em] select-none cursor-default">No jobs available right now</p></div>
