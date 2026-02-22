@@ -590,11 +590,6 @@ export default function ApplicantDashboard() {
         </div>
       )}
 
-      {/* Background Blobs */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse ${darkMode ? 'bg-blue-900' : 'bg-blue-300'}`}></div>
-        <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse delay-1000 ${darkMode ? 'bg-purple-900' : 'bg-purple-300'}`}></div>
-      </div>
 
       {/* Header */}
       <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isFullScreenPage) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified && !isFullScreenPage ? 'top-10' : 'top-0'}`}>
@@ -886,21 +881,14 @@ export default function ApplicantDashboard() {
       {/* --- OVERLAYS: MODALS & BUBBLES --- */}
      {/* 1. JOB DETAILS MODAL */}
       {selectedJob && (() => {
-          // --- DYNAMIC MODAL THEME ---
-          // Syncs the Apply Button, Save Button, and Job Type Badge to the Category color!
-          const getModalTheme = (cat) => {
-              const map = {
-                  'EDUCATION': { solid: 'bg-blue-800 hover:bg-blue-500 shadow-blue-500/20 text-white', badge: 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400', saveActive: 'bg-blue-500 border-blue-500 text-white', saveIdle: 'hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 dark:hover:border-blue-800/50' },
-                  'AGRICULTURE': { solid: 'bg-green-600 hover:bg-green-500 shadow-green-500/20 text-white', badge: 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400', saveActive: 'bg-green-500 border-green-500 text-white', saveIdle: 'hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-green-900/30 dark:hover:text-green-400 dark:hover:border-green-800/50' },
-                  'AUTOMOTIVE': { solid: 'bg-slate-600 hover:bg-slate-500 shadow-slate-500/20 text-white', badge: 'bg-slate-500/10 border-slate-500/20 text-slate-600 dark:text-slate-400', saveActive: 'bg-slate-500 border-slate-500 text-white', saveIdle: 'hover:bg-slate-50 hover:text-slate-600 hover:border-slate-200 dark:hover:bg-slate-800/50 dark:hover:text-slate-400 dark:hover:border-slate-700/50' },
-                  'CARPENTRY': { solid: 'bg-yellow-500 hover:bg-yellow-400 shadow-yellow-500/20 text-white', badge: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-600 dark:text-yellow-400', saveActive: 'bg-yellow-500 border-yellow-500 text-white', saveIdle: 'hover:bg-yellow-50 hover:text-yellow-600 hover:border-yellow-200 dark:hover:bg-yellow-900/30 dark:hover:text-yellow-400 dark:hover:border-yellow-800/50' },
-                  'HOUSEHOLD': { solid: 'bg-pink-600 hover:bg-pink-500 shadow-pink-500/20 text-white', badge: 'bg-pink-500/10 border-pink-500/20 text-pink-600 dark:text-pink-400', saveActive: 'bg-pink-500 border-pink-500 text-white', saveIdle: 'hover:bg-pink-50 hover:text-pink-600 hover:border-pink-200 dark:hover:bg-pink-900/30 dark:hover:text-pink-400 dark:hover:border-pink-800/50' },
-                  'CUSTOMER_SERVICE': { solid: 'bg-purple-600 hover:bg-purple-500 shadow-purple-500/20 text-white', badge: 'bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-400', saveActive: 'bg-purple-500 border-purple-500 text-white', saveIdle: 'hover:bg-purple-50 hover:text-purple-600 hover:border-purple-200 dark:hover:bg-purple-900/30 dark:hover:text-purple-400 dark:hover:border-purple-800/50' }
-              };
-              return map[cat] || map['EDUCATION'];
+          // --- CONSISTENT DEEP BLUE THEME ---
+          const theme = { 
+              solid: 'bg-blue-800 hover:bg-blue-700 shadow-blue-800/20 text-white', 
+              badge: 'bg-blue-800/10 border-blue-800/20 text-blue-800 dark:text-blue-400 dark:bg-blue-900/30 dark:border-blue-800/50', 
+              saveActive: 'bg-blue-800 border-blue-800 text-white', 
+              saveIdle: 'hover:bg-blue-50 hover:text-blue-800 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 dark:hover:border-blue-800/50' 
           };
-
-          const theme = getModalTheme(selectedJob.category);
+          
           const typeStyle = getJobStyle(selectedJob.type);
           const isSaved = savedJobs.some(s => s.jobId === selectedJob.id);
 
@@ -952,30 +940,29 @@ export default function ApplicantDashboard() {
 
                             {/* INLINE: Job Type & Category Badges */}
                             <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
-                                {/* Job Type Badge (Now uses Category color via theme.badge) */}
-                                <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
-                                    <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
+                                {/* Job Type Badge */}
+                                <span className="px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 bg-blue-800/10 border-blue-800/20 text-blue-800 dark:text-blue-400 dark:bg-blue-900/30 dark:border-blue-800/50">
+                                    <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center text-blue-800 dark:text-blue-400">{typeStyle.icon}</span>
                                     {selectedJob.type}
                                 </span>
 
                                 {/* Category Badge */}
                                 {selectedJob.category && (() => {
-                                    const getLocalCatStyles = (id) => {
+                                    const getLocalCatIcon = (id) => {
                                         const map = {
-                                            'EDUCATION': { icon: AcademicCapIcon, text: 'text-blue-500', bgLight: 'bg-blue-500/10', border: 'border-blue-500/20' },
-                                            'AGRICULTURE': { icon: SunIcon, text: 'text-green-500', bgLight: 'bg-green-500/10', border: 'border-green-500/20' },
-                                            'AUTOMOTIVE': { icon: Cog8ToothIcon, text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/20' },
-                                            'CARPENTRY': { icon: WrenchScrewdriverIcon, text: 'text-yellow-600 dark:text-yellow-500', bgLight: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
-                                            'HOUSEHOLD': { icon: HomeIcon, text: 'text-pink-500', bgLight: 'bg-pink-500/10', border: 'border-pink-500/20' },
-                                            'CUSTOMER_SERVICE': { icon: UserGroupIcon, text: 'text-purple-500', bgLight: 'bg-purple-500/10', border: 'border-purple-500/20' },
+                                            'EDUCATION': AcademicCapIcon,
+                                            'AGRICULTURE': SunIcon,
+                                            'AUTOMOTIVE': Cog8ToothIcon,
+                                            'CARPENTRY': WrenchScrewdriverIcon,
+                                            'HOUSEHOLD': HomeIcon,
+                                            'CUSTOMER_SERVICE': UserGroupIcon,
                                         };
-                                        return map[id] || { icon: TagIcon, text: 'text-slate-500', bgLight: 'bg-slate-500/10', border: 'border-slate-500/20' };
+                                        return map[id] || TagIcon;
                                     };
-                                    const catStyle = getLocalCatStyles(selectedJob.category);
-                                    const CatIcon = catStyle.icon;
+                                    const CatIcon = getLocalCatIcon(selectedJob.category);
                                     return (
-                                        <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${catStyle.bgLight} ${catStyle.border} ${catStyle.text}`}>
-                                            <CatIcon className="w-3.5 h-3.5" />
+                                        <span className="px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 bg-blue-800/10 border-blue-800/20 text-blue-800 dark:text-blue-400 dark:bg-blue-900/30 dark:border-blue-800/50">
+                                            <CatIcon className="w-3.5 h-3.5 text-blue-800 dark:text-blue-400" />
                                             {JOB_CATEGORIES.find(c => c.id === selectedJob.category)?.label || selectedJob.category}
                                         </span>
                                     );
@@ -1002,7 +989,6 @@ export default function ApplicantDashboard() {
                         </div>
 
                         <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                            {/* REMOVED: BriefcaseIcon and gap classes from this p tag */}
                             <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">
                                 Job Description
                             </p>
@@ -1081,8 +1067,8 @@ export default function ApplicantDashboard() {
                                     {modalJobDetails?.type && (() => {
                                         const typeStyle = getJobStyle(modalJobDetails.type);
                                         return (
-                                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${typeStyle.bgLight || typeStyle.bg} ${typeStyle.border} ${typeStyle.color}`}>
-                                                <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
+                                            <span className="px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 bg-blue-800/10 border-blue-800/20 text-blue-800 dark:text-blue-400 dark:bg-blue-900/30 dark:border-blue-800/50">
+                                                <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center text-blue-800 dark:text-blue-400">{typeStyle.icon}</span>
                                                 {modalJobDetails.type}
                                             </span>
                                         )
@@ -1090,22 +1076,21 @@ export default function ApplicantDashboard() {
 
                                     {/* Category Badge */}
                                     {modalJobDetails?.category && (() => {
-                                        const getLocalCatStyles = (id) => {
+                                        const getLocalCatIcon = (id) => {
                                             const map = {
-                                                'EDUCATION': { icon: AcademicCapIcon, text: 'text-blue-500', bgLight: 'bg-blue-500/10', border: 'border-blue-500/20' },
-                                                'AGRICULTURE': { icon: SunIcon, text: 'text-green-500', bgLight: 'bg-green-500/10', border: 'border-green-500/20' },
-                                                'AUTOMOTIVE': { icon: Cog8ToothIcon, text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/20' },
-                                                'CARPENTRY': { icon: WrenchScrewdriverIcon, text: 'text-yellow-600 dark:text-yellow-500', bgLight: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
-                                                'HOUSEHOLD': { icon: HomeIcon, text: 'text-pink-500', bgLight: 'bg-pink-500/10', border: 'border-pink-500/20' },
-                                                'CUSTOMER_SERVICE': { icon: UserGroupIcon, text: 'text-purple-500', bgLight: 'bg-purple-500/10', border: 'border-purple-500/20' },
+                                                'EDUCATION': AcademicCapIcon,
+                                                'AGRICULTURE': SunIcon,
+                                                'AUTOMOTIVE': Cog8ToothIcon,
+                                                'CARPENTRY': WrenchScrewdriverIcon,
+                                                'HOUSEHOLD': HomeIcon,
+                                                'CUSTOMER_SERVICE': UserGroupIcon,
                                             };
-                                            return map[id] || { icon: TagIcon, text: 'text-slate-500', bgLight: 'bg-slate-500/10', border: 'border-slate-500/20' };
+                                            return map[id] || TagIcon;
                                         };
-                                        const catStyle = getLocalCatStyles(modalJobDetails.category);
-                                        const CatIcon = catStyle.icon;
+                                        const CatIcon = getLocalCatIcon(modalJobDetails.category);
                                         return (
-                                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${catStyle.bgLight} ${catStyle.border} ${catStyle.text}`}>
-                                                <CatIcon className="w-3.5 h-3.5" />
+                                            <span className="px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 bg-blue-800/10 border-blue-800/20 text-blue-800 dark:text-blue-400 dark:bg-blue-900/30 dark:border-blue-800/50">
+                                                <CatIcon className="w-3.5 h-3.5 text-blue-800 dark:text-blue-400" />
                                                 {JOB_CATEGORIES.find(c => c.id === modalJobDetails.category)?.label || modalJobDetails.category}
                                             </span>
                                         );
