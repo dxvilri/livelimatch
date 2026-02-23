@@ -101,15 +101,36 @@ export default function FindJobsTab({
     const glassInput = `w-full flex-1 bg-transparent outline-none font-bold text-xs ${darkMode ? 'text-white placeholder-slate-400' : 'text-slate-800 placeholder-slate-500'}`;
 
     const getCatStyles = (id) => {
-        const map = {
-            'EDUCATION': { icon: AcademicCapIcon, text: darkMode ? 'text-blue-400' : 'text-blue-600', bgLight: darkMode ? 'bg-blue-400/10' : 'bg-blue-600/10', active: darkMode ? 'bg-blue-400/10 border-blue-400' : 'bg-blue-600/10 border-blue-600', hover: darkMode ? 'hover:border-blue-400/50' : 'hover:border-blue-600/50', hoverText: darkMode ? 'group-hover:text-blue-400' : 'group-hover:text-blue-600' },
-            'AGRICULTURE': { icon: SunIcon, text: 'text-green-500', bgLight: 'bg-green-500/10', active: 'bg-green-500/10 border-green-500', hover: 'hover:border-green-500/50', hoverText: 'group-hover:text-green-500' },
-            'AUTOMOTIVE': { icon: Cog8ToothIcon, text: 'text-slate-400', bgLight: 'bg-slate-400/10', active: 'bg-slate-400/10 border-slate-400', hover: 'hover:border-slate-400/50', hoverText: 'group-hover:text-slate-400' },
-            'CARPENTRY': { icon: WrenchScrewdriverIcon, text: 'text-yellow-500', bgLight: 'bg-yellow-500/10', active: 'bg-yellow-500/10 border-yellow-500', hover: 'hover:border-yellow-500/50', hoverText: 'group-hover:text-yellow-500' },
-            'HOUSEHOLD': { icon: HomeIcon, text: 'text-pink-500', bgLight: 'bg-pink-500/10', active: 'bg-pink-500/10 border-pink-500', hover: 'hover:border-pink-500/50', hoverText: 'group-hover:text-pink-500' },
-            'CUSTOMER_SERVICE': { icon: UserGroupIcon, text: 'text-purple-500', bgLight: 'bg-purple-500/10', active: 'bg-purple-500/10 border-purple-500', hover: 'hover:border-purple-500/50', hoverText: 'group-hover:text-purple-500' },
+        const iconMap = {
+            'EDUCATION': AcademicCapIcon,
+            'AGRICULTURE': SunIcon,
+            'AUTOMOTIVE': Cog8ToothIcon,
+            'CARPENTRY': WrenchScrewdriverIcon,
+            'HOUSEHOLD': HomeIcon,
+            'CUSTOMER_SERVICE': UserGroupIcon,
         };
-        return map[id] || { icon: TagIcon, text: 'text-slate-500', bgLight: 'bg-slate-500/10', active: 'bg-slate-500/10 border-slate-500', hover: 'hover:border-slate-500/50', hoverText: 'group-hover:text-slate-500' }; 
+        const IconComponent = iconMap[id] || TagIcon;
+
+        if (!darkMode) {
+            return {
+                icon: IconComponent,
+                text: 'text-blue-600',
+                bgLight: 'bg-blue-600/10',
+                active: 'bg-blue-600/10 border-blue-600',
+                hover: 'hover:border-blue-600/50',
+                hoverText: 'group-hover:text-blue-600'
+            };
+        }
+
+        const map = {
+            'EDUCATION': { icon: IconComponent, text: 'text-blue-400', bgLight: 'bg-blue-400/10', active: 'bg-blue-400/10 border-blue-400', hover: 'hover:border-blue-400/50', hoverText: 'group-hover:text-blue-400' },
+            'AGRICULTURE': { icon: IconComponent, text: 'text-green-500', bgLight: 'bg-green-500/10', active: 'bg-green-500/10 border-green-500', hover: 'hover:border-green-500/50', hoverText: 'group-hover:text-green-500' },
+            'AUTOMOTIVE': { icon: IconComponent, text: 'text-slate-400', bgLight: 'bg-slate-400/10', active: 'bg-slate-400/10 border-slate-400', hover: 'hover:border-slate-400/50', hoverText: 'group-hover:text-slate-400' },
+            'CARPENTRY': { icon: IconComponent, text: 'text-yellow-500', bgLight: 'bg-yellow-500/10', active: 'bg-yellow-500/10 border-yellow-500', hover: 'hover:border-yellow-500/50', hoverText: 'group-hover:text-yellow-500' },
+            'HOUSEHOLD': { icon: IconComponent, text: 'text-pink-500', bgLight: 'bg-pink-500/10', active: 'bg-pink-500/10 border-pink-500', hover: 'hover:border-pink-500/50', hoverText: 'group-hover:text-pink-500' },
+            'CUSTOMER_SERVICE': { icon: IconComponent, text: 'text-purple-500', bgLight: 'bg-purple-500/10', active: 'bg-purple-500/10 border-purple-500', hover: 'hover:border-purple-500/50', hoverText: 'group-hover:text-purple-500' },
+        };
+        return map[id] || { icon: IconComponent, text: 'text-slate-500', bgLight: 'bg-slate-500/10', active: 'bg-slate-500/10 border-slate-500', hover: 'hover:border-slate-500/50', hoverText: 'group-hover:text-slate-500' }; 
     };
 
     const getCardTheme = (categoryId, isDark) => {
@@ -228,36 +249,36 @@ export default function FindJobsTab({
                 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
-                    <div onClick={() => setActiveTab("FindJobs")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                    <div onClick={() => setActiveTab("FindJobs")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
-                            <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{availableJobs.length}</h3>
-                            <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-600'}`}>Jobs</p>
+                            <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{availableJobs.length}</h3>
+                            <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>Jobs</p>
                         </div>
-                        <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-500'}`}/>
+                        <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
-                    <div onClick={() => setActiveTab("Saved")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                    <div onClick={() => setActiveTab("Saved")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
-                            <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{savedJobs.length}</h3>
-                            <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-blue-600'}`}>Saved</p>
+                            <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{savedJobs.length}</h3>
+                            <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-blue-800'}`}>Saved</p>
                         </div>
-                        <BookmarkIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-500'}`}/>
+                        <BookmarkIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
-                    <div onClick={() => setActiveTab("Applications")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                    <div onClick={() => setActiveTab("Applications")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
-                            <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{myApplications.length}</h3>
-                            <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-blue-600'}`}>Applied</p>
+                            <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{myApplications.length}</h3>
+                            <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>Applied</p>
                         </div>
-                        <PaperAirplaneIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-500'}`}/>
+                        <PaperAirplaneIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
-                    <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
+                    <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
-                            <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{unreadCount}</h3>
-                            <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-blue-600'}`}>Messages</p>
+                            <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{unreadCount}</h3>
+                            <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-blue-800'}`}>Messages</p>
                         </div>
-                        <ChatBubbleLeftRightIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-500'}`}/>
+                        <ChatBubbleLeftRightIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
                 </div>
 
@@ -266,13 +287,11 @@ export default function FindJobsTab({
                     
                     {/* MOBILE Heads Up (Hidden on desktop) - Dark Mode blending & No Blob */}
                     {displayAnnouncement && (
-                        <div className={`md:hidden w-full rounded-2xl shadow-sm p-1.5 flex items-center relative overflow-hidden group border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-gradient-to-r from-blue-500 to-indigo-600 border-transparent shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]'}`}>
+                        <div className={`md:hidden w-full rounded-2xl shadow-sm p-1.5 flex items-center relative overflow-hidden group border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-blue-600 border-transparent shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]'}`}>
                             {/* Blending overlay gradient for dark mode */}
                             {darkMode ? (
                                 <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-blue-500/5 to-transparent pointer-events-none z-0"></div>
-                            ) : (
-                                <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent pointer-events-none z-0"></div>
-                            )}
+                            ) : null}
                             
                             {/* Sliding shimmer animation */}
                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1500 ease-in-out pointer-events-none z-0"></div>
