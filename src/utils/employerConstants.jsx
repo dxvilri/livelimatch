@@ -9,7 +9,8 @@ export const JOB_CATEGORIES = [
     { id: "AGRICULTURE", label: "Agriculture", examples: "Corn/Rice Farmers, Livestock" },
     { id: "AUTOMOTIVE", label: "Automotive", examples: "Mechanics, Mechanical Engineering" },
     { id: "CARPENTRY", label: "Carpentry", examples: "Carpenters, Furniture Makers" },
-    { id: "HOUSEHOLD", label: "Household Service", examples: "Maids, Caregivers, Nanny" }
+    { id: "HOUSEHOLD", label: "Household Service", examples: "Maids, Caregivers, Nanny" },
+    { id: "CUSTOMER_SERVICE", label: "Customer Service", examples: "Cashiers, Saleslady, Baggers" }
 ];
 
 export const ADMIN_EMAIL = "admin@livelimatch.com";

@@ -1,7 +1,9 @@
 import { 
     UsersIcon, BriefcaseIcon, ClockIcon, ChatBubbleLeftRightIcon, 
     MagnifyingGlassIcon, MapPinIcon, ChevronDownIcon, TagIcon, 
-    MegaphoneIcon, SparklesIcon 
+    MegaphoneIcon, SparklesIcon, AcademicCapIcon, SunIcon, 
+    Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon,
+    BoltIcon
 } from "@heroicons/react/24/outline";
 
 export default function DiscoverTab({
@@ -10,13 +12,47 @@ export default function DiscoverTab({
     talentCategoryFilter, setTalentCategoryFilter, isSitioDropdownOpen, setIsSitioDropdownOpen,
     isCategoryDropdownOpen, setIsCategoryDropdownOpen, selectedTalent, setSelectedTalent,
     handleStartChatFromExternal, darkMode, JOB_CATEGORIES, PUROK_LIST,
-    displayAnnouncement, handleViewAnnouncement, setActiveTab, getAvatarUrl
+    displayAnnouncement, handleViewAnnouncement, setActiveTab, getAvatarUrl,
+    onImmediateHire
 }) {
 
     // --- STYLES ---
     const glassPanel = `backdrop-blur-xl transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white/60 border-slate-200 text-slate-800'}`;
     const glassInput = `w-full flex-1 bg-transparent outline-none font-bold text-xs ${darkMode ? 'text-white placeholder-slate-400' : 'text-slate-800 placeholder-slate-500'}`;
-    const glassCard = `backdrop-blur-md border rounded-2xl transition-all duration-300 group hover:-translate-y-1 ${darkMode ? 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60 hover:border-blue-500/30' : 'bg-white/40 border-white/60 hover:bg-white/70 hover:border-blue-300/50 hover:shadow-lg'}`;
+    
+    // getCatStyles updated to include specific card backgrounds and borders for Dark Mode matching
+    const getCatStyles = (id) => {
+        const iconMap = {
+            'EDUCATION': AcademicCapIcon,
+            'AGRICULTURE': SunIcon,
+            'AUTOMOTIVE': Cog8ToothIcon,
+            'CARPENTRY': WrenchScrewdriverIcon,
+            'HOUSEHOLD': HomeIcon,
+            'CUSTOMER_SERVICE': UserGroupIcon,
+        };
+        const IconComponent = iconMap[id] || TagIcon;
+
+        if (!darkMode) {
+            return {
+                icon: IconComponent,
+                text: 'text-blue-600',
+                bgLight: 'bg-blue-600/10',
+                active: 'bg-blue-600/10 border-blue-600',
+                hover: 'hover:border-blue-600/50',
+                hoverText: 'group-hover:text-blue-600'
+            };
+        }
+
+        const map = {
+            'EDUCATION': { icon: IconComponent, text: 'text-blue-400', bgLight: 'bg-blue-400/10', active: 'bg-blue-400/10 border-blue-400', hover: 'hover:border-blue-400/50', hoverText: 'group-hover:text-blue-400', cardDark: 'bg-blue-400/5 border-blue-400/20 hover:bg-blue-400/10 hover:border-blue-400/40 shadow-blue-900/10' },
+            'AGRICULTURE': { icon: IconComponent, text: 'text-green-500', bgLight: 'bg-green-500/10', active: 'bg-green-500/10 border-green-500', hover: 'hover:border-green-500/50', hoverText: 'group-hover:text-green-500', cardDark: 'bg-green-500/5 border-green-500/20 hover:bg-green-500/10 hover:border-green-500/40 shadow-green-900/10' },
+            'AUTOMOTIVE': { icon: IconComponent, text: 'text-slate-400', bgLight: 'bg-slate-400/10', active: 'bg-slate-400/10 border-slate-400', hover: 'hover:border-slate-400/50', hoverText: 'group-hover:text-slate-400', cardDark: 'bg-slate-400/5 border-slate-400/20 hover:bg-slate-400/10 hover:border-slate-400/40 shadow-slate-900/10' },
+            'CARPENTRY': { icon: IconComponent, text: 'text-yellow-500', bgLight: 'bg-yellow-500/10', active: 'bg-yellow-500/10 border-yellow-500', hover: 'hover:border-yellow-500/50', hoverText: 'group-hover:text-yellow-500', cardDark: 'bg-yellow-500/5 border-yellow-500/20 hover:bg-yellow-500/10 hover:border-yellow-500/40 shadow-yellow-900/10' },
+            'HOUSEHOLD': { icon: IconComponent, text: 'text-pink-500', bgLight: 'bg-pink-500/10', active: 'bg-pink-500/10 border-pink-500', hover: 'hover:border-pink-500/50', hoverText: 'group-hover:text-pink-500', cardDark: 'bg-pink-500/5 border-pink-500/20 hover:bg-pink-500/10 hover:border-pink-500/40 shadow-pink-900/10' },
+            'CUSTOMER_SERVICE': { icon: IconComponent, text: 'text-purple-500', bgLight: 'bg-purple-500/10', active: 'bg-purple-500/10 border-purple-500', hover: 'hover:border-purple-500/50', hoverText: 'group-hover:text-purple-500', cardDark: 'bg-purple-500/5 border-purple-500/20 hover:bg-purple-500/10 hover:border-purple-500/40 shadow-purple-900/10' },
+        };
+        return map[id] || { icon: IconComponent, text: 'text-slate-500', bgLight: 'bg-slate-500/10', active: 'bg-slate-500/10 border-slate-500', hover: 'hover:border-slate-500/50', hoverText: 'group-hover:text-slate-500', cardDark: 'bg-slate-500/5 border-slate-500/20 hover:bg-slate-500/10 hover:border-slate-500/40 shadow-slate-900/10' }; 
+    };
 
     // --- FILTER LOGIC ---
     const filteredTalents = discoverTalents.filter(user => {
@@ -38,9 +74,8 @@ export default function DiscoverTab({
             <div className="space-y-6 mb-8">
                 
                 {/* --- STATS CARDS --- */}
-                {/* Mirrored exactly to Applicant Dashboard's FindJobs Tab (Richer Blue in Light Mode) */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
-                    <div onClick={() => setActiveTab("Discover")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
+                    <div onClick={() => setActiveTab("Discover")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{discoverTalents.length}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>Candidates</p>
@@ -48,7 +83,7 @@ export default function DiscoverTab({
                         <UsersIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
-                    <div onClick={() => setActiveTab("Listings")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
+                    <div onClick={() => setActiveTab("Listings")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{myPostedJobs.length}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-blue-800'}`}>Listings</p>
@@ -56,7 +91,7 @@ export default function DiscoverTab({
                         <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
-                    <div onClick={() => setActiveTab("Applicants")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
+                    <div onClick={() => setActiveTab("Applicants")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{receivedApplications.filter(a => a.status === 'pending').length}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>Pending</p>
@@ -64,7 +99,7 @@ export default function DiscoverTab({
                         <ClockIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
-                    <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
+                    <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{unreadMsgCount}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-blue-800'}`}>Unread Msgs</p>
@@ -73,87 +108,133 @@ export default function DiscoverTab({
                     </div>
                 </div>
 
-                {/* --- FILTER BAR --- */}
-                <div className={`flex flex-col lg:flex-row items-center p-1.5 rounded-2xl border shadow-sm w-full gap-2 lg:gap-0 relative z-40 ${glassPanel}`}>
+                {/* --- SEARCH BAR & FILTERS --- */}
+                <div className="flex flex-col gap-3 w-full relative z-40">
                     
-                    <div className="relative w-full lg:flex-1 min-w-0">
-                        <MagnifyingGlassIcon className={`absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-                        <input type="text" placeholder="Search name or skill..." value={talentSearch} onChange={(e) => setTalentSearch(e.target.value)} className={glassInput + " pl-10 pr-4 py-2.5"} />
-                    </div>
-                    
-                    <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
-                    
-                    <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
-                        <button onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
-                            <div className="flex items-center gap-3">
-                                <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500 shrink-0"><MapPinIcon className="w-4 h-4" /></div>
-                                <span className="truncate">{talentSitioFilter || "All Locations"}</span>
-                            </div>
-                            <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}><ChevronDownIcon className={`w-3 h-3 transition-transform ${isSitioDropdownOpen ? 'rotate-180' : ''}`}/></div>
-                        </button>
-                        {isSitioDropdownOpen && (
-                            <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
-                                <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
-                                    <button onClick={() => { setTalentSitioFilter(""); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!talentSitioFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
-                                        <span className="text-xs font-bold block">All Locations</span>
-                                    </button>
-                                    {PUROK_LIST.map(p => (
-                                        <button key={p} onClick={() => { setTalentSitioFilter(p); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${talentSitioFilter === p ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
-                                            <span className="text-xs font-bold block">{p}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        {isSitioDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsSitioDropdownOpen(false)}></div>}
-                    </div>
-
-                    <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
-
-                    <div className="relative w-full lg:w-auto lg:min-w-[180px] shrink-0">
-                        <button onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} className={`w-full lg:w-48 flex items-center justify-between pl-2 pr-2 py-1.5 outline-none font-bold text-xs cursor-pointer transition-colors rounded-xl border lg:border-none ${darkMode ? 'text-white hover:bg-white/5 border-white/10' : 'text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
-                            <div className="flex items-center gap-3">
-                                <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 shrink-0"><TagIcon className="w-4 h-4" /></div>
-                                <span className="truncate">{talentCategoryFilter ? JOB_CATEGORIES.find(c => c.id === talentCategoryFilter)?.label : "All Categories"}</span>
-                            </div>
-                            <div className={`w-5 h-5 rounded-md flex items-center justify-center ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}><ChevronDownIcon className={`w-3 h-3 transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`}/></div>
-                        </button>
-                        {isCategoryDropdownOpen && (
-                            <div className={`absolute top-full left-0 mt-2 w-full lg:w-56 z-[60] rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
-                                <div className="max-h-60 overflow-y-auto p-1 space-y-1 hide-scrollbar">
-                                    <button onClick={() => { setTalentCategoryFilter(""); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors ${!talentCategoryFilter ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
-                                        <span className="text-xs font-bold block">All Categories</span>
-                                    </button>
-                                    {JOB_CATEGORIES.map(c => (
-                                        <button key={c.id} onClick={() => { setTalentCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} className={`w-full text-left p-3 rounded-lg transition-colors group ${talentCategoryFilter === c.id ? 'bg-blue-600 text-white' : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-bold block">{c.label}</span>
-                                                <span className={`text-[9px] mt-0.5 font-medium truncate ${talentCategoryFilter === c.id ? 'text-white/70' : 'opacity-50'}`}>{c.examples}</span>
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        {isCategoryDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsCategoryDropdownOpen(false)}></div>}
-                    </div>
-
-                    {/* ANNOUNCEMENT NOTICE */}
+                    {/* MOBILE Heads Up */}
                     {displayAnnouncement && (
-                        <>
-                            <div className={`hidden lg:block w-px h-6 mx-2 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
-                            <button
-                                onClick={() => handleViewAnnouncement(displayAnnouncement.id)}
-                                className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all group overflow-hidden text-left relative w-full lg:w-64 shrink-0 ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
-                            >
-                                <div className={`p-1.5 rounded-lg shrink-0 bg-pink-500/10 text-pink-500`}><MegaphoneIcon className="w-4 h-4"/></div>
-                                <div className="flex flex-col overflow-hidden min-w-0 flex-1 animate-in fade-in slide-in-from-bottom-1 duration-500 key={displayAnnouncement.id}">
-                                    <span className="text-[9px] font-black uppercase tracking-wider text-pink-500 leading-none mb-0.5 whitespace-nowrap">Heads Up</span>
-                                    <span className={`text-[11px] font-bold truncate leading-tight ${darkMode ? 'text-white' : 'text-slate-700'}`}>{displayAnnouncement.title}</span>
+                        <div className={`md:hidden w-full rounded-2xl shadow-sm p-1.5 flex items-center relative overflow-hidden group border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-blue-600 border-transparent shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]'}`}>
+                            {darkMode ? (
+                                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-blue-500/5 to-transparent pointer-events-none z-0"></div>
+                            ) : null}
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1500 ease-in-out pointer-events-none z-0"></div>
+
+                            <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className={`flex-1 flex items-center justify-between gap-3 px-2 py-1 rounded-xl transition-all overflow-hidden text-left relative z-10`}>
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className={`p-2 rounded-lg shrink-0 relative z-20 ${darkMode ? 'bg-blue-500/10 text-blue-400' : 'bg-white/20 text-white backdrop-blur-sm'}`}>
+                                        <MegaphoneIcon className="w-5 h-5 -rotate-12 group-hover:rotate-0 transition-transform duration-300"/>
+                                    </div>
+                                    <div className="flex flex-col overflow-hidden min-w-0 animate-in fade-in slide-in-from-right-16 duration-500 ease-out relative z-20" key={displayAnnouncement.id}>
+                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                            <span className={`text-[10px] font-black uppercase tracking-widest leading-none whitespace-nowrap drop-shadow-sm ${darkMode ? 'text-slate-400' : 'text-blue-100'}`}>
+                                                Heads Up
+                                            </span>
+                                        </div>
+                                        <span className={`text-sm font-black truncate leading-tight drop-shadow-md ${darkMode ? 'text-slate-200' : 'text-white'}`}>
+                                            {displayAnnouncement.title}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className={`shrink-0 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-lg border transition-colors relative z-20 ${darkMode ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-white/30 text-white hover:bg-white/20 backdrop-blur-sm'}`}>
+                                    View
                                 </div>
                             </button>
-                        </>
+                        </div>
                     )}
+
+                    {/* Search Bar + Inside Filters */}
+                    <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${glassPanel}`}>
+                        <MagnifyingGlassIcon className={`ml-3 w-5 h-5 shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                        
+                        <input 
+                            type="text" 
+                            placeholder="Search name or skill..." 
+                            value={talentSearch} 
+                            onChange={(e) => setTalentSearch(e.target.value)} 
+                            className={glassInput + " pl-3 pr-2 py-2.5"} 
+                        />
+                        
+                        {/* Divider */}
+                        <div className={`w-px h-6 mx-1 shrink-0 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+                        
+                        {/* Location Dropdown Icon */}
+                        <div className="relative shrink-0">
+                            <button 
+                                onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} 
+                                className={`p-2 md:px-4 md:py-2 flex items-center gap-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${talentSitioFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}
+                            >
+                                <MapPinIcon className="w-5 h-5 shrink-0" />
+                                <span className="hidden md:block text-xs font-bold whitespace-nowrap">{talentSitioFilter || "All Locations"}</span>
+                                {talentSitioFilter && <span className={`absolute top-1.5 right-1.5 md:right-2 w-2 h-2 rounded-full border ${darkMode ? 'bg-red-500 border-slate-900' : 'bg-red-500 border-white'}`}></span>}
+                            </button>
+                            
+                            {isSitioDropdownOpen && (
+                                <div className={`absolute top-full right-0 mt-3 w-56 z-[60] rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                    <div className="max-h-60 overflow-y-auto p-2 space-y-1 hide-scrollbar">
+                                        <button onClick={() => { setTalentSitioFilter(""); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-xl transition-colors ${!talentSitioFilter ? (darkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600') : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-50'}`}><span className="text-xs font-bold block">All Locations</span></button>
+                                        {PUROK_LIST.map(p => (
+                                            <button key={p} onClick={() => { setTalentSitioFilter(p); setIsSitioDropdownOpen(false); }} className={`w-full text-left p-3 rounded-xl transition-colors ${talentSitioFilter === p ? (darkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600') : darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-50'}`}><span className="text-xs font-bold block">{p}</span></button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {isSitioDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsSitioDropdownOpen(false)}></div>}
+                        </div>
+
+                        {/* Category Dropdown Icon */}
+                        <div className="relative shrink-0 pr-1">
+                            <button 
+                                onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} 
+                                className={`p-2 md:px-4 md:py-2 flex items-center gap-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${talentCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}
+                            >
+                                {(() => {
+                                    const ActiveIcon = talentCategoryFilter ? getCatStyles(talentCategoryFilter).icon : TagIcon;
+                                    return <ActiveIcon className="w-5 h-5 shrink-0" />;
+                                })()}
+                                <span className="hidden md:block text-xs font-bold whitespace-nowrap">{talentCategoryFilter ? (JOB_CATEGORIES.find(c => c.id === talentCategoryFilter)?.label || talentCategoryFilter) : "All Categories"}</span>
+                                {talentCategoryFilter && <span className={`absolute top-1.5 right-1.5 md:right-2 w-2 h-2 rounded-full border ${darkMode ? 'bg-red-500 border-slate-900' : 'bg-red-500 border-white'}`}></span>}
+                            </button>
+
+                            {isCategoryDropdownOpen && (
+                                <div className={`absolute top-full right-0 mt-3 w-64 z-[60] rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                    <div className="max-h-60 overflow-y-auto p-2 space-y-1.5 hide-scrollbar">
+                                        <button onClick={() => { setTalentCategoryFilter(""); setIsCategoryDropdownOpen(false); }} className={`relative overflow-hidden w-full text-left p-3 rounded-xl transition-all duration-300 group border backdrop-blur-sm ${!talentCategoryFilter ? (darkMode ? 'bg-blue-400/10 border-blue-400 text-blue-400' : 'bg-blue-50 border-blue-600 text-blue-600') : `border-transparent ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}`}>
+                                            <div className="flex items-center gap-3 relative z-10">
+                                                <TagIcon className={`w-5 h-5 transition-colors ${!talentCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`} />
+                                                <span className={`text-xs font-black block transition-colors ${!talentCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : darkMode ? 'text-white group-hover:text-blue-400' : 'text-slate-700 group-hover:text-blue-600'}`}>All Categories</span>
+                                            </div>
+                                        </button>
+                                        
+                                        {JOB_CATEGORIES.map(c => {
+                                            const catStyle = getCatStyles(c.id);
+                                            const CatIcon = catStyle.icon;
+                                            const isSelected = talentCategoryFilter === c.id;
+                                            return (
+                                                <button 
+                                                    key={c.id} 
+                                                    onClick={() => { setTalentCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} 
+                                                    className={`relative overflow-hidden w-full text-left p-3 rounded-xl transition-all duration-300 group border backdrop-blur-sm ${isSelected ? catStyle.active : `border-transparent ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'} ${catStyle.hover}`}`}
+                                                >
+                                                    <div className="flex items-center gap-3 relative z-10">
+                                                        <CatIcon className={`w-5 h-5 transition-colors ${isSelected ? catStyle.text : `text-slate-400 ${catStyle.hoverText}`}`} />
+                                                        <div className="flex flex-col">
+                                                            <span className={`text-xs font-black block transition-colors ${isSelected ? catStyle.text : `text-slate-700 dark:text-slate-200 ${catStyle.hoverText}`}`}>
+                                                                {c.label}
+                                                            </span>
+                                                            <span className={`text-[9px] mt-0.5 font-medium truncate transition-colors ${isSelected ? catStyle.text : 'opacity-50 group-hover:opacity-80'}`}>
+                                                                {c.examples}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                            {isCategoryDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsCategoryDropdownOpen(false)}></div>}
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -161,23 +242,65 @@ export default function DiscoverTab({
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 relative z-0">
                 {filteredTalents.length > 0 ? filteredTalents.map(user => {
                     const pic = getAvatarUrl(user);
+                    
+                    // Check if applicant is already hired
+                    const isHired = receivedApplications.some(app => app.applicantId === user.id && app.status === 'accepted');
+
+                    // Compute dynamic styling for dark mode category colors
+                    const catStyle = user.category ? getCatStyles(user.category) : getCatStyles('');
+                    const baseCardStyle = "group relative p-4 md:p-5 backdrop-blur-md border rounded-2xl transition-all duration-300 hover:-translate-y-1 flex flex-col items-center text-center cursor-pointer overflow-hidden";
+                    
+                    const themeCardStyle = darkMode 
+                        ? (user.category ? catStyle.cardDark : 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60 hover:border-slate-500/30') 
+                        : 'bg-white/40 border-white/60 hover:bg-white/70 hover:border-blue-300/50 hover:shadow-lg';
+
                     return (
-                        <div key={user.id} onClick={() => setSelectedTalent(user)} className={`group relative p-4 md:p-5 ${glassCard} flex flex-col items-center text-center cursor-pointer`}>
+                        <div key={user.id} onClick={() => setSelectedTalent(user)} className={`${baseCardStyle} ${themeCardStyle}`}>
                             <div className="absolute top-3 right-3 md:top-4 md:right-4 z-10"><span className={`flex h-2.5 w-2.5 rounded-full ${user.isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'} shadow-sm`}></span></div>
-                            <div className="w-14 h-14 md:w-16 md:h-16 mb-3 md:mb-4 rounded-[1rem] md:rounded-[1.5rem] overflow-hidden">
+                            <div className="w-14 h-14 md:w-16 md:h-16 mb-3 md:mb-4 rounded-[1rem] md:rounded-[1.5rem] overflow-hidden shrink-0">
                                 {pic ? <img src={pic} alt={user.firstName} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-lg font-black">{user.firstName ? user.firstName.charAt(0) : "U"}</div>}
                             </div>
                             <h3 className={`text-xs md:text-sm font-black mb-0.5 truncate w-full ${darkMode ? 'text-white' : 'text-slate-900'}`}>{user.firstName} {user.lastName}</h3>
-                            <p className="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 truncate w-full">{user.title || "Applicant"}</p>
-                            <p className={`text-[9px] line-clamp-2 mb-3 px-1 min-h-[2.5em] leading-tight ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{user.bio || user.aboutMe || "No bio available."}</p>
-                            <div className={`mt-auto mb-3 md:mb-4 px-2 py-1 rounded-full text-[8px] md:text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 max-w-full ${darkMode ? 'bg-white/5 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
-                                <MapPinIcon className="w-3 h-3 shrink-0" />
-                                <span className="truncate">{user.sitio || user.location || "Remote"}</span>
+                            
+                            {/* Overflow strictly clamped so the bio doesn't push the card size */}
+                            <p className={`text-[9px] line-clamp-2 mb-3 px-1 leading-tight mt-1 overflow-hidden text-ellipsis ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                                {user.bio || user.aboutMe || "No bio available."}
+                            </p>
+                            
+                            {/* CATEGORY BADGE ONLY - CENTERED */}
+                            <div className="mt-auto mb-3 md:mb-4 flex flex-wrap items-center justify-center gap-1.5 w-full">
+                                {user.category ? (() => {
+                                    const CatIcon = catStyle.icon;
+                                    return (
+                                        <div className={`px-2 py-1 rounded-full text-[8px] md:text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 shrink-0 border border-current/20 ${catStyle.bgLight} ${catStyle.text}`}>
+                                            <CatIcon className="w-3 h-3 shrink-0" />
+                                            <span className="truncate max-w-[120px]">{JOB_CATEGORIES.find(c => c.id === user.category)?.label || user.category}</span>
+                                        </div>
+                                    )
+                                })() : (
+                                    <div className={`px-2 py-1 rounded-full text-[8px] md:text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 shrink-0 border border-current/20 ${darkMode ? 'bg-white/5 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
+                                        <TagIcon className="w-3 h-3 shrink-0" />
+                                        <span className="truncate max-w-[120px]">Uncategorized</span>
+                                    </div>
+                                )}
                             </div>
-                            <button onClick={(e) => { e.stopPropagation(); handleStartChatFromExternal({ id: user.id, name: `${user.firstName} ${user.lastName}`, profilePic: pic || null }); }} className="w-full py-2 rounded-xl font-black text-[9px] uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2">
-                                <ChatBubbleLeftRightIcon className="w-3 h-3" /> 
-                                <span className="hidden md:inline">Message</span>
-                                <span className="md:hidden">Chat</span>
+
+                            {/* IMMEDIATE HIRE BUTTON REPLACING MESSAGE */}
+                            <button 
+                                disabled={isHired}
+                                onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    if (onImmediateHire) {
+                                        onImmediateHire(user);
+                                    } else {
+                                        setSelectedTalent(user);
+                                    }
+                                }} 
+                                className={`w-full py-2 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isHired ? 'bg-slate-500/20 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 shrink-0'}`}
+                            >
+                                <BoltIcon className={`w-3 h-3 ${isHired ? 'fill-current' : ''}`} /> 
+                                <span className="hidden md:inline">{isHired ? 'Hired' : 'Immediate Hire'}</span>
+                                <span className="md:hidden">{isHired ? 'Hired' : 'Hire'}</span>
                             </button>
                         </div>
                     );

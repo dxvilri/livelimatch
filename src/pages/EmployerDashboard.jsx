@@ -775,10 +775,6 @@ return (
         
       <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse ${darkMode ? 'bg-blue-900' : 'bg-blue-300'}`}></div>
-        <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse delay-1000 ${darkMode ? 'bg-purple-900' : 'bg-purple-300'}`}></div>
-      </div>
         
       {/* Modals & Overlays */}
       {/* 5. IMAGE LIGHTBOX OVERLAY */}
@@ -1097,6 +1093,160 @@ return (
         applicantName={selectedApplicantToRate?.applicantName || "Applicant"}
         darkMode={darkMode} 
       />
+
+     {/* =========================================================
+          CANDIDATE DETAILS MODAL
+          ========================================================= */}
+      {selectedTalent && (() => {
+          const getModalTheme = (categoryId, isDark) => {
+              const darkColors = {
+                  'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500', saveActive: 'bg-blue-400 border-blue-400 text-slate-900', saveIdle: 'hover:bg-blue-400/10 hover:text-blue-400 hover:border-blue-400/50' },
+                  'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500', saveActive: 'bg-green-400 border-green-400 text-slate-900', saveIdle: 'hover:bg-green-400/10 hover:text-green-400 hover:border-green-400/50' },
+                  'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', saveActive: 'bg-slate-400 border-slate-400 text-slate-900', saveIdle: 'hover:bg-slate-400/10 hover:text-slate-400 hover:border-slate-400/50' },
+                  'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', btn: 'bg-yellow-400 text-slate-900 hover:bg-yellow-500', saveActive: 'bg-yellow-400 border-yellow-400 text-slate-900', saveIdle: 'hover:bg-yellow-400/10 hover:text-yellow-400 hover:border-yellow-400/50' },
+                  'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', btn: 'bg-pink-400 text-slate-900 hover:bg-pink-500', saveActive: 'bg-pink-400 border-pink-400 text-slate-900', saveIdle: 'hover:bg-pink-400/10 hover:text-pink-400 hover:border-pink-400/50' },
+                  'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', btn: 'bg-purple-400 text-slate-900 hover:bg-purple-500', saveActive: 'bg-purple-400 border-purple-400 text-slate-900', saveIdle: 'hover:bg-purple-400/10 hover:text-purple-400 hover:border-purple-400/50' },
+              };
+              const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', saveActive: 'bg-slate-400 border-slate-400 text-slate-900', saveIdle: 'hover:bg-slate-400/10 hover:text-slate-400 hover:border-slate-400/50' };
+        
+              if (isDark) {
+                  const cat = darkColors[categoryId] || fallbackDark;
+                  return { solid: cat.btn, badge: `${cat.bgLight} ${cat.border} ${cat.text}`, saveActive: cat.saveActive, saveIdle: `bg-slate-800 border-transparent text-slate-400 ${cat.saveIdle}` };
+              } else {
+                  return { solid: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 text-white', badge: 'bg-blue-600/10 border-blue-600/20 text-blue-600', saveActive: 'bg-blue-600 border-blue-600 text-white', saveIdle: 'bg-white border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200' };
+              }
+          };
+
+          const theme = getModalTheme(selectedTalent.category, darkMode);
+          const pic = getAvatarUrl(selectedTalent) || selectedTalent.profilePic;
+          
+          // Check if applicant is already immediately hired 
+          const isHired = receivedApplications.some(app => app.applicantId === selectedTalent.id && app.status === 'accepted');
+
+          const handleImmediateHire = async () => {
+              if (!window.confirm(`Immediately hire ${selectedTalent.firstName}? They will automatically appear in your Applicants tab as Accepted.`)) return;
+              setLoading(true);
+              try {
+                  await addDoc(collection(db, "applications"), {
+                      jobId: myPostedJobs.length > 0 ? myPostedJobs[0].id : "direct_hire",
+                      jobTitle: myPostedJobs.length > 0 ? myPostedJobs[0].title : "Direct Hire",
+                      employerId: auth.currentUser.uid,
+                      employerName: `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer",
+                      employerLogo: profileImage || "",
+                      applicantId: selectedTalent.id,
+                      applicantName: `${selectedTalent.firstName} ${selectedTalent.lastName}`.trim(),
+                      applicantProfilePic: pic || "",
+                      status: 'accepted',
+                      appliedAt: serverTimestamp(),
+                      isViewed: true,
+                      isReadByApplicant: false,
+                      isRatedByEmployer: false
+                  });
+                  alert(`${selectedTalent.firstName} has been successfully hired!`);
+              } catch (err) {
+                  alert("Error processing hire: " + err.message);
+              } finally {
+                  setLoading(false);
+              }
+          };
+
+          return (
+            <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedTalent(null)}>
+                <div 
+                   onClick={(e) => e.stopPropagation()}
+                   className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                >
+                    <button onClick={() => setSelectedTalent(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                        <XMarkIcon className="w-5 h-5"/>
+                    </button>
+                    
+                    {/* --- LEFT SIDE: Candidate Info --- */}
+                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
+                            {pic ? (
+                                <img src={pic} alt={selectedTalent.firstName} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedTalent.firstName?.charAt(0) || "U"}</div>
+                            )}
+                        </div>
+                        
+                        <h2 className="text-2xl font-black mb-6 text-center leading-tight w-full">{selectedTalent.firstName} {selectedTalent.lastName}</h2>
+                        
+                        <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
+                            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
+                                <div className="flex items-center gap-1.5">
+                                    <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <span className={!selectedTalent.sitio ? 'opacity-50 italic' : ''}>{selectedTalent.sitio || "Location not set"}</span>
+                                </div>
+                                {(selectedTalent.contact || selectedTalent.email) && (
+                                    <div className="flex items-center gap-1.5">
+                                        <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                        <span className="text-slate-500 truncate max-w-[150px]">{selectedTalent.contact || selectedTalent.email}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* CATEGORY BADGE BELOW LOCATION/CONTACT */}
+                            <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
+                                {selectedTalent.category ? (
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
+                                        <TagIcon className="w-3.5 h-3.5" />
+                                        {JOB_CATEGORIES.find(c => c.id === selectedTalent.category)?.label || selectedTalent.category}
+                                    </span>
+                                ) : (
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 opacity-50`}>
+                                        <TagIcon className="w-3.5 h-3.5" />
+                                        Uncategorized
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* --- RIGHT SIDE: Candidate Details --- */}
+                    <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
+                        {/* Scrollable Container */}
+                        <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
+                            
+                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">About Candidate</p>
+                                <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedTalent.aboutMe || selectedTalent.bio || "No bio provided."}</p>
+                            </div>
+                            
+                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
+                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.education ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                    {selectedTalent.education || "No educational background provided."}
+                                </p>
+                            </div>
+
+                            <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
+                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.workExperience || selectedTalent.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                    {selectedTalent.workExperience || selectedTalent.experience || "No work experience provided."}
+                                </p>
+                            </div>
+
+                        </div>
+
+                       {/* --- ACTIONS (Pinned to Bottom) --- */}
+                        <div className="w-full flex gap-3 pt-2 shrink-0 mt-2">
+                            <button onClick={() => { 
+                                setSelectedTalent(null); 
+                                handleStartChatFromExternal({ id: selectedTalent.id, name: `${selectedTalent.firstName} ${selectedTalent.lastName}`, profilePic: pic || null }); 
+                            }} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg ${theme.solid}`}>
+                                Message Candidate
+                            </button>
+                            
+                            <button onClick={handleImmediateHire} disabled={isHired} title="Immediate Hire" className={`flex-none p-4 rounded-xl transition-all border ${isHired ? theme.saveActive : theme.saveIdle}`}>
+                                <BoltIcon className={`w-6 h-6 ${isHired ? 'fill-current' : ''}`}/>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+          );
+      })()}
 
       {/* =========================================================
           CHAT BUBBLES OVERLAY

@@ -21,7 +21,7 @@ export const JOB_TYPES = [
 ];
 
 export const BOT_FAQ = [
-    { id: 1, question: "How do I verify my account?", answer: "To verify, you may send one of the following valid proofs and wait until an Admin verifies it: Certificate of Residency, Latest Billing Address, or Valid IDs with current address " },
+    { id: 1, question: "How do I verify my account?", answer: "To verify your account, please upload a Certificate of Residency, Proof of Billing with Address or Government ID in your Profile settings. Admins review this daily." },
     { id: 2, question: "How to apply for a job?", answer: "Go to 'Find Jobs', click a job card to view details, then click the 'Apply Now' button." },
     { id: 3, question: "Can I withdraw an application?", answer: "Yes. Go to the 'Applications' tab, find the job, and click the Trash/Withdraw icon." },
     { id: 4, question: "How to chat with employers?", answer: "You can only message an employer once they accept your application, or if they message you first." },
