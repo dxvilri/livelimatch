@@ -4,7 +4,7 @@ import {
     ChatBubbleLeftRightIcon, MegaphoneIcon, AcademicCapIcon, 
     SunIcon, Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon 
 } from "@heroicons/react/24/outline";
-import { cloneElement, useRef, useEffect } from "react"; // Added useRef and useEffect
+import { cloneElement, useRef, useEffect } from "react"; 
 
 export default function FindJobsTab({
     availableJobs, savedJobs, myApplications, conversations, currentUser, applicantData,
@@ -25,7 +25,7 @@ export default function FindJobsTab({
     useEffect(() => {
         const handleWheelScroll = (e) => {
             if (e.deltaY !== 0) {
-                e.preventDefault(); // Prevent page from scrolling down
+                e.preventDefault(); 
                 e.currentTarget.scrollLeft += e.deltaY;
             }
         };
@@ -33,7 +33,6 @@ export default function FindJobsTab({
         const suggestedNode = suggestedRef.current;
         const recentNode = recentRef.current;
 
-        // Use { passive: false } so preventDefault() works in React
         if (suggestedNode) suggestedNode.addEventListener('wheel', handleWheelScroll, { passive: false });
         if (recentNode) recentNode.addEventListener('wheel', handleWheelScroll, { passive: false });
 
@@ -68,7 +67,7 @@ export default function FindJobsTab({
         if (!ref.current || !ref.current.isDown) return;
         e.preventDefault();
         const x = e.pageX - ref.current.offsetLeft;
-        const walk = (x - ref.current.startX) * 1.5; // Scroll speed multiplier
+        const walk = (x - ref.current.startX) * 1.5; 
         ref.current.scrollLeft = ref.current.scrollLeftPos - walk;
     };
 
@@ -99,7 +98,7 @@ export default function FindJobsTab({
 
     // --- 3. STYLES & THEMES ---
     const glassPanel = `backdrop-blur-xl transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white/60 border-slate-200 text-slate-800'}`;
-    const glassInput = `w-full flex-1 bg-transparent outline-none font-bold text-xs ${darkMode ? 'text-white placeholder-blue-200/50' : 'text-slate-800 placeholder-blue-600/50'}`;
+    const glassInput = `w-full flex-1 bg-transparent outline-none font-bold text-xs ${darkMode ? 'text-white placeholder-slate-400' : 'text-slate-800 placeholder-slate-500'}`;
 
     const getCatStyles = (id) => {
         const map = {
@@ -115,14 +114,14 @@ export default function FindJobsTab({
 
     const getCardTheme = (categoryId, isDark) => {
         const darkColors = {
-            'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500', btnLight: 'bg-blue-400/10 hover:bg-blue-400/20 text-blue-400' },
-            'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500', btnLight: 'bg-green-400/10 hover:bg-green-400/20 text-green-400' },
-            'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', btnLight: 'bg-slate-400/10 hover:bg-slate-400/20 text-slate-400' },
-            'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', btn: 'bg-yellow-400 text-slate-900 hover:bg-yellow-500', btnLight: 'bg-yellow-400/10 hover:bg-yellow-400/20 text-yellow-400' },
-            'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', btn: 'bg-pink-400 text-slate-900 hover:bg-pink-500', btnLight: 'bg-pink-400/10 hover:bg-pink-400/20 text-pink-400' },
-            'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', btn: 'bg-purple-400 text-slate-900 hover:bg-purple-500', btnLight: 'bg-purple-400/10 hover:bg-purple-400/20 text-purple-400' },
+            'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500', btnLight: 'bg-blue-400/10 hover:bg-blue-400/20 text-blue-400', cardBg: 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border border-blue-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(96,165,250,0.25)]' },
+            'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500', btnLight: 'bg-green-400/10 hover:bg-green-400/20 text-green-400', cardBg: 'bg-gradient-to-br from-green-500/20 to-green-500/5 border border-green-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(74,222,128,0.25)]' },
+            'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', btnLight: 'bg-slate-400/10 hover:bg-slate-400/20 text-slate-400', cardBg: 'bg-gradient-to-br from-slate-500/20 to-slate-500/5 border border-slate-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(148,163,184,0.25)]' },
+            'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', btn: 'bg-yellow-400 text-slate-900 hover:bg-yellow-500', btnLight: 'bg-yellow-400/10 hover:bg-yellow-400/20 text-yellow-400', cardBg: 'bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border border-yellow-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(250,204,21,0.25)]' },
+            'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', btn: 'bg-pink-400 text-slate-900 hover:bg-pink-500', btnLight: 'bg-pink-400/10 hover:bg-pink-400/20 text-pink-400', cardBg: 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border border-pink-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(244,114,182,0.25)]' },
+            'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', btn: 'bg-purple-400 text-slate-900 hover:bg-purple-500', btnLight: 'bg-purple-400/10 hover:bg-purple-400/20 text-purple-400', cardBg: 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(192,132,252,0.25)]' },
         };
-        const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', btnLight: 'bg-slate-400/10 hover:bg-slate-400/20 text-slate-400' };
+        const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', btnLight: 'bg-slate-400/10 hover:bg-slate-400/20 text-slate-400', cardBg: 'bg-gradient-to-br from-slate-500/20 to-slate-500/5 border border-slate-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(148,163,184,0.25)]' };
 
         if (isDark) {
             const cat = darkColors[categoryId] || fallbackDark;
@@ -131,7 +130,8 @@ export default function FindJobsTab({
                 badge: `${cat.bgLight} ${cat.text} ${cat.border}`, btnPrimary: cat.btn, btnSecondary: cat.btnLight,
                 saveActive: `${cat.text} ${cat.bgLight}`, saveIdle: `${cat.text} opacity-50 hover:opacity-100 hover:bg-white/10`,
                 borderColor: cat.border, bgIcon: cat.text, appliedBtn: `${cat.bgLight} ${cat.text} ${cat.border} opacity-60`,
-                cardBg: 'bg-slate-900 border border-white/10 shadow-sm'
+                cardBg: cat.cardBg,
+                hoverShadow: cat.hoverShadow
             };
         } else {
             return {
@@ -148,7 +148,8 @@ export default function FindJobsTab({
                 borderColor: 'border-white/20', 
                 bgIcon: 'text-white', 
                 appliedBtn: 'bg-white/20 text-white border border-white/30 opacity-80',
-                cardBg: 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 shadow-[0_10px_20px_-5px_rgba(37,99,235,0.4)] ring-1 ring-inset ring-white/40'
+                cardBg: 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 shadow-[0_10px_20px_-5px_rgba(37,99,235,0.4)] ring-1 ring-inset ring-white/40',
+                hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(37,99,235,0.5)]'
             };
         }
     };
@@ -160,7 +161,7 @@ export default function FindJobsTab({
         const theme = getCardTheme(job.category, darkMode);
 
         return (
-            <div key={job.id} onClick={() => onSelectJob(job)} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_15px_30px_-5px_rgba(37,99,235,0.5)] cursor-pointer flex flex-col justify-between min-h-[220px] ${theme.cardBg} ${isHorizontal ? 'w-[85vw] sm:w-[320px] shrink-0 snap-start' : 'w-full'}`}>
+            <div key={job.id} onClick={() => onSelectJob(job)} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 ${theme.hoverShadow} cursor-pointer flex flex-col justify-between min-h-[220px] ${theme.cardBg} ${isHorizontal ? 'w-[85vw] sm:w-[320px] shrink-0 snap-start' : 'w-full'}`}>
                 {/* Large Background Icon */}
                 <div className={`absolute -right-4 bottom-0 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${theme.bgIcon}`}>
                     {cloneElement(typeStyle.icon, { className: "w-40 h-40 md:w-48 md:h-48" })}
@@ -226,7 +227,7 @@ export default function FindJobsTab({
             <div className="space-y-6 mb-8">
                 
                 {/* Stats Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
                     <div onClick={() => setActiveTab("FindJobs")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-r from-blue-100/50 to-white/50 border border-blue-200 shadow-sm'}`}>
                         <div className="relative z-10">
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{availableJobs.length}</h3>
@@ -260,12 +261,48 @@ export default function FindJobsTab({
                     </div>
                 </div>
 
-                {/* --- NEW SEARCH, FILTER & HEADS UP BAR --- */}
-                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full relative z-40">
+                {/* --- NEW SEARCH BAR & FILTERS --- */}
+                <div className="flex flex-col gap-3 w-full relative z-40">
                     
+                    {/* MOBILE Heads Up (Hidden on desktop) - Dark Mode blending & No Blob */}
+                    {displayAnnouncement && (
+                        <div className={`md:hidden w-full rounded-2xl shadow-sm p-1.5 flex items-center relative overflow-hidden group border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-gradient-to-r from-blue-500 to-indigo-600 border-transparent shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]'}`}>
+                            {/* Blending overlay gradient for dark mode */}
+                            {darkMode ? (
+                                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-blue-500/5 to-transparent pointer-events-none z-0"></div>
+                            ) : (
+                                <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent pointer-events-none z-0"></div>
+                            )}
+                            
+                            {/* Sliding shimmer animation */}
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1500 ease-in-out pointer-events-none z-0"></div>
+
+                            <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className={`flex-1 flex items-center justify-between gap-3 px-2 py-1 rounded-xl transition-all overflow-hidden text-left relative z-10`}>
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className={`p-2 rounded-lg shrink-0 relative z-20 ${darkMode ? 'bg-blue-500/10 text-blue-400' : 'bg-white/20 text-white backdrop-blur-sm'}`}>
+                                        <MegaphoneIcon className="w-5 h-5 -rotate-12 group-hover:rotate-0 transition-transform duration-300"/>
+                                    </div>
+                                    <div className="flex flex-col overflow-hidden min-w-0 animate-in fade-in slide-in-from-right-16 duration-500 ease-out relative z-20" key={displayAnnouncement.id}>
+                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                            <span className={`text-[10px] font-black uppercase tracking-widest leading-none whitespace-nowrap drop-shadow-sm ${darkMode ? 'text-slate-400' : 'text-blue-100'}`}>
+                                                Heads Up
+                                            </span>
+                                        </div>
+                                        <span className={`text-sm font-black truncate leading-tight drop-shadow-md ${darkMode ? 'text-slate-200' : 'text-white'}`}>
+                                            {displayAnnouncement.title}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className={`shrink-0 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-lg border transition-colors relative z-20 ${darkMode ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-white/30 text-white hover:bg-white/20 backdrop-blur-sm'}`}>
+                                    View
+                                </div>
+                            </button>
+                        </div>
+                    )}
+
                     {/* Search Bar + Inside Filters */}
-                    <div className={`flex-1 flex items-center p-1.5 rounded-2xl border shadow-sm ${glassPanel}`}>
-                        <MagnifyingGlassIcon className={`ml-3 w-5 h-5 shrink-0 ${darkMode ? 'text-blue-400/50' : 'text-blue-600/50'}`} />
+                    <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${glassPanel}`}>
+                        <MagnifyingGlassIcon className={`ml-3 w-5 h-5 shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
                         
                         <input 
                             type="text" 
@@ -282,10 +319,11 @@ export default function FindJobsTab({
                         <div className="relative shrink-0">
                             <button 
                                 onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} 
-                                className={`p-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${jobLocationFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}
+                                className={`p-2 md:px-4 md:py-2 flex items-center gap-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${jobLocationFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}
                             >
-                                <MapPinIcon className="w-5 h-5" />
-                                {jobLocationFilter && <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full border ${darkMode ? 'bg-red-500 border-slate-900' : 'bg-red-500 border-white'}`}></span>}
+                                <MapPinIcon className="w-5 h-5 shrink-0" />
+                                <span className="hidden md:block text-xs font-bold whitespace-nowrap">{jobLocationFilter || "All Locations"}</span>
+                                {jobLocationFilter && <span className={`absolute top-1.5 right-1.5 md:right-2 w-2 h-2 rounded-full border ${darkMode ? 'bg-red-500 border-slate-900' : 'bg-red-500 border-white'}`}></span>}
                             </button>
                             
                             {isSitioDropdownOpen && (
@@ -305,13 +343,14 @@ export default function FindJobsTab({
                         <div className="relative shrink-0 pr-1">
                             <button 
                                 onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} 
-                                className={`p-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${jobCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}
+                                className={`p-2 md:px-4 md:py-2 flex items-center gap-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${jobCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}
                             >
                                 {(() => {
                                     const ActiveIcon = jobCategoryFilter ? getCatStyles(jobCategoryFilter).icon : TagIcon;
-                                    return <ActiveIcon className="w-5 h-5" />;
+                                    return <ActiveIcon className="w-5 h-5 shrink-0" />;
                                 })()}
-                                {jobCategoryFilter && <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full border ${darkMode ? 'bg-red-500 border-slate-900' : 'bg-red-500 border-white'}`}></span>}
+                                <span className="hidden md:block text-xs font-bold whitespace-nowrap">{jobCategoryFilter ? (JOB_CATEGORIES.find(c => c.id === jobCategoryFilter)?.label || jobCategoryFilter) : "All Categories"}</span>
+                                {jobCategoryFilter && <span className={`absolute top-1.5 right-1.5 md:right-2 w-2 h-2 rounded-full border ${darkMode ? 'bg-red-500 border-slate-900' : 'bg-red-500 border-white'}`}></span>}
                             </button>
 
                             {isCategoryDropdownOpen && (
@@ -354,25 +393,6 @@ export default function FindJobsTab({
                             {isCategoryDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsCategoryDropdownOpen(false)}></div>}
                         </div>
                     </div>
-
-                    {/* Heads Up (Stacks below on mobile, inline on desktop) */}
-                    {displayAnnouncement && (
-                        <div className={`w-full md:w-64 shrink-0 rounded-2xl border shadow-sm p-1.5 flex items-center ${glassPanel}`}>
-                            <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className={`flex-1 flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all group overflow-hidden text-left ${darkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}>
-                                <div className={`p-1.5 rounded-lg shrink-0 ${darkMode ? 'bg-blue-400/20 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
-                                    <MegaphoneIcon className="w-4 h-4"/>
-                                </div>
-                                <div className="flex flex-col overflow-hidden min-w-0 flex-1 animate-in fade-in slide-in-from-bottom-1 duration-500 key={displayAnnouncement.id}">
-                                    <span className={`text-[9px] font-black uppercase tracking-wider leading-none mb-0.5 whitespace-nowrap ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                                        Heads Up
-                                    </span>
-                                    <span className={`text-[11px] font-bold truncate leading-tight ${darkMode ? 'text-white' : 'text-slate-700'}`}>
-                                        {displayAnnouncement.title}
-                                    </span>
-                                </div>
-                            </button>
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -380,7 +400,7 @@ export default function FindJobsTab({
             {isFiltering ? (
                 <div className="mt-6">
                     <h2 className={`text-sm font-black uppercase tracking-widest opacity-50 mb-4 pl-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Search Results</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5 pt-6 pb-10 -mt-6">
                         {/* Passes 'false' to renderJobCard so they stay as a grid */}
                         {filteredJobs.length > 0 ? filteredJobs.map(job => renderJobCard(job, false)) : (
                             <div className="col-span-full text-center py-20"><SparklesIcon className="w-12 h-12 mx-auto text-slate-300 mb-4" /><p className="opacity-50 font-black uppercase text-xs tracking-[0.3em] select-none cursor-default">No jobs found matching filters</p></div>
@@ -388,7 +408,7 @@ export default function FindJobsTab({
                     </div>
                 </div>
             ) : (
-                <div className="mt-6 space-y-10 overflow-hidden w-full">
+                <div className="mt-6 space-y-10 w-full">
                     
                     {/* Suggested Section */}
                     <div className="w-full">
@@ -405,8 +425,7 @@ export default function FindJobsTab({
                                 onMouseLeave={(e) => handleMouseLeave(e, suggestedRef)}
                                 onMouseUp={(e) => handleMouseUp(e, suggestedRef)}
                                 onMouseMove={(e) => handleMouseMove(e, suggestedRef)}
-                                // Added `md:snap-none` to prevent CSS snap from fighting JS scroll, and `cursor-grab`
-                                className="flex overflow-x-auto gap-4 md:gap-5 pb-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab"
+                                className="flex overflow-x-auto gap-4 md:gap-5 pt-6 pb-10 -mt-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab"
                             >
                                 {/* Passes 'true' to renderJobCard so it knows to use the fixed horizontal width */}
                                 {suggestedJobs.map(job => renderJobCard(job, true))}
@@ -433,8 +452,7 @@ export default function FindJobsTab({
                             onMouseLeave={(e) => handleMouseLeave(e, recentRef)}
                             onMouseUp={(e) => handleMouseUp(e, recentRef)}
                             onMouseMove={(e) => handleMouseMove(e, recentRef)}
-                            // Added `md:snap-none` to prevent CSS snap from fighting JS scroll, and `cursor-grab`
-                            className="flex overflow-x-auto gap-4 md:gap-5 pb-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab"
+                            className="flex overflow-x-auto gap-4 md:gap-5 pt-6 pb-10 -mt-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab"
                         >
                              {/* Passes 'true' to renderJobCard so it knows to use the fixed horizontal width */}
                             {recentJobs.length > 0 ? recentJobs.map(job => renderJobCard(job, true)) : (

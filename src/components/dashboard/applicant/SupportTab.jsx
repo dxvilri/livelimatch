@@ -1,5 +1,6 @@
 import { PlusIcon, TrashIcon, ChatBubbleLeftRightIcon, MegaphoneIcon, ChevronLeftIcon, CpuChipIcon, XMarkIcon, PaperClipIcon, PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { BOT_FAQ } from "../../../utils/applicantConstants"; 
+import { useRef, useEffect } from "react";
 
 export default function SupportTab({
     supportTickets, activeSupportTicket, setActiveSupportTicket,
@@ -11,6 +12,56 @@ export default function SupportTab({
     isBotTyping, darkMode, isMobile
 }) {
     const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
+
+    // --- DESKTOP SCROLL FIXES FOR FAQ ---
+    const faqRef = useRef(null);
+
+    // 1. Convert Vertical Mouse Wheel to Horizontal Scroll
+    useEffect(() => {
+        const handleWheelScroll = (e) => {
+            if (e.deltaY !== 0) {
+                e.preventDefault(); 
+                e.currentTarget.scrollLeft += e.deltaY;
+            }
+        };
+
+        const faqNode = faqRef.current;
+        if (faqNode) {
+            faqNode.addEventListener('wheel', handleWheelScroll, { passive: false });
+        }
+
+        return () => {
+            if (faqNode) {
+                faqNode.removeEventListener('wheel', handleWheelScroll);
+            }
+        };
+    }, [activeSupportTicket?.status]); // Re-bind if the ticket status changes and the FAQ section re-renders
+
+    // 2. Mouse Drag-to-Scroll Logic
+    const handleMouseDown = (e) => {
+        if (!faqRef.current) return;
+        faqRef.current.isDown = true;
+        faqRef.current.startX = e.pageX - faqRef.current.offsetLeft;
+        faqRef.current.scrollLeftPos = faqRef.current.scrollLeft;
+        faqRef.current.style.cursor = 'grabbing';
+    };
+    const handleMouseLeave = (e) => {
+        if (!faqRef.current) return;
+        faqRef.current.isDown = false;
+        faqRef.current.style.cursor = 'grab';
+    };
+    const handleMouseUp = (e) => {
+        if (!faqRef.current) return;
+        faqRef.current.isDown = false;
+        faqRef.current.style.cursor = 'grab';
+    };
+    const handleMouseMove = (e) => {
+        if (!faqRef.current || !faqRef.current.isDown) return;
+        e.preventDefault();
+        const x = e.pageX - faqRef.current.offsetLeft;
+        const walk = (x - faqRef.current.startX) * 1.5; 
+        faqRef.current.scrollLeft = faqRef.current.scrollLeftPos - walk;
+    };
 
     return (
         <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (isSupportOpen ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
@@ -100,7 +151,15 @@ export default function SupportTab({
                         <div className="text-center p-2 text-[10px] font-black uppercase opacity-50 italic">This request is closed. Start a new one to continue.</div>
                     ) : (
                         <>
-                            <div className="flex gap-2 overflow-x-auto pb-3 mb-2 hide-scrollbar">
+                            {/* Scrollable FAQ Container */}
+                            <div 
+                                ref={faqRef}
+                                onMouseDown={handleMouseDown}
+                                onMouseLeave={handleMouseLeave}
+                                onMouseUp={handleMouseUp}
+                                onMouseMove={handleMouseMove}
+                                className="flex gap-2 overflow-x-auto pb-3 mb-2 hide-scrollbar cursor-grab"
+                            >
                                 {BOT_FAQ.map((faq) => (
                                     <button key={faq.id} onClick={() => handleSendFAQ(faq)} className={`shrink-0 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap border ${darkMode ? 'bg-slate-800 border-white/10 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-600'}`}>
                                         {faq.question}

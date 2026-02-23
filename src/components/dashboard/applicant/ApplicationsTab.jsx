@@ -24,19 +24,7 @@ export default function ApplicationsTab({
                 </div>
             </div>
 
-            <section className="space-y-6">
-                <div className="flex items-center gap-3"><ClockIcon className="w-5 h-5 text-amber-500" /><h3 className="font-black text-sm uppercase tracking-[0.2em] text-amber-500 select-none cursor-default">Pending Review ({pendingApplications.length})</h3><div className="flex-1 h-px bg-amber-500/10"></div></div>
-                <div className="space-y-4">
-                    {pendingApplications.length > 0 ? pendingApplications.map(app => (
-                        <ApplicationCard
-                            key={app.id} app={app} darkMode={darkMode}
-                            onWithdraw={() => handleWithdrawApplication(app.id)}
-                            onView={() => handleViewApplicationDetails(app)}
-                        />
-                    )) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No pending applications</p></div>)}
-                </div>
-            </section>
-
+            {/* 1. Accepted Applications (Now at the top) */}
             <section className="space-y-6">
                 <div className="flex items-center gap-3"><CheckCircleIcon className="w-5 h-5 text-blue-500" /><h3 className="font-black text-sm uppercase tracking-[0.2em] text-blue-500 select-none cursor-default">Accepted Applications ({acceptedApplications.length})</h3><div className="flex-1 h-px bg-blue-500/10"></div></div>
                 <div className="space-y-4">
@@ -53,6 +41,21 @@ export default function ApplicationsTab({
                 </div>
             </section>
 
+            {/* 2. Pending Review (Now in the middle) */}
+            <section className="space-y-6">
+                <div className="flex items-center gap-3"><ClockIcon className="w-5 h-5 text-amber-500" /><h3 className="font-black text-sm uppercase tracking-[0.2em] text-amber-500 select-none cursor-default">Pending Review ({pendingApplications.length})</h3><div className="flex-1 h-px bg-amber-500/10"></div></div>
+                <div className="space-y-4">
+                    {pendingApplications.length > 0 ? pendingApplications.map(app => (
+                        <ApplicationCard
+                            key={app.id} app={app} darkMode={darkMode}
+                            onWithdraw={() => handleWithdrawApplication(app.id)}
+                            onView={() => handleViewApplicationDetails(app)}
+                        />
+                    )) : (<div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No pending applications</p></div>)}
+                </div>
+            </section>
+
+            {/* 3. Rejected / Withdrawn */}
             <section className="space-y-6">
                 <div className="flex items-center gap-3"><XMarkIcon className="w-5 h-5 text-red-500" /><h3 className="font-black text-sm uppercase tracking-[0.2em] text-red-500 select-none cursor-default">Rejected / Withdrawn ({rejectedApplications.length})</h3><div className="flex-1 h-px bg-red-500/10"></div></div>
                 <div className="space-y-4">

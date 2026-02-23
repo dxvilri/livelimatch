@@ -698,10 +698,11 @@ export default function ApplicantDashboard() {
       {/* Main Content Area */}
       <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${(isFullScreenPage) ? 'p-0 pt-0' : 'p-4 lg:p-8 pt-24 lg:pt-28'}`}>
         
+        {/* === TITLE BAR HEADER (SUB-HEADER) === */}
+        {/* === TITLE BAR HEADER (SUB-HEADER) === */}
         {!isFullScreenPage && (
-            <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 rounded-2xl ${glassPanel(darkMode)}`}>
-                <div className="flex items-center gap-4">
-                    {/* Updated background and icon colors to match the vibrant blue-400 in dark mode */}
+            <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 md:p-5 rounded-2xl transition-all duration-300 relative overflow-hidden ${darkMode ? 'bg-slate-900 border border-white/10 shadow-sm' : 'bg-white border border-slate-200 shadow-sm'}`}>
+                <div className="flex items-center gap-4 relative z-10">
                     <div className={`p-2 rounded-xl hidden md:block ${darkMode ? 'bg-blue-400/10 text-blue-400' : 'bg-blue-600/10 text-blue-600'}`}>
                         {activeTab === "FindJobs" && <BriefcaseIcon className="w-6 h-6"/>}
                         {activeTab === "Saved" && <BookmarkIcon className="w-6 h-6"/>}
@@ -1014,31 +1015,34 @@ export default function ApplicantDashboard() {
                     </div>
 
                     {/* --- RIGHT SIDE: Job Details --- */}
-                    <div className="w-full md:w-2/3 flex flex-col h-full space-y-4">
-                        <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                            <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Job Title</p>
-                            <h2 className="text-3xl sm:text-4xl font-black mb-1">{selectedJob.title}</h2>
-                        </div>
+                    <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
+                        {/* Scrollable Content Area */}
+                        <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
+                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Job Title</p>
+                                <h2 className="text-3xl sm:text-4xl font-black mb-1">{selectedJob.title}</h2>
+                            </div>
 
-                        <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                            <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xl font-black">₱</span>
-                                    <span className="text-xl font-black">{selectedJob.salary}</span>
+                            <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xl font-black">₱</span>
+                                        <span className="text-xl font-black">{selectedJob.salary}</span>
+                                    </div>
                                 </div>
+                            </div>
+
+                            <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">
+                                    Job Description
+                                </p>
+                                <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedJob.description || "No description provided."}</p>
                             </div>
                         </div>
 
-                        <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                            <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">
-                                Job Description
-                            </p>
-                            <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedJob.description || "No description provided."}</p>
-                        </div>
-
-                       {/* --- THEMED ACTIONS --- */}
-                        <div className="w-full flex gap-3 pt-2">
+                       {/* --- THEMED ACTIONS (Pinned to bottom) --- */}
+                        <div className="w-full flex gap-3 pt-2 shrink-0 mt-2">
                             {myApplications.some(app => app.jobId === selectedJob.id) ? (
                                 <button disabled className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest cursor-not-allowed border ${theme.appliedBtn}`}>
                                     Application Sent
@@ -1148,7 +1152,7 @@ export default function ApplicantDashboard() {
                 </div>
 
                 {/* --- RIGHT SIDE: Job Details --- */}
-                <div className="w-full md:w-2/3 flex flex-col h-full space-y-4">
+                <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
                     {modalLoading ? (
                         <div className="flex flex-col items-center justify-center h-full gap-4 opacity-50 py-20">
                             <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
@@ -1156,36 +1160,39 @@ export default function ApplicantDashboard() {
                         </div>
                     ) : (
                         <>
-                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <div className="flex justify-between items-start mb-1">
-                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Job Title</p>
-                                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${viewingApplication.status === 'accepted' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500/10 text-slate-500 border border-slate-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
-                                        <span className={`w-1.5 h-1.5 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-blue-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500' : 'bg-amber-500'}`}></span>
-                                        {viewingApplication.status}
+                            {/* Scrollable Content Area */}
+                            <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
+                                <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                    <div className="flex justify-between items-start mb-1">
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Job Title</p>
+                                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${viewingApplication.status === 'accepted' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500/10 text-slate-500 border border-slate-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-blue-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500' : 'bg-amber-500'}`}></span>
+                                            {viewingApplication.status}
+                                        </div>
+                                    </div>
+                                    <h2 className="text-3xl sm:text-4xl font-black mb-1">{viewingApplication.jobTitle}</h2>
+                                </div>
+
+                                <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xl font-black">₱</span>
+                                            <span className="text-xl font-black">{modalJobDetails?.salary || "N/A"}</span>
+                                        </div>
                                     </div>
                                 </div>
-                                <h2 className="text-3xl sm:text-4xl font-black mb-1">{viewingApplication.jobTitle}</h2>
-                            </div>
 
-                            <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xl font-black">₱</span>
-                                        <span className="text-xl font-black">{modalJobDetails?.salary || "N/A"}</span>
-                                    </div>
+                                <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">
+                                        Job Description
+                                    </p>
+                                    <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalJobDetails?.description || "Description not available."}</p>
                                 </div>
                             </div>
 
-                            <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-            
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">
-                                    Job Description
-                                </p>
-                                <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalJobDetails?.description || "Description not available."}</p>
-                            </div>
-
-                            <div className="flex gap-4 pt-2 mt-auto">
+                            {/* Actions (Pinned to bottom) */}
+                            <div className="flex gap-4 pt-2 mt-2 shrink-0">
                                 <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">
                                     {viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw Application'}
                                 </button>
