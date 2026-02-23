@@ -1,7 +1,9 @@
 import { cloneElement } from "react";
 import { 
     MagnifyingGlassIcon, PlusIcon, MapPinIcon, TagIcon, 
-    UsersIcon, PencilSquareIcon, TrashIcon, BriefcaseIcon 
+    UsersIcon, PencilSquareIcon, TrashIcon, BriefcaseIcon,
+    SparklesIcon, AcademicCapIcon, SunIcon, Cog8ToothIcon, 
+    WrenchScrewdriverIcon, HomeIcon, UserGroupIcon 
 } from "@heroicons/react/24/outline";
 
 export default function ListingsTab({
@@ -10,8 +12,60 @@ export default function ListingsTab({
 }) {
     
     // --- STYLES ---
-    const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
+    const glassPanel = `backdrop-blur-xl transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white/60 border-slate-200 text-slate-800'}`;
     const glassInput = `w-full bg-transparent border-none outline-none text-sm font-bold placeholder-slate-400 pl-10 pr-4 py-2.5 ${darkMode ? 'text-white' : 'text-slate-800'}`;
+
+    // --- CARD THEME LOGIC (Matches FindJobsTab / SavedJobsTab) ---
+    const getCardTheme = (categoryId, isDark) => {
+        const darkColors = {
+            'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500', btnLight: 'bg-blue-400/10 hover:bg-blue-400/20 text-blue-400', cardBg: 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border border-blue-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(96,165,250,0.25)]' },
+            'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500', btnLight: 'bg-green-400/10 hover:bg-green-400/20 text-green-400', cardBg: 'bg-gradient-to-br from-green-500/20 to-green-500/5 border border-green-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(74,222,128,0.25)]' },
+            'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', btnLight: 'bg-slate-400/10 hover:bg-slate-400/20 text-slate-400', cardBg: 'bg-gradient-to-br from-slate-500/20 to-slate-500/5 border border-slate-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(148,163,184,0.25)]' },
+            'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', btn: 'bg-yellow-400 text-slate-900 hover:bg-yellow-500', btnLight: 'bg-yellow-400/10 hover:bg-yellow-400/20 text-yellow-400', cardBg: 'bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border border-yellow-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(250,204,21,0.25)]' },
+            'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', btn: 'bg-pink-400 text-slate-900 hover:bg-pink-500', btnLight: 'bg-pink-400/10 hover:bg-pink-400/20 text-pink-400', cardBg: 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border border-pink-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(244,114,182,0.25)]' },
+            'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', btn: 'bg-purple-400 text-slate-900 hover:bg-purple-500', btnLight: 'bg-purple-400/10 hover:bg-purple-400/20 text-purple-400', cardBg: 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(192,132,252,0.25)]' },
+        };
+        const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', btnLight: 'bg-slate-400/10 hover:bg-slate-400/20 text-slate-400', cardBg: 'bg-gradient-to-br from-slate-500/20 to-slate-500/5 border border-slate-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(148,163,184,0.25)]' };
+
+        if (isDark) {
+            const cat = darkColors[categoryId] || fallbackDark;
+            return {
+                title: cat.text, location: cat.text, salaryLabel: cat.text, salaryValue: cat.text, currency: `${cat.text} opacity-70`,
+                badge: `${cat.bgLight} ${cat.text} ${cat.border}`, btnPrimary: cat.btn, btnSecondary: cat.btnLight,
+                borderColor: cat.border, bgIcon: cat.text, 
+                cardBg: cat.cardBg,
+                hoverShadow: cat.hoverShadow
+            };
+        } else {
+            // --- LIGHT MODE: GLOSSY SOLID BLUE THEME ---
+            return {
+                title: 'text-white drop-shadow-md', 
+                location: 'text-blue-100', 
+                salaryLabel: 'text-blue-200', 
+                salaryValue: 'text-white', 
+                currency: 'text-blue-200',
+                badge: 'bg-white/20 text-white border border-white/30 backdrop-blur-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]', 
+                btnPrimary: 'bg-white text-blue-700 hover:bg-blue-50 shadow-lg active:scale-95', 
+                btnSecondary: 'text-white bg-white/10 hover:bg-white/20 border border-white/30',
+                borderColor: 'border-white/20', 
+                bgIcon: 'text-white', 
+                cardBg: 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 shadow-[0_10px_20px_-5px_rgba(37,99,235,0.4)] ring-1 ring-inset ring-white/40',
+                hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(37,99,235,0.5)]'
+            };
+        }
+    };
+
+    const getCatIcon = (id) => {
+        const map = {
+            'EDUCATION': AcademicCapIcon,
+            'AGRICULTURE': SunIcon,
+            'AUTOMOTIVE': Cog8ToothIcon,
+            'CARPENTRY': WrenchScrewdriverIcon,
+            'HOUSEHOLD': HomeIcon,
+            'CUSTOMER_SERVICE': UserGroupIcon,
+        };
+        return map[id] || TagIcon;
+    };
 
     const filteredJobs = myPostedJobs.filter(job => job.title.toLowerCase().includes(searchTerm.toLowerCase()) || (job.sitio && job.sitio.toLowerCase().includes(searchTerm.toLowerCase())));
 
@@ -41,104 +95,107 @@ export default function ListingsTab({
                 </button>
             </div>
 
-            {/* Job Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Added pt-6 pb-10 and -mt-6 to prevent clipping of the hover glow just like the Applicant Dashboard */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5 pt-6 pb-10 -mt-6">
                 {filteredJobs.length > 0 ? filteredJobs.map(job => {
                     const applicantCount = receivedApplications.filter(a => a.jobId === job.id).length;
-                    const style = getJobStyle(job.type);
-                    
+                    const typeStyle = getJobStyle(job.type);
+                    const theme = getCardTheme(job.category, darkMode);
+
                     return (
-                        <div key={job.id} className={`group relative p-6 rounded-[2.5rem] overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl border ${darkMode ? 'bg-slate-900/40 border-white/5 hover:border-blue-500/30 hover:bg-slate-800/60' : 'bg-white/60 border-white/60 shadow-lg hover:border-blue-200 hover:bg-white'} backdrop-blur-xl`}>
+                        <div key={job.id} onClick={() => handleOpenJobModal(job)} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 ${theme.hoverShadow} cursor-pointer flex flex-col justify-between min-h-[220px] ${theme.cardBg} w-full`}>
                             
-                            {/* Decorative Background Icon */}
-                            <div className={`absolute -bottom-4 -right-4 opacity-5 transform rotate-12 group-hover:scale-110 group-hover:rotate-6 transition-all duration-700 pointer-events-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                                {cloneElement(style.icon, { className: "w-48 h-48" })}
+                            {/* Large Background Icon */}
+                            <div className={`absolute -right-4 bottom-0 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${theme.bgIcon}`}>
+                                {cloneElement(typeStyle.icon, { className: "w-40 h-40 md:w-48 md:h-48" })}
                             </div>
 
-                            {/* Content Container */}
                             <div className="relative z-10 flex flex-col h-full">
-                                {/* Top Row: Type Badge & Status */}
-                                <div className="flex justify-between items-start mb-6">
-                                    <div className={`px-4 py-2 rounded-2xl flex items-center gap-2 border shadow-sm backdrop-blur-md ${style.bg} ${style.border}`}>
-                                        <span className={`${style.color}`}>{style.icon}</span>
-                                        <span className={`text-[10px] font-black uppercase tracking-widest ${style.color}`}>{job.type}</span>
+                                
+                                {/* 1. Job Title & Active Status */}
+                                <div className="flex justify-between items-start gap-4 mb-2">
+                                    <h3 className={`font-black text-xl leading-tight line-clamp-2 pt-1 ${theme.title}`}>{job.title}</h3>
+                                    
+                                    {/* Active Badge (replaces bookmark from Applicant view) */}
+                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full shadow-sm shrink-0 border ${theme.badge}`}>
+                                        <span className="relative flex h-2 w-2">
+                                            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${darkMode ? 'bg-green-400' : 'bg-green-300'}`}></span>
+                                            <span className={`relative inline-flex rounded-full h-2 w-2 ${darkMode ? 'bg-green-500' : 'bg-green-400'}`}></span>
+                                        </span>
+                                        <span className="text-[9px] font-bold uppercase tracking-wide">Active</span>
+                                    </div>
+                                </div>
+                                
+                                {/* 2. Location */}
+                                <div className={`flex items-center gap-1.5 mb-4 ${theme.location}`}>
+                                    <MapPinIcon className="w-4 h-4 shrink-0" />
+                                    <p className="text-[11px] font-bold uppercase tracking-wide opacity-80 truncate">{job.sitio || "Remote/Any"}</p>
+                                </div>
+
+                                {/* 3. Badges */}
+                                <div className="flex flex-wrap items-center gap-2 mb-6">
+                                    {/* Category Badge */}
+                                    {job.category && (() => {
+                                        const CatIcon = getCatIcon(job.category);
+                                        return (
+                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 shadow-sm ${theme.badge}`}>
+                                                <CatIcon className="w-3 h-3" />
+                                                {JOB_CATEGORIES.find(c => c.id === job.category)?.label || job.category}
+                                            </span>
+                                        )
+                                    })()}
+
+                                    {/* Job Type Badge */}
+                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 shadow-sm ${theme.badge}`}>
+                                        <span className="scale-75 w-3 h-3 flex items-center justify-center">{typeStyle.icon}</span>
+                                        {job.type}
+                                    </span>
+                                </div>
+
+                                {/* 4. Salary & Actions */}
+                                <div className={`mt-auto pt-4 border-t flex flex-wrap items-end justify-between gap-3 ${theme.borderColor}`}>
+                                    <div className="mb-1">
+                                        <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${theme.salaryLabel}`}>Salary</p>
+                                        <div className="flex items-center gap-1">
+                                            <span className={`text-sm font-black ${theme.currency}`}>₱</span>
+                                            <span className={`text-lg font-black leading-none ${theme.salaryValue}`}>{job.salary}</span>
+                                        </div>
                                     </div>
                                     
-                                    <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20">
-                                        <span className="relative flex h-2 w-2">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                                        </span>
-                                        <span className="text-[9px] font-bold text-green-600 uppercase tracking-wide">Active</span>
-                                    </div>
-                                </div>
-
-                                {/* Title & Location */}
-                                <div className="mb-6 space-y-3">
-                                    <h3 className={`text-xl font-black leading-tight line-clamp-2 group-hover:text-blue-500 transition-colors ${darkMode ? 'text-white' : 'text-slate-800'}`}>{job.title}</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
-                                            <MapPinIcon className="w-3 h-3" />
-                                            {job.sitio || "Remote/Any"}
+                                    {/* Employer Actions: Applicants Count, Edit, Delete */}
+                                    <div className="flex items-center gap-2">
+                                        
+                                        <div className={`flex items-center gap-1.5 mr-2 ${theme.salaryLabel}`} title={`${applicantCount} Applicants`}>
+                                            <UsersIcon className="w-4 h-4" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest">{applicantCount}</span>
                                         </div>
-                                        {job.category && (
-                                            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'bg-purple-500/10 border-purple-500/20 text-purple-300' : 'bg-purple-50 border-purple-100 text-purple-600'}`}>
-                                                <TagIcon className="w-3 h-3" />
-                                                {JOB_CATEGORIES.find(c => c.id === job.category)?.label || job.category}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
 
-                                {/* Salary Section */}
-                                <div className="mb-8">
-                                    <p className={`text-[9px] font-black uppercase tracking-widest mb-1 opacity-50 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Monthly Offer</p>
-                                    <p className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-indigo-600 tracking-tight">₱ {job.salary}</p>
-                                </div>
-
-                                {/* Footer Actions */}
-                                <div className="mt-auto pt-6 border-t border-dashed border-slate-500/20 flex items-center justify-between">
-                                    <div className="flex items-center gap-3 group/applicants cursor-default">
-                                        <div className="flex -space-x-3 transition-spacing group-hover/applicants:space-x-1">
-                                            {[...Array(Math.min(3, applicantCount))].map((_, i) => (
-                                                <div key={i} className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-[10px] font-bold shadow-lg transition-transform hover:scale-110 hover:z-10 ${darkMode ? 'bg-slate-800 border-slate-900 text-white' : 'bg-slate-100 border-white text-slate-600'}`}>
-                                                    ?
-                                                </div>
-                                            ))}
-                                            {applicantCount === 0 && <div className={`w-9 h-9 rounded-full border-2 border-dashed flex items-center justify-center ${darkMode ? 'border-slate-700 bg-white/5' : 'border-slate-300 bg-slate-50'}`}><UsersIcon className="w-4 h-4 opacity-30"/></div>}
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <span className={`text-sm font-black leading-none ${applicantCount > 0 ? 'text-blue-500' : 'opacity-30'}`}>{applicantCount}</span>
-                                            <span className="text-[8px] font-bold uppercase opacity-50">Applicants</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 lg:translate-y-0 lg:group-hover:translate-y-0">
                                         <button 
-                                            onClick={() => handleOpenJobModal(job)} 
-                                            className={`p-3 rounded-xl transition-all duration-300 hover:scale-110 shadow-lg ${darkMode ? 'bg-slate-800 text-white hover:bg-blue-600' : 'bg-white text-slate-600 hover:bg-blue-600 hover:text-white shadow-blue-200'}`}
+                                            onClick={(e) => { e.stopPropagation(); handleOpenJobModal(job); }} 
+                                            className={`p-2.5 rounded-xl transition-all ${theme.btnSecondary}`} 
                                             title="Edit Job"
                                         >
                                             <PencilSquareIcon className="w-4 h-4" />
                                         </button>
+
                                         <button 
-                                            onClick={() => handleDeleteJob(job.id)} 
-                                            className={`p-3 rounded-xl transition-all duration-300 hover:scale-110 shadow-lg ${darkMode ? 'bg-slate-800 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-white text-red-500 hover:bg-red-500 hover:text-white shadow-red-100'}`}
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteJob(job.id); }} 
+                                            // Red override for destructive action while maintaining the frosted glass feel
+                                            className={`p-2.5 rounded-xl transition-all ${darkMode ? 'bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-red-500 text-white shadow-lg shadow-red-500/30 hover:bg-red-600'} border border-transparent`} 
                                             title="Delete Job"
                                         >
                                             <TrashIcon className="w-4 h-4" />
                                         </button>
+
                                     </div>
                                 </div>
                             </div>
                         </div>
                     );
                 }) : (
-                    <div className="col-span-full flex flex-col items-center justify-center py-32 opacity-50">
-                        <div className="w-24 h-24 rounded-full bg-slate-500/10 flex items-center justify-center mb-6 animate-pulse">
-                            <BriefcaseIcon className="w-10 h-10 text-slate-400" />
-                        </div>
-                        <p className="font-black uppercase text-xs tracking-[0.3em] text-slate-500">No jobs posted yet</p>
+                    <div className="col-span-full text-center py-20">
+                        <SparklesIcon className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                        <p className="opacity-50 font-black uppercase text-xs tracking-[0.3em] select-none cursor-default">No jobs posted yet</p>
                     </div>
                 )}
             </div>

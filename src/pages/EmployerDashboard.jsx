@@ -144,6 +144,7 @@ export default function EmployerDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
   const [loading, setLoading] = useState(false); 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
 
   const togglePinMessage = async (msgId, currentPinnedStatus) => {
       try { await updateDoc(doc(db, "messages", msgId), { isPinned: !currentPinnedStatus }); } 
