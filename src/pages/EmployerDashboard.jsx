@@ -1096,7 +1096,119 @@ return (
       />
 
      {/* =========================================================
-          CANDIDATE DETAILS MODAL
+          JOB CREATION / EDITING MODAL
+          ========================================================= */}
+      {isJobModalOpen && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsJobModalOpen(false)}>
+              <div 
+                  onClick={(e) => e.stopPropagation()} 
+                  className={`relative w-full max-w-lg p-6 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 overflow-y-auto max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+              >
+                  <button onClick={() => setIsJobModalOpen(false)} className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                      <XMarkIcon className="w-5 h-5"/>
+                  </button>
+                  <h2 className="text-2xl font-black mb-6">{editingJobId ? 'Edit Job Listing' : 'Post New Job'}</h2>
+                  
+                  <div className="space-y-4">
+                      {/* Job Title */}
+                      <div>
+                          <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Job Title</label>
+                          <input 
+                              type="text" 
+                              value={jobForm.title} 
+                              onChange={e => setJobForm({...jobForm, title: e.target.value})} 
+                              className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} 
+                              placeholder="e.g. Need Carpenter" 
+                          />
+                      </div>
+                      
+                      <div className="flex flex-col sm:flex-row gap-4">
+                          {/* Salary */}
+                          <div className="flex-1">
+                              <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Salary (₱)</label>
+                              <input 
+                                  type="number" 
+                                  value={jobForm.salary} 
+                                  onChange={e => setJobForm({...jobForm, salary: e.target.value})} 
+                                  className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} 
+                                  placeholder="e.g. 500" 
+                              />
+                          </div>
+                          {/* Job Type */}
+                          <div className="flex-1 relative">
+                              <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Job Type</label>
+                              <div className="relative">
+                                  <select 
+                                      value={jobForm.type} 
+                                      onChange={e => setJobForm({...jobForm, type: e.target.value})} 
+                                      className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm appearance-none pr-10 ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`}
+                                  >
+                                      {JOB_TYPES.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}
+                                  </select>
+                                  <ChevronDownIcon className="w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
+                              </div>
+                          </div>
+                      </div>
+
+                      {/* Category */}
+                      <div className="relative">
+                          <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Category</label>
+                          <div className="relative">
+                              <select 
+                                  value={jobForm.category} 
+                                  onChange={e => setJobForm({...jobForm, category: e.target.value})} 
+                                  className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm appearance-none pr-10 ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`}
+                              >
+                                  <option value="">Select a Category</option>
+                                  {JOB_CATEGORIES.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
+                              </select>
+                              <ChevronDownIcon className="w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
+                          </div>
+                      </div>
+
+                      {/* Location */}
+                      <div className="relative">
+                          <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Location (Sitio)</label>
+                          <div className="relative">
+                              <select 
+                                  value={jobForm.sitio} 
+                                  onChange={e => setJobForm({...jobForm, sitio: e.target.value})} 
+                                  className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm appearance-none pr-10 ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`}
+                              >
+                                  <option value="">Select Location</option>
+                                  {PUROK_LIST.map(purok => <option key={purok} value={purok}>{purok}</option>)}
+                              </select>
+                              <ChevronDownIcon className="w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
+                          </div>
+                      </div>
+
+                      {/* Description */}
+                      <div>
+                          <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Description</label>
+                          <textarea 
+                              value={jobForm.description} 
+                              onChange={e => setJobForm({...jobForm, description: e.target.value})} 
+                              rows="4" 
+                              className={`w-full p-3.5 rounded-xl outline-none border transition-colors resize-none font-bold text-sm ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} 
+                              placeholder="Describe the job requirements..."
+                          ></textarea>
+                      </div>
+
+                      {/* Action Button */}
+                      <button 
+                          onClick={handleSaveJob} 
+                          disabled={loading} 
+                          className="w-full py-4 mt-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-50"
+                      >
+                          {loading ? 'Saving...' : (editingJobId ? 'Save Changes' : 'Post Job')}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+     {/* =========================================================
+          CANDIDATE DETAILS MODAL (Discover Tab)
           ========================================================= */}
       {selectedTalent && (() => {
           const getModalTheme = (categoryId, isDark) => {
@@ -1242,6 +1354,154 @@ return (
                             <button onClick={handleImmediateHire} disabled={isHired} title="Immediate Hire" className={`flex-none p-4 rounded-xl transition-all border ${isHired ? theme.saveActive : theme.saveIdle}`}>
                                 <BoltIcon className={`w-6 h-6 ${isHired ? 'fill-current' : ''}`}/>
                             </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+          );
+      })()}
+
+      {/* =========================================================
+          APPLICATION DETAILS MODAL (Applicants Tab)
+          ========================================================= */}
+      {selectedApplication && modalApplicant && (() => {
+          const getModalTheme = (categoryId, isDark) => {
+              const darkColors = {
+                  'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500' },
+                  'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500' },
+                  'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500' },
+                  'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', btn: 'bg-yellow-400 text-slate-900 hover:bg-yellow-500' },
+                  'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', btn: 'bg-pink-400 text-slate-900 hover:bg-pink-500' },
+                  'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', btn: 'bg-purple-400 text-slate-900 hover:bg-purple-500' },
+              };
+              const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500' };
+        
+              if (isDark) {
+                  const cat = darkColors[categoryId] || fallbackDark;
+                  return { solid: cat.btn, badge: `${cat.bgLight} ${cat.border} ${cat.text}`, text: cat.text };
+              } else {
+                  return { solid: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 text-white', badge: 'bg-blue-600/10 border-blue-600/20 text-blue-600', text: 'text-blue-600' };
+              }
+          };
+
+          const appliedCategory = modalApplicant.category || modalJob?.category;
+          const theme = getModalTheme(appliedCategory, darkMode);
+          const pic = getAvatarUrl(modalApplicant) || modalApplicant.profilePic || selectedApplication.applicantProfilePic;
+          
+          return (
+            <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedApplication(null)}>
+                <div 
+                   onClick={(e) => e.stopPropagation()}
+                   className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                >
+                    <button onClick={() => setSelectedApplication(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                        <XMarkIcon className="w-5 h-5"/>
+                    </button>
+                    
+                    {/* --- LEFT SIDE: Candidate Info --- */}
+                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
+                            {pic ? (
+                                <img src={pic} alt={selectedApplication.applicantName} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedApplication.applicantName?.charAt(0) || "U"}</div>
+                            )}
+                        </div>
+                        
+                        <h2 className="text-2xl font-black mb-2 text-center leading-tight w-full">{selectedApplication.applicantName}</h2>
+                        
+                        {/* Target Job Title Indicator */}
+                        <div className={`text-[10px] font-black uppercase tracking-widest text-center opacity-80 mb-6 px-4 py-2 rounded-xl border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200'}`}>
+                            Applied for <br /> <span className={`text-xs mt-1 block ${theme.text}`}>{modalJob?.title || "Unknown Job"}</span>
+                        </div>
+                        
+                        <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
+                            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
+                                <div className="flex items-center gap-1.5">
+                                    <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <span className={!modalApplicant.sitio ? 'opacity-50 italic' : ''}>{modalApplicant.sitio || "Location not set"}</span>
+                                </div>
+                                {(modalApplicant.contact || modalApplicant.email) && (
+                                    <div className="flex items-center gap-1.5">
+                                        <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                        <span className="text-slate-500 truncate max-w-[150px]">{modalApplicant.contact || modalApplicant.email}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Category Badge */}
+                            <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
+                                {appliedCategory ? (
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
+                                        <TagIcon className="w-3.5 h-3.5" />
+                                        {JOB_CATEGORIES.find(c => c.id === appliedCategory)?.label || appliedCategory}
+                                    </span>
+                                ) : (
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 opacity-50`}>
+                                        <TagIcon className="w-3.5 h-3.5" />
+                                        Uncategorized
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* --- RIGHT SIDE: Candidate Details --- */}
+                    <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
+                        {/* Scrollable Container */}
+                        <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
+                            
+                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">About Candidate</p>
+                                <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalApplicant.aboutMe || modalApplicant.bio || "No bio provided."}</p>
+                            </div>
+                            
+                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
+                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.education ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                    {modalApplicant.education || "No educational background provided."}
+                                </p>
+                            </div>
+
+                            <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
+                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.workExperience || modalApplicant.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                    {modalApplicant.workExperience || modalApplicant.experience || "No work experience provided."}
+                                </p>
+                            </div>
+
+                        </div>
+
+                       {/* --- ACTIONS (Pinned to Bottom) --- */}
+                        <div className="w-full flex flex-wrap gap-2 pt-2 shrink-0 mt-2">
+                            <button onClick={() => { 
+                                setSelectedApplication(null); 
+                                handleStartChatFromExternal({ id: selectedApplication.applicantId, name: selectedApplication.applicantName, profilePic: pic || null }); 
+                            }} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg min-w-[120px] ${theme.solid}`}>
+                                Message
+                            </button>
+                            
+                            {selectedApplication.status === 'pending' && (
+                                <>
+                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg min-w-[100px] bg-green-500 hover:bg-green-400 text-white`}>
+                                        Accept
+                                    </button>
+                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg min-w-[100px] bg-red-500 hover:bg-red-400 text-white`}>
+                                        Reject
+                                    </button>
+                                </>
+                            )}
+                            
+                            {selectedApplication.status === 'accepted' && (
+                                <div className="flex-[2] flex items-center justify-center py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-green-500/10 text-green-500 border border-green-500/20 shadow-sm">
+                                    <CheckCircleIcon className="w-5 h-5 mr-2" /> Application Accepted
+                                </div>
+                            )}
+                            {selectedApplication.status === 'rejected' && (
+                                <div className="flex-[2] flex items-center justify-center py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 shadow-sm">
+                                    <XMarkIcon className="w-5 h-5 mr-2" /> Application Rejected
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

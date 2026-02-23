@@ -88,14 +88,13 @@ export default function ListingsTab({
                 
                 <button 
                     onClick={() => handleOpenJobModal()} 
-                    className="flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transition-all active:scale-95 w-full md:w-auto justify-center group transform hover:-translate-y-1"
+                    className="flex items-center gap-3 px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transition-all active:scale-95 w-full md:w-auto justify-center group transform hover:-translate-y-1"
                 >
                     <PlusIcon className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" /> 
                     Post New Job
                 </button>
             </div>
 
-            {/* Added pt-6 pb-10 and -mt-6 to prevent clipping of the hover glow just like the Applicant Dashboard */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5 pt-6 pb-10 -mt-6">
                 {filteredJobs.length > 0 ? filteredJobs.map(job => {
                     const applicantCount = receivedApplications.filter(a => a.jobId === job.id).length;
@@ -116,7 +115,7 @@ export default function ListingsTab({
                                 <div className="flex justify-between items-start gap-4 mb-2">
                                     <h3 className={`font-black text-xl leading-tight line-clamp-2 pt-1 ${theme.title}`}>{job.title}</h3>
                                     
-                                    {/* Active Badge (replaces bookmark from Applicant view) */}
+                                    {/* Active Badge */}
                                     <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full shadow-sm shrink-0 border ${theme.badge}`}>
                                         <span className="relative flex h-2 w-2">
                                             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${darkMode ? 'bg-green-400' : 'bg-green-300'}`}></span>
@@ -180,7 +179,6 @@ export default function ListingsTab({
 
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); handleDeleteJob(job.id); }} 
-                                            // Red override for destructive action while maintaining the frosted glass feel
                                             className={`p-2.5 rounded-xl transition-all ${darkMode ? 'bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-red-500 text-white shadow-lg shadow-red-500/30 hover:bg-red-600'} border border-transparent`} 
                                             title="Delete Job"
                                         >
