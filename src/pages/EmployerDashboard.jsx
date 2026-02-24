@@ -244,9 +244,13 @@ export default function EmployerDashboard() {
   const [isEditingImage, setIsEditingImage] = useState(false);
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  
+  // NEW: Initialize with structured array and object for experience/education
   const [employerData, setEmployerData] = useState({ 
-      firstName: "", lastName: "", sitio: "", title: "Employer", 
-      aboutMe: "", workExperience: "", education: "", 
+      firstName: "", lastName: "", sitio: "", title: "Employer", contact: "", 
+      aboutMe: "", 
+      workExperience: [""], 
+      education: { primary: "", secondary: "", college: "" }, 
       verificationStatus: "pending" 
   });
 
@@ -332,7 +336,6 @@ export default function EmployerDashboard() {
       fetchAdmin();
   }, []);
 
-  // FIX: Properly wipe bubbles to prevent ghost resurrects
   useEffect(() => {
     if (activeTab === "Messages" || activeTab === "Support") {
         setIsBubbleVisible(false);
@@ -380,26 +383,39 @@ export default function EmployerDashboard() {
     const userRef = doc(db, "employers", auth.currentUser.uid);
     const setOnline = async () => { try { await setDoc(userRef, { isOnline: true }, { merge: true }); } catch(e) {} };
     setOnline();
+    
     const unsubProfile = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data.profilePic) setProfileImage(data.profilePic);
+        
+        if (data.profilePic && !isEditingImage) setProfileImage(data.profilePic);
         if (data.imgScale) setImgScale(data.imgScale);
+        
+        // NEW: Map legacy strings safely into objects and arrays
+        const parsedEducation = typeof data.education === 'object' && data.education !== null 
+            ? { primary: data.education.primary || "", secondary: data.education.secondary || "", college: data.education.college || "" } 
+            : { primary: "", secondary: "", college: typeof data.education === 'string' ? data.education : "" };
+
+        const parsedExperience = Array.isArray(data.workExperience) 
+            ? data.workExperience 
+            : (typeof data.workExperience === 'string' && data.workExperience.trim() ? [data.workExperience] : [""]);
+        
         setEmployerData(prev => ({
             ...prev,
             firstName: data.firstName || userData?.firstName || "",
             lastName: data.lastName || userData?.lastName || "",
+            contact: data.contact || userData?.contact || data.email || userData?.email || "", 
             sitio: data.sitio || data.location || "", 
             title: data.title || "Employer", 
             aboutMe: data.aboutMe || "",
-            workExperience: data.workExperience || "",
-            education: data.education || "",
+            workExperience: parsedExperience,
+            education: parsedEducation,
             verificationStatus: data.verificationStatus || "pending" 
         }));
       }
     });
     return () => { unsubProfile(); setDoc(userRef, { isOnline: false, lastSeen: serverTimestamp() }, { merge: true }).catch(console.error); };
-  }, [auth.currentUser, userData]);
+  }, [auth.currentUser, userData, isEditingImage]);
 
   useEffect(() => {
     localStorage.setItem("theme", darkMode ? "dark" : "light");
@@ -429,7 +445,6 @@ export default function EmployerDashboard() {
     return () => { unsubJobs(); unsubApps(); unsubAnnouncements(); };
   }, [auth.currentUser]);
 
-  // FIX: Properly redirect to Messages tab without forcefully opening floating bubbles
   const handleStartChatFromExternal = (userObj) => {
     if (!isVerified) return alert("Your account must be verified to send messages.");
     const pic = getAvatarUrl(userObj) || userObj.profilePic;
@@ -573,56 +588,39 @@ export default function EmployerDashboard() {
     }
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => { setProfileImage(reader.result); setIsEditingImage(true); };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const dataURLtoBlob = (dataurl) => {
-    try {
-      const arr = dataurl.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while(n--) u8arr[n] = bstr.charCodeAt(n);
-      return new Blob([u8arr], {type:mime});
-    } catch (e) { return null; }
-  };
-
-  const saveProfileImage = async () => {
-    if (!auth.currentUser || !profileImage) return;
-    setLoading(true);
-    try {
-      const storage = getStorage(auth.app);
-      const storageRef = ref(storage, `company_logos/${auth.currentUser.uid}`);
-      const blob = dataURLtoBlob(profileImage);
-      if (!blob) throw new Error("Failed to process image data.");
-      const uploadTask = await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(uploadTask.ref);
-      await setDoc(doc(db, "employers", auth.currentUser.uid), {
-        profilePic: downloadURL, imgScale: imgScale, uid: auth.currentUser.uid, updatedAt: serverTimestamp()
-      }, { merge: true });
-      setIsEditingImage(false);
-      alert("Profile picture updated successfully!");
-    } catch (err) { alert(`Error: ${err.message}`); } 
-    finally { setLoading(false); }
-  };
-
+  // NEW: Updated Save Profile to handle structured data and image uploads together
   const handleSaveProfile = async () => {
     setLoading(true);
     try {
+        let updatedProfilePicUrl = profileImage; 
+
+        if (isEditingImage && fileInputRef.current?.files[0]) {
+            const file = fileInputRef.current.files[0];
+            const storage = getStorage(auth.app);
+            const storageRef = ref(storage, `profile_pics/${auth.currentUser.uid}_${Date.now()}`); 
+            const uploadTask = await uploadBytes(storageRef, file);
+            updatedProfilePicUrl = await getDownloadURL(uploadTask.ref);
+        }
+
+        // Clean out empty inputs from the array
+        const cleanExperience = (employerData.workExperience || []).filter(e => e.trim() !== "");
+
         await setDoc(doc(db, "employers", auth.currentUser.uid), {
-            title: employerData.title || "Employer", aboutMe: employerData.aboutMe,
-            workExperience: employerData.workExperience, education: employerData.education, updatedAt: serverTimestamp()
+            title: employerData.title || "Employer", 
+            aboutMe: employerData.aboutMe || "",
+            workExperience: cleanExperience, 
+            education: employerData.education || { primary: "", secondary: "", college: "" }, 
+            profilePic: updatedProfilePicUrl,
+            updatedAt: serverTimestamp()
         }, { merge: true });
-        setIsEditingProfile(false);
-    } catch (err) { alert("Error saving profile: " + err.message); } 
-    finally { setLoading(false); }
+        
+        setIsEditingImage(false); 
+        setIsEditingProfile(false); 
+    } catch (err) { 
+        alert("Error saving profile: " + err.message); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   const handleOpenJobModal = (job = null) => {
@@ -724,13 +722,6 @@ export default function EmployerDashboard() {
 
   const getJobStyle = (type) => { const found = JOB_TYPES.find(j => j.id === type); if (found) return found; return { icon: <BoltIcon className="w-6 h-6"/>, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' }; };
 
-  const ProfilePicComponent = ({ sizeClasses = "w-12 h-12", isCollapsed = false }) => (
-    <div className={`relative group shrink-0 ${sizeClasses} rounded-2xl overflow-hidden shadow-lg border select-none ${darkMode ? 'border-white/10 bg-slate-800' : 'border-slate-200 bg-slate-100'}`}>
-      {profileImage ? <img src={profileImage} alt="Profile" className="w-full h-full object-cover transition-transform duration-300" style={{ transform: `scale(${imgScale})` }} /> : <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white font-black text-lg">{employerData.firstName ? employerData.firstName.charAt(0) : "E"}</div>}
-      {!isCollapsed && <button onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"><CameraIcon className="w-5 h-5 text-white" /></button>}
-    </div>
-  );
-
 return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
         
@@ -774,10 +765,6 @@ return (
         @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
       `}</style>
         
-      <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-
-        
-      {/* Modals & Overlays */}
       {/* 5. IMAGE LIGHTBOX OVERLAY */}
       {lightboxUrl && createPortal(
         <div className="fixed inset-0 flex items-center justify-center bg-black/95 backdrop-blur-sm animate-in fade-in duration-200" style={{ zIndex: 999999 }} onClick={(e) => { e.stopPropagation(); setLightboxUrl(null); }}>
@@ -895,7 +882,6 @@ return (
                 currentUser={auth.currentUser}
                 darkMode={darkMode}
                 splitByNewLine={splitByNewLine}
-                ProfilePicComponent={ProfilePicComponent}
             />
         )}
 
@@ -1326,18 +1312,38 @@ return (
                                 <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedTalent.aboutMe || selectedTalent.bio || "No bio provided."}</p>
                             </div>
                             
+                            {/* DYNAMIC EDUCATION/EXPERIENCE IN MODAL */}
                             <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
                                 <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
-                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.education ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                    {selectedTalent.education || "No educational background provided."}
-                                </p>
+                                {typeof selectedTalent.education === 'object' && selectedTalent.education !== null ? (
+                                    <div className="space-y-2">
+                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{selectedTalent.education.primary || "-"}</p>
+                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{selectedTalent.education.secondary || "-"}</p>
+                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{selectedTalent.education.college || "-"}</p>
+                                    </div>
+                                ) : (
+                                    <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.education ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                        {selectedTalent.education || "No educational background provided."}
+                                    </p>
+                                )}
                             </div>
 
                             <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
                                 <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
-                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.workExperience || selectedTalent.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                    {selectedTalent.workExperience || selectedTalent.experience || "No work experience provided."}
-                                </p>
+                                {Array.isArray(selectedTalent.experience) || Array.isArray(selectedTalent.workExperience) ? (
+                                    <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
+                                        {(selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').length > 0 
+                                            ? (selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
+                                                <li key={idx} className="text-sm opacity-90 font-medium pl-1">{exp}</li>
+                                            ))
+                                            : <p className="text-sm opacity-50 italic -ml-4">No work experience provided.</p>
+                                        }
+                                    </ul>
+                                ) : (
+                                    <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.workExperience || selectedTalent.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                        {selectedTalent.workExperience || selectedTalent.experience || "No work experience provided."}
+                                    </p>
+                                )}
                             </div>
 
                         </div>
@@ -1456,18 +1462,39 @@ return (
                                 <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalApplicant.aboutMe || modalApplicant.bio || "No bio provided."}</p>
                             </div>
                             
+                            {/* DYNAMIC EDUCATION IN MODAL */}
                             <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
                                 <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
-                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.education ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                    {modalApplicant.education || "No educational background provided."}
-                                </p>
+                                {typeof modalApplicant.education === 'object' && modalApplicant.education !== null ? (
+                                    <div className="space-y-2">
+                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{modalApplicant.education.primary || "-"}</p>
+                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{modalApplicant.education.secondary || "-"}</p>
+                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{modalApplicant.education.college || "-"}</p>
+                                    </div>
+                                ) : (
+                                    <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.education ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                        {modalApplicant.education || "No educational background provided."}
+                                    </p>
+                                )}
                             </div>
 
+                            {/* DYNAMIC EXPERIENCE IN MODAL */}
                             <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
                                 <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
-                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.workExperience || modalApplicant.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                    {modalApplicant.workExperience || modalApplicant.experience || "No work experience provided."}
-                                </p>
+                                {Array.isArray(modalApplicant.experience) || Array.isArray(modalApplicant.workExperience) ? (
+                                    <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
+                                        {(modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').length > 0 
+                                            ? (modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
+                                                <li key={idx} className="text-sm opacity-90 font-medium pl-1">{exp}</li>
+                                            ))
+                                            : <p className="text-sm opacity-50 italic -ml-4">No work experience provided.</p>
+                                        }
+                                    </ul>
+                                ) : (
+                                    <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.workExperience || modalApplicant.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                        {modalApplicant.workExperience || modalApplicant.experience || "No work experience provided."}
+                                    </p>
+                                )}
                             </div>
 
                         </div>
