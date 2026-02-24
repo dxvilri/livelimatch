@@ -11,12 +11,14 @@ import { useNavigate } from "react-router-dom";
 
 export default function Login() {
   const navigate = useNavigate();
-  const [method, setMethod] = useState("phone"); 
+  const [method, setMethod] = useState("email"); // Defaulting to email since it's primary now
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   
-  // Set default to +63 to match your Registration behavior
-  const [identifier, setIdentifier] = useState("+63"); 
+  // Custom Modal State for Pending Users
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  
+  const [identifier, setIdentifier] = useState(""); 
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [confirmationResult, setConfirmationResult] = useState(null);
@@ -43,7 +45,6 @@ export default function Login() {
       window.recaptchaVerifier.clear();
       window.recaptchaVerifier = null;
     }
-    // Manually clear the DOM element just in case
     const container = document.getElementById("recaptcha-container-login");
     if (container) container.innerHTML = "";
   };
@@ -56,34 +57,32 @@ export default function Login() {
     return num;
   };
 
-  // --- UPDATED LOGIC 1: CHECK ADMINS COLLECTION TOO ---
+  // --- UPDATED LOGIC 1: SEARCH THE CORRECT FIELD (EMAIL VS CONTACT) ---
   const checkUserExists = async (contactValue) => {
     const finalIdentifier = method === "phone" ? formatPhone(contactValue) : contactValue;
+    const searchField = method === "email" ? "email" : "contact"; // <-- FIX: Search correct field
     
     // Check Applicants
-    const qApp = query(collection(db, "applicants"), where("contact", "==", finalIdentifier));
+    const qApp = query(collection(db, "applicants"), where(searchField, "==", finalIdentifier));
     // Check Employers
-    const qEmp = query(collection(db, "employers"), where("contact", "==", finalIdentifier));
-    
-    // NEW: Check Admins (Assuming admins have an 'email' field or 'contact' field matching the input)
-    // Note: Usually admins login via email, so we check the 'email' field if method is email
+    const qEmp = query(collection(db, "employers"), where(searchField, "==", finalIdentifier));
+    // Check Admins
     const qAdmin = query(collection(db, "admins"), where("email", "==", finalIdentifier));
 
     const [snapApp, snapEmp, snapAdmin] = await Promise.all([getDocs(qApp), getDocs(qEmp), getDocs(qAdmin)]);
     
-    // Return true if found in ANY of the three collections
     return !snapApp.empty || !snapEmp.empty || !snapAdmin.empty;
   };
 
-  // --- UPDATED LOGIC 2: ROUTE TO ADMIN DASHBOARD ---
+  // --- UPDATED LOGIC 2: INTERCEPT PENDING STATUS ---
   const routeUserToDashboard = async (uid) => {
     try {
-        // 1. Check Admin (Priority Check)
+        // 1. Check Admin
         const adminRef = doc(db, "admins", uid);
         const adminSnap = await getDoc(adminRef);
         
         if (adminSnap.exists()) {
-            navigate("/admin-dashboard"); // Routes to your AdminDashboard.jsx
+            navigate("/admin-dashboard");
             return;
         }
 
@@ -92,6 +91,12 @@ export default function Login() {
         const appSnap = await getDoc(appRef);
         
         if (appSnap.exists()) {
+            const data = appSnap.data();
+            if (data.status === "pending") {
+                await signOut(auth); // Sign them back out
+                setShowPendingModal(true); // Show the custom themed popup
+                return;
+            }
             navigate("/applicant-dashboard");
             return;
         }
@@ -101,6 +106,12 @@ export default function Login() {
         const empSnap = await getDoc(empRef);
 
         if (empSnap.exists()) {
+            const data = empSnap.data();
+            if (data.status === "pending") {
+                await signOut(auth); // Sign them back out
+                setShowPendingModal(true); // Show the custom themed popup
+                return;
+            }
             navigate("/employer-dashboard");
             return;
         }
@@ -113,21 +124,13 @@ export default function Login() {
   };
 
   const setupRecaptcha = () => {
-    // 1. Clear any existing instance first
     clearRecaptcha();
-
-    // 2. Check if the DOM element exists
     const container = document.getElementById("recaptcha-container-login");
-    if (!container) {
-        console.error("Recaptcha container not found in DOM");
-        return;
-    }
+    if (!container) return;
 
-    // 3. Create new Verifier
     window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container-login", { 
         size: "invisible",
         callback: (response) => {
-            // reCAPTCHA solved - allow signInWithPhoneNumber.
             console.log("Recaptcha verified");
         },
         "expired-callback": () => {
@@ -149,12 +152,7 @@ export default function Login() {
       }
       const userCredential = await signInWithEmailAndPassword(auth, identifier, password);
       
-      if (!userCredential.user.emailVerified && identifier !== "admin@livelimatch.com") {
-  await signOut(auth);
-  alert("Please verify your email first.");
-  setLoading(false);
-  return;
-}
+      // We removed the emailVerified block since we are using Admin approval now
       
       await routeUserToDashboard(userCredential.user.uid);
       
@@ -180,7 +178,6 @@ export default function Login() {
         return;
       }
 
-      // Initialize Recaptcha right before sending
       setupRecaptcha();
       
       const appVerifier = window.recaptchaVerifier;
@@ -188,7 +185,6 @@ export default function Login() {
       setConfirmationResult(confirmation);
     } catch (err) {
       console.error("SMS Error:", err);
-      // Generic error message if we fail early
       alert(err.message || "Failed to send SMS code."); 
       clearRecaptcha();
     }
@@ -210,6 +206,28 @@ export default function Login() {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 text-gray-800 font-sans overflow-x-hidden relative">
+      
+      {/* --- CUSTOM PENDING VERIFICATION MODAL --- */}
+      {showPendingModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white/90 backdrop-blur-2xl rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-white text-center animate-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 bg-orange-50 border-2 border-orange-100 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-5 text-3xl shadow-inner">
+              ⏳
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-2 tracking-tight">Verification Pending</h3>
+            <p className="text-[11px] text-slate-500 mb-6 font-bold leading-relaxed uppercase tracking-widest">
+              We sent an Email notice regarding the process of your account's verification.
+            </p>
+            <button 
+              onClick={() => setShowPendingModal(false)}
+              className="w-full py-4 bg-blue-900 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-900/30 active:scale-95 transition-all"
+            >
+              Understood
+            </button>
+          </div>
+        </div>
+      )}
+
       <header className="w-full h-20 bg-white/70 backdrop-blur-xl border-b border-slate-100 fixed top-0 left-0 z-50 flex items-center">
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 flex justify-center sm:justify-between items-center">
           <h1 className="text-xl sm:text-2xl font-black tracking-tighter text-blue-900 shrink-0 cursor-pointer" onClick={() => navigate("/")}>
@@ -234,21 +252,21 @@ export default function Login() {
 
           <div className="flex bg-slate-100/50 p-1.5 rounded-2xl mb-8 border border-slate-200/50">
             <button 
-              onClick={() => setMethod("phone")} 
-              className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all ${method === 'phone' ? 'bg-white text-blue-900 shadow-md' : 'text-slate-400'}`}
-            >
-              PHONE
-            </button>
-            <button 
               onClick={() => setMethod("email")} 
               className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all ${method === 'email' ? 'bg-white text-blue-900 shadow-md' : 'text-slate-400'}`}
             >
               EMAIL
             </button>
+            <button 
+              onClick={() => setMethod("phone")} 
+              className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all ${method === 'phone' ? 'bg-white text-blue-900 shadow-md' : 'text-slate-400'}`}
+            >
+              PHONE
+            </button>
           </div>
 
           {method === "email" ? (
-            <form onSubmit={handleEmailLogin} className="space-y-5">
+            <form onSubmit={handleEmailLogin} className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-500">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 ml-4 uppercase tracking-widest">Email Address</label>
                 <input type="email" required placeholder="name@example.com" value={identifier} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-900 transition-all font-medium" onChange={(e) => setIdentifier(e.target.value)} />
@@ -260,12 +278,17 @@ export default function Login() {
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-black text-blue-600 uppercase">{showPassword ? "Hide" : "Show"}</button>
                 </div>
               </div>
-              <button disabled={loading} className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-900/30 active:scale-95 transition-all mt-4 hover:bg-blue-800">
-                {loading ? "Authenticating..." : "Sign In"}
+              <button disabled={loading} className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-900/30 active:scale-95 transition-all mt-4 hover:bg-blue-800 flex justify-center items-center gap-2">
+                {loading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Authenticating...
+                  </>
+                ) : "Sign In"}
               </button>
             </form>
           ) : (
-            <div className="space-y-5">
+            <div className="space-y-5 animate-in fade-in slide-in-from-left-4 duration-500">
               {!confirmationResult ? (
                 <form onSubmit={handlePhoneSignIn} className="space-y-5">
                   <div className="space-y-1">
@@ -278,7 +301,6 @@ export default function Login() {
                         onChange={(e) => setIdentifier(e.target.value)} 
                     />
                   </div>
-                  {/* RECAPTCHA CONTAINER IS HERE */}
                   <div id="recaptcha-container-login"></div>
                   
                   <button disabled={loading} className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-900/30 active:scale-95 transition-all mt-2 hover:bg-blue-800">
@@ -308,7 +330,7 @@ export default function Login() {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="text-center md:text-left">
             <p className="text-xl font-black text-blue-900 tracking-tighter">LIVELI<span className="text-blue-500">MATCH</span></p>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">© 2026 Barangay Bogtong Livelihood Portal</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">© 2026 Barangay Cawayan Bogtong Livelihood Portal</p>
           </div>
         </div>
       </footer>

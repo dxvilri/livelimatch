@@ -8,6 +8,7 @@ import {
   addDoc, serverTimestamp, setDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, increment, arrayUnion
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ArrowLeftOnRectangleIcon } from "@heroicons/react/24/outline";
 
 // --- HOOKS ---
 import { useChat } from "../hooks/useChat"; 
@@ -35,7 +36,6 @@ import {
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
 // --- SUB-COMPONENTS ---
-import Sidebar from "../components/dashboard/employer/Sidebar";
 import DiscoverTab from "../components/dashboard/employer/DiscoverTab";
 import ListingsTab from "../components/dashboard/employer/ListingsTab";
 import ApplicantsTab from "../components/dashboard/employer/ApplicantsTab";
@@ -826,18 +826,120 @@ return (
             </div>
       </header>
 
-      <Sidebar 
-          isOpen={isSidebarOpen} 
-          setIsOpen={setIsSidebarOpen} 
-          activeTab={activeTab} 
-          setActiveTab={setActiveTab} 
-          darkMode={darkMode} 
-          setDarkMode={setDarkMode} 
-          handleLogout={handleLogout} 
-          employerData={employerData} 
-          profileImage={profileImage} 
-          isVerified={isVerified} 
-      />
+{/* Sidebar (copied from ApplicantDashboard.jsx) */}
+<aside
+  className={`fixed top-0 right-0 h-full w-64 z-[100] rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel(darkMode)} ${
+    isSidebarOpen ? "translate-x-0 shadow-2xl" : "translate-x-full"
+  }`}
+>
+  <div
+    className="h-24 flex items-center justify-center relative mt-8 cursor-pointer"
+    onClick={() => {
+      setActiveTab("Profile");
+      setIsSidebarOpen(false);
+    }}
+  >
+    <div className="flex items-center gap-3 p-2 pr-4 rounded-2xl hover:bg-white/10 group">
+      <div className="w-12 h-12 rounded-2xl overflow-hidden">
+        {profileImage ? (
+          <img src={profileImage} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">
+            E
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h1 className="font-black text-sm tracking-tight">{displayName}</h1>
+        <p className="text-[10px] opacity-60 font-bold uppercase group-hover:text-blue-500">
+          View Profile
+        </p>
+      </div>
+    </div>
+
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setIsSidebarOpen(false);
+      }}
+      className="absolute top-0 right-4 p-2 opacity-50 hover:opacity-100"
+    >
+      <XMarkIcon className="w-6 h-6" />
+    </button>
+  </div>
+
+  <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
+    <button
+      onClick={() => {
+        isVerified && setActiveTab("Ratings");
+        setIsSidebarOpen(false);
+      }}
+      className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${
+        activeTab === "Ratings"
+          ? "text-blue-500"
+          : "text-slate-500 hover:text-blue-600"
+      }`}
+    >
+      <StarIconOutline className="w-6 h-6" />
+      <span className="font-bold text-xs uppercase tracking-widest">Ratings</span>
+    </button>
+
+    <button
+      onClick={() => {
+        setActiveTab("Announcements");
+        setIsSidebarOpen(false);
+      }}
+      className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${
+        activeTab === "Announcements"
+          ? "text-blue-500"
+          : "text-slate-500 hover:text-blue-600"
+      }`}
+    >
+      <MegaphoneIcon className="w-6 h-6" />
+      <span className="font-bold text-xs uppercase tracking-widest">
+        Announcements
+      </span>
+    </button>
+
+    <button
+      onClick={() => {
+        setActiveTab("Support");
+        setIsSidebarOpen(false);
+      }}
+      className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${
+        activeTab === "Support"
+          ? "text-blue-500"
+          : "text-slate-500 hover:text-blue-600"
+      }`}
+    >
+      <QuestionMarkCircleIcon className="w-6 h-6" />
+      <span className="font-bold text-xs uppercase tracking-widest">Support</span>
+    </button>
+  </nav>
+
+  <div className="p-4 space-y-3">
+    <button
+      onClick={() => setDarkMode(!darkMode)}
+      className="w-full p-3 rounded-2xl flex items-center gap-3 bg-white/5 hover:bg-white/10"
+    >
+      {darkMode ? (
+        <SunIcon className="w-6 h-6 text-amber-400" />
+      ) : (
+        <MoonIcon className="w-6 h-6 text-slate-600" />
+      )}
+      <span className="text-xs font-bold">Switch Theme</span>
+    </button>
+
+    <button
+      onClick={handleLogout}
+      className="w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 hover:bg-red-500/10"
+    >
+      <ArrowLeftOnRectangleIcon className="w-6 h-6" />
+      <span className="text-xs font-bold">Logout</span>
+    </button>
+  </div>
+</aside>
 
       <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${(isFullScreenPage) ? 'p-0 pt-0' : 'p-4 lg:p-8 pt-24 lg:pt-28'}`}>
         

@@ -102,12 +102,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     const allUsers = [...applicants, ...employers];
     
-    // Pending
-    const pending = allUsers.filter(u => u.verificationStatus === 'pending' || !u.verificationStatus);
+    // Pending (Checks both 'status' and old 'verificationStatus' for backward compatibility)
+    const pending = allUsers.filter(u => u.status === 'pending' || u.verificationStatus === 'pending' || (!u.status && !u.verificationStatus));
     setPendingVerifications(pending);
 
     // Rejected
-    const rejected = allUsers.filter(u => u.verificationStatus === 'rejected');
+    const rejected = allUsers.filter(u => u.status === 'rejected' || u.verificationStatus === 'rejected');
     setRejectedUsers(rejected);
 
   }, [applicants, employers]);
@@ -123,23 +123,50 @@ export default function AdminDashboard() {
     }
   }, [activeTab]);
 
-  // --- ACTIONS ---
+  // --- ACTIONS (COHESIVE UPDATE HERE) ---
   const handleVerifyUser = async (user, actionType) => {
     const collectionName = user.type === 'employer' ? 'employers' : 'applicants';
     const isApprove = actionType === 'verified';
     
     let confirmMsg = "";
-    if (actionType === 'verified') confirmMsg = `APPROVE ${user.firstName}?`;
+    if (actionType === 'verified') confirmMsg = `APPROVE ${user.firstName} and send confirmation email?`;
     else if (actionType === 'rejected') confirmMsg = `REJECT ${user.firstName}?`;
     else confirmMsg = `RESTORE ${user.firstName} to Pending?`;
 
     if(confirm(confirmMsg)) {
       try {
+        // 1. Update Firestore status
         await updateDoc(doc(db, collectionName, user.id), { 
-          verificationStatus: actionType, 
-          verificationDate: new Date(),
+          status: actionType, // Updated to use the new "status" field from Register
+          verificationStatus: actionType, // Kept for backwards compatibility 
+          verificationDate: new Date().toISOString(),
           isVerified: isApprove 
         });
+
+        // 2. Trigger Custom Firebase Email if Approved
+        if (isApprove && user.email) {
+          await addDoc(collection(db, "mail"), {
+            to: user.email,
+            message: {
+              subject: "Account Verified - Welcome to Livelimatch!",
+              html: `
+                <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+                  <h2 style="color: #1e3a8a;">Congratulations ${user.firstName}!</h2>
+                  <p>Your residency in Brgy. Cawayan Bogtong has been successfully verified.</p>
+                  <p>You can now log in to your Livelimatch account and start exploring opportunities.</p>
+                  <br>
+                  <a href="https://livelimatch-portal.web.app/login" style="background-color: #1e3a8a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Log In Now</a>
+                  <br><br>
+                  <p>Welcome aboard,<br><strong>Livelimatch Admin Team</strong></p>
+                </div>
+              `
+            }
+          });
+          alert(`Success! User approved and welcome email sent to ${user.email}.`);
+        } else if (isApprove && !user.email) {
+          alert(`User approved, but no email was found on file to send a notification.`);
+        }
+
       } catch (err) { alert("Error: " + err.message); }
     }
   };
@@ -148,7 +175,6 @@ export default function AdminDashboard() {
     if(confirm("Permanently delete this job?")) await deleteDoc(doc(db, "jobs", jobId));
   };
 
-  // --- NEW: DELETE ANNOUNCEMENT FUNCTION ---
   const handleDeleteAnnouncement = async (annId) => {
     if(confirm("Are you sure you want to delete this announcement?")) {
         try {
@@ -159,7 +185,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- NEW: DELETE TICKET FUNCTION ---
   const handleDeleteTicket = async (ticketId) => {
     if(confirm("Delete this support ticket permanently? This cannot be undone.")) {
         try {
@@ -217,11 +242,11 @@ export default function AdminDashboard() {
   };
 
   // --- STATS LOGIC ---
-  const verifiedApplicants = applicants.filter(u => u.verificationStatus === 'verified').length;
-  const verifiedEmployers = employers.filter(e => e.verificationStatus === 'verified').length;
+  const verifiedApplicants = applicants.filter(u => u.status === 'verified' || u.verificationStatus === 'verified').length;
+  const verifiedEmployers = employers.filter(e => e.status === 'verified' || e.verificationStatus === 'verified').length;
 
-  const pendingAppCount = applicants.filter(u => u.verificationStatus === 'pending' || !u.verificationStatus).length;
-  const pendingEmpCount = employers.filter(e => e.verificationStatus === 'pending' || !e.verificationStatus).length;
+  const pendingAppCount = applicants.filter(u => u.status === 'pending' || u.verificationStatus === 'pending' || (!u.status && !u.verificationStatus)).length;
+  const pendingEmpCount = employers.filter(e => e.status === 'pending' || e.verificationStatus === 'pending' || (!e.status && !e.verificationStatus)).length;
   const openTicketCount = tickets.filter(t => t.status === 'open' || t.status === 'new').length;
 
   const stats = {
@@ -482,7 +507,7 @@ export default function AdminDashboard() {
                         </div>
                         <div className="space-y-5">
                              {PUROK_LIST.map(purok => {
-                                const count = [...applicants, ...employers].filter(u => u.verificationStatus === 'verified' && u.sitio === purok).length;
+                                const count = [...applicants, ...employers].filter(u => (u.status === 'verified' || u.verificationStatus === 'verified') && u.sitio === purok).length;
                                 const total = stats.verifiedApplicants + stats.verifiedEmployers || 1;
                                 const percent = (count / total) * 100;
                                 return (
@@ -720,8 +745,11 @@ export default function AdminDashboard() {
                                             <h3 className={`font-black text-xl truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{user.firstName} {user.lastName}</h3>
                                             <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${user.type === 'employer' ? 'bg-purple-500/20 text-purple-500' : 'bg-blue-500/20 text-blue-500'}`}>{user.type}</span>
                                         </div>
-                                        <p className="text-xs font-bold opacity-50 mt-1 flex items-center gap-1"><MapPinIcon className="w-3 h-3"/> {user.sitio || "No address"}</p>
-                                        <button onClick={() => setSelectedProof(user.residencyProofUrl || user.businessPermitUrl)} className={`mt-4 w-full py-2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold border transition-all ${darkMode ? 'border-white/10 hover:bg-white/5' : 'border-black/5 hover:bg-black/5'}`}>
+                                        <p className="text-[11px] font-bold opacity-60 mt-1 flex items-center gap-1 text-blue-600 dark:text-blue-400"><EnvelopeIcon className="w-3 h-3"/> {user.email || "No Email"}</p>
+                                        <p className="text-[11px] font-bold opacity-50 mt-1 flex items-center gap-1"><MapPinIcon className="w-3 h-3"/> {user.sitio || "No address"}</p>
+                                        
+                                        {/* COHESIVE UPDATE: Updated to check proofOfResidencyUrl from new Register method */}
+                                        <button onClick={() => setSelectedProof(user.proofOfResidencyUrl || user.residencyProofUrl || user.businessPermitUrl)} className={`mt-4 w-full py-2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold border transition-all ${darkMode ? 'border-white/10 hover:bg-white/5' : 'border-black/5 hover:bg-black/5'}`}>
                                             <EyeIcon className="w-4 h-4"/> View ID / Proof
                                         </button>
                                     </div>
@@ -780,7 +808,7 @@ export default function AdminDashboard() {
                     {(activeTab === "Jobs" ? jobs : (activeTab === "Applicants" ? applicants : employers))
                         .filter(item => {
                             if(activeTab === "Jobs") return item.title.toLowerCase().includes(searchTerm.toLowerCase());
-                            return item.verificationStatus === 'verified' && (!sitioFilter || item.sitio === sitioFilter);
+                            return (item.status === 'verified' || item.verificationStatus === 'verified') && (!sitioFilter || item.sitio === sitioFilter);
                         })
                         .map(item => (
                             <div key={item.id} onClick={() => { if(activeTab !== "Jobs") setSelectedUserDetail(item) }} className={`p-6 ${glassCard} ${activeTab !== "Jobs" ? 'cursor-pointer' : ''}`}>
@@ -848,9 +876,15 @@ export default function AdminDashboard() {
                 </div>
                 <div className="w-full space-y-4">
                     <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
-                        <IdentificationIcon className="w-5 h-5 opacity-50"/>
-                        <span className="text-sm font-bold opacity-80">{selectedUserDetail.contact || "No contact info provided"}</span>
+                        <EnvelopeIcon className="w-5 h-5 opacity-50"/>
+                        <span className="text-sm font-bold opacity-80">{selectedUserDetail.email || "No email provided"}</span>
                     </div>
+                    {selectedUserDetail.contact && (
+                        <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
+                            <PhoneIcon className="w-5 h-5 opacity-50"/>
+                            <span className="text-sm font-bold opacity-80">{selectedUserDetail.contact}</span>
+                        </div>
+                    )}
                     {selectedUserDetail.bio && (
                         <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
                             <p className="text-xs font-bold uppercase opacity-40 mb-2">Bio / Description</p>
