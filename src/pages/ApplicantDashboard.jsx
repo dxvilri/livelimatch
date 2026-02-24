@@ -86,7 +86,6 @@ const formatLastSeen = (timestamp) => {
 };
 
 // --- STYLES ---
-// --- STYLES ---
 const glassPanel = (darkMode) => `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
 const glassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out group ${darkMode ? 'text-slate-400 hover:text-blue-400' : 'text-slate-400 hover:text-blue-600'}`;
 const activeGlassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out scale-110 -translate-y-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`;
@@ -197,10 +196,16 @@ export default function ApplicantDashboard() {
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isProfileCategoryDropdownOpen, setIsProfileCategoryDropdownOpen] = useState(false);
+  
+  // New States for Resume
+  const [resumeImageFile, setResumeImageFile] = useState(null);
+  const [resumeDocFile, setResumeDocFile] = useState(null);
+
   const [applicantData, setApplicantData] = useState({
     firstName: "", lastName: "", sitio: "", title: "Job Seeker",
     bio: "", skills: "", education: "", experience: "",
-    verificationStatus: "pending", category: "" 
+    verificationStatus: "pending", category: "",
+    resumeImageUrl: "", resumeFileUrl: ""
   });
 
   // --- RATINGS ---
@@ -287,7 +292,6 @@ export default function ApplicantDashboard() {
     return () => { document.body.style.overflow = ""; };
   }, [isBubbleExpanded, selectedJob, viewingApplication, isRatingEmployerModalOpen, lightboxUrl]);
 
-  // Fetch Employer Contact Info when a Job OR Application is selected
   useEffect(() => {
       const activeItem = selectedJob || viewingApplication;
       if (activeItem && activeItem.employerId) {
@@ -297,9 +301,7 @@ export default function ApplicantDashboard() {
                   if (snap.exists()) {
                       setEmployerContact(snap.data());
                   }
-              } catch (err) {
-                  console.error("Error fetching employer contact:", err);
-              }
+              } catch (err) {}
           };
           fetchEmployerInfo();
       } else {
@@ -310,7 +312,7 @@ export default function ApplicantDashboard() {
   useEffect(() => {
     if (activeTab === "Messages") {
         setIsBubbleVisible(false);
-        setOpenBubbles([]); // Fix: Resets the bubbles completely when entering main Messages Tab
+        setOpenBubbles([]); 
     } else {
         if (typeof setActiveChat === 'function') setActiveChat(null); 
     }
@@ -334,7 +336,6 @@ export default function ApplicantDashboard() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Data fetching effects (same as original)
   useEffect(() => {
     if(activeTab === "FindJobs") {
         const fetchData = async () => {
@@ -458,15 +459,51 @@ export default function ApplicantDashboard() {
       setIsBubbleVisible(false); setIsBubbleExpanded(false); setIsDesktopInboxVisible(false);
   };
 
+  // --- UPDATED: PROFILE SAVING WITH RESUME UPLOADS ---
   const handleSaveProfile = async () => { 
     setLoading(true); 
     try { 
+        let resumeImageUpdate = applicantData.resumeImageUrl || null;
+        let resumeDocUpdate = applicantData.resumeFileUrl || null;
+
+        const storage = getStorage(auth.app);
+
+        // Upload Resume Image if selected
+        if (resumeImageFile) {
+            const fileExt = resumeImageFile.name.split('.').pop();
+            const imgRef = ref(storage, `resumes/${auth.currentUser.uid}_image_${Date.now()}.${fileExt}`);
+            await uploadBytes(imgRef, resumeImageFile);
+            resumeImageUpdate = await getDownloadURL(imgRef);
+        }
+
+        // Upload Resume Doc if selected
+        if (resumeDocFile) {
+            const fileExt = resumeDocFile.name.split('.').pop();
+            const docRef = ref(storage, `resumes/${auth.currentUser.uid}_doc_${Date.now()}.${fileExt}`);
+            await uploadBytes(docRef, resumeDocFile);
+            resumeDocUpdate = await getDownloadURL(docRef);
+        }
+
         await setDoc(doc(db, "applicants", auth.currentUser.uid), { 
-            title: applicantData.title, aboutMe: applicantData.bio, education: applicantData.education, 
-            workExperience: applicantData.experience, category: applicantData.category, updatedAt: serverTimestamp() 
+            title: applicantData.title, 
+            aboutMe: applicantData.bio, 
+            education: applicantData.education, 
+            workExperience: applicantData.experience, 
+            category: applicantData.category, 
+            resumeImageUrl: resumeImageUpdate,
+            resumeFileUrl: resumeDocUpdate,
+            updatedAt: serverTimestamp() 
         }, { merge: true }); 
+        
+        setApplicantData(prev => ({...prev, resumeImageUrl: resumeImageUpdate, resumeFileUrl: resumeDocUpdate}));
         setIsEditingProfile(false); 
-    } catch (err) { alert("Error saving profile: " + err.message); } finally { setLoading(false); } 
+        setResumeImageFile(null);
+        setResumeDocFile(null);
+    } catch (err) { 
+        alert("Error saving profile: " + err.message); 
+    } finally { 
+        setLoading(false); 
+    } 
   };
 
   // Chat & Support
@@ -880,6 +917,12 @@ export default function ApplicantDashboard() {
                 JOB_CATEGORIES={JOB_CATEGORIES}
                 isProfileCategoryDropdownOpen={isProfileCategoryDropdownOpen}
                 setIsProfileCategoryDropdownOpen={setIsProfileCategoryDropdownOpen}
+                // NEW PROPS FOR RESUME FEATURE
+                resumeImageFile={resumeImageFile}
+                setResumeImageFile={setResumeImageFile}
+                resumeDocFile={resumeDocFile}
+                setResumeDocFile={setResumeDocFile}
+                setLightboxUrl={setLightboxUrl}
             />
         )}
 

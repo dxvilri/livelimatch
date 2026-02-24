@@ -11,7 +11,7 @@ import { useNavigate } from "react-router-dom";
 
 export default function Login() {
   const navigate = useNavigate();
-  const [method, setMethod] = useState("email"); // Defaulting to email since it's primary now
+  const [method, setMethod] = useState("email"); // Defaulting to email
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   
@@ -23,21 +23,12 @@ export default function Login() {
   const [otp, setOtp] = useState("");
   const [confirmationResult, setConfirmationResult] = useState(null);
 
-  // --- CLEANUP RECAPTCHA ON UNMOUNT OR METHOD CHANGE ---
+  // --- CLEANUP & RESET ON METHOD CHANGE ---
   useEffect(() => {
-    return () => {
-      clearRecaptcha();
-    };
-  }, [method]);
-
-  // Sync method changes with the input default
-  useEffect(() => {
-    if (method === "phone") {
-        setIdentifier("+63");
-    } else {
-        setIdentifier("");
-    }
+    setIdentifier("");
     setConfirmationResult(null);
+    setOtp("");
+    clearRecaptcha();
   }, [method]);
 
   const clearRecaptcha = () => {
@@ -49,18 +40,16 @@ export default function Login() {
     if (container) container.innerHTML = "";
   };
 
+  // Utility to format input specifically to the expected Firebase Phone string
   const formatPhone = (input) => {
-    let num = input.trim().replace(/\s+/g, '');
-    if (num.startsWith('0')) {
-      return '+63' + num.substring(1);
-    }
-    return num;
+    if (!input) return "";
+    let num = input.replace(/\D/g, ''); // Strip non-digits
+    return "+63" + num;
   };
 
-  // --- UPDATED LOGIC 1: SEARCH THE CORRECT FIELD (EMAIL VS CONTACT) ---
   const checkUserExists = async (contactValue) => {
     const finalIdentifier = method === "phone" ? formatPhone(contactValue) : contactValue;
-    const searchField = method === "email" ? "email" : "contact"; // <-- FIX: Search correct field
+    const searchField = method === "email" ? "email" : "contact";
     
     // Check Applicants
     const qApp = query(collection(db, "applicants"), where(searchField, "==", finalIdentifier));
@@ -74,7 +63,6 @@ export default function Login() {
     return !snapApp.empty || !snapEmp.empty || !snapAdmin.empty;
   };
 
-  // --- UPDATED LOGIC 2: INTERCEPT PENDING STATUS ---
   const routeUserToDashboard = async (uid) => {
     try {
         // 1. Check Admin
@@ -130,7 +118,7 @@ export default function Login() {
 
     window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container-login", { 
         size: "invisible",
-        callback: (response) => {
+        callback: () => {
             console.log("Recaptcha verified");
         },
         "expired-callback": () => {
@@ -151,11 +139,7 @@ export default function Login() {
         return;
       }
       const userCredential = await signInWithEmailAndPassword(auth, identifier, password);
-      
-      // We removed the emailVerified block since we are using Admin approval now
-      
       await routeUserToDashboard(userCredential.user.uid);
-      
     } catch (err) {
       console.error(err);
       alert("Invalid Email or Password.");
@@ -165,9 +149,12 @@ export default function Login() {
 
   const handlePhoneSignIn = async (e) => {
     e.preventDefault();
-    const finalPhone = formatPhone(identifier);
+    if (identifier.length !== 10) {
+        alert("Please enter exactly 10 digits for your phone number.");
+        return;
+    }
 
-    if (finalPhone.length < 12) return alert("Invalid phone number.");
+    const finalPhone = formatPhone(identifier);
     
     setLoading(true);
     try {
@@ -293,28 +280,45 @@ export default function Login() {
                 <form onSubmit={handlePhoneSignIn} className="space-y-5">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 ml-4 uppercase tracking-widest">Phone Number</label>
-                    <input 
-                        type="tel" 
-                        required 
-                        value={identifier}
-                        className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-900 font-bold tracking-wider transition-all" 
-                        onChange={(e) => setIdentifier(e.target.value)} 
-                    />
+                    <div className="flex w-full bg-slate-50 border-2 border-slate-100 rounded-2xl focus-within:border-blue-900 transition-all overflow-hidden">
+                      <div className="px-4 py-4 bg-slate-100 text-slate-500 font-black border-r-2 border-slate-100 flex items-center justify-center">
+                        +63
+                      </div>
+                      <input 
+                          type="tel" 
+                          required 
+                          maxLength="10"
+                          placeholder="9123456789" 
+                          value={identifier}
+                          className="w-full px-4 py-4 bg-transparent outline-none font-bold tracking-wider" 
+                          onChange={(e) => {
+                             const val = e.target.value.replace(/\D/g, '');
+                             setIdentifier(val);
+                          }} 
+                      />
+                    </div>
                   </div>
                   <div id="recaptcha-container-login"></div>
                   
-                  <button disabled={loading} className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-900/30 active:scale-95 transition-all mt-2 hover:bg-blue-800">
+                  <button disabled={loading || identifier.length !== 10} className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-900/30 active:scale-95 transition-all mt-2 hover:bg-blue-800 disabled:opacity-50">
                     {loading ? "Sending..." : "Send Login Code"}
                   </button>
                 </form>
               ) : (
                 <form onSubmit={handleVerifyOtp} className="space-y-6 animate-in fade-in zoom-in duration-300">
-                  <p className="text-center text-xs font-bold text-slate-400">Code sent to <span className="text-blue-900">{identifier}</span></p>
-                  <input type="text" placeholder="000000" maxLength="6" className="w-full px-5 py-5 border-2 border-blue-100 rounded-2xl text-center text-4xl font-black tracking-[0.5em] outline-none focus:border-blue-900 bg-blue-50/30 transition-all text-blue-900" onChange={(e) => setOtp(e.target.value)} />
-                  <button disabled={loading} className="w-full py-5 bg-green-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-green-600/30 active:scale-95 transition-all hover:bg-green-700">
+                  <p className="text-center text-xs font-bold text-slate-400">Code sent to <span className="text-blue-900 font-black">+63 {identifier}</span></p>
+                  <input 
+                      type="text" 
+                      placeholder="000000" 
+                      maxLength="6" 
+                      value={otp}
+                      className="w-full px-5 py-5 border-2 border-blue-100 rounded-2xl text-center text-4xl font-black tracking-[0.5em] outline-none focus:border-blue-900 bg-blue-50/30 transition-all text-blue-900" 
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} 
+                  />
+                  <button disabled={loading || otp.length < 6} className="w-full py-5 bg-green-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-green-600/30 active:scale-95 transition-all hover:bg-green-700 disabled:opacity-50">
                     {loading ? "Verifying..." : "Verify & Login"}
                   </button>
-                  <button type="button" onClick={() => { setConfirmationResult(null); clearRecaptcha(); }} className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600">Change Number</button>
+                  <button type="button" onClick={() => { setConfirmationResult(null); clearRecaptcha(); setOtp(""); }} className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600">Change Number</button>
                 </form>
               )}
             </div>
