@@ -760,13 +760,7 @@ export default function EmployerDashboard() {
 return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
         
-      {!isVerified && (
-        <div className={`fixed top-0 left-0 right-0 h-10 z-[60] flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-white shadow-lg ${employerData.verificationStatus === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`}>
-            {employerData.verificationStatus === 'rejected' 
-              ? "Account Verification Rejected. Please update your profile." 
-              : "Account Pending Verification. Some features are limited."}
-        </div>
-      )}
+      
 
       <style>{`
         .hide-scrollbar::-webkit-scrollbar { display: none; } 
@@ -1182,18 +1176,7 @@ return (
             />
         )}
 
-        {!isVerified && !["Support", "Profile", "Announcements"].includes(activeTab) && (
-            <div className="flex flex-col items-center justify-center h-full min-h-[50vh] animate-in fade-in zoom-in-95">
-                <div className="w-24 h-24 rounded-full bg-red-500/10 flex items-center justify-center mb-6"><LockClosedIcon className="w-10 h-10 text-red-500"/></div>
-                <h2 className={`text-2xl font-black mb-2 uppercase tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>Feature Locked</h2>
-                <p className="text-sm opacity-60 font-medium max-w-xs text-center mb-8">
-                    Your account verification is {employerData.verificationStatus}. Please contact support or update your profile to unlock this feature.
-                </p>
-                <button onClick={() => setActiveTab("Support")} className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95 transition-all">
-                    Contact Support
-                </button>
-            </div>
-        )}
+        
       </main>
 
       {/* MOBILE BOTTOM NAV */}

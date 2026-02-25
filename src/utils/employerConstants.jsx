@@ -23,9 +23,55 @@ export const JOB_TYPES = [
 ];
 
 export const BOT_FAQ = [
-    { id: 1, question: "How do I verify my account?", answer: "To verify your account, please upload a valid Business Permit, Certificate of Residency, Proof of Billing with Address or Government ID in your Profile settings. Admins review this daily." },
-    { id: 2, question: "How to post a job?", answer: "You can post a new job by going to the 'Listings' tab and clicking 'Post New Job' button." },
-    { id: 3, question: "How to delete a job?", answer: "To delete a job, click the Trash icon next to the item in your Listings tab. This action cannot be undone." },
-    { id: 4, question: "Where can I see applicants?", answer: "Go to the 'Applicants' tab to see who applied. You can view their profile, then Accept or Reject them." },
-    { id: 5, question: "How to chat with applicants?", answer: "You can chat with applicants once you accept their application, or by clicking the 'Message' button on their profile in the Discover tab." },
+    { 
+        id: 2, 
+        keywords: ["post", "create", "new job", "hiring", "add job"], 
+        question: "How to post a job?", 
+        answer: "Go to the 'Listings' tab and click the 'Post New Job' button. Fill out the requirements and capacity limits." 
+    },
+    { 
+        id: 3, 
+        keywords: ["delete", "remove", "trash", "cancel job"], 
+        question: "How to delete a job?", 
+        answer: "To delete a job, click the Trash icon next to the item in your 'Listings' tab. Note: This action cannot be undone." 
+    },
+    { 
+        id: 4, 
+        keywords: ["applicants", "who applied", "candidates", "review"], 
+        question: "Where can I see applicants?", 
+        answer: "Go to the 'Applicants' tab to see who applied to your listings. You can view their profiles, then Accept or Reject them." 
+    },
+    { 
+        id: 5, 
+        keywords: ["chat", "message", "contact", "talk", "inbox"], 
+        question: "How to chat with applicants?", 
+        answer: "You can chat with an applicant AFTER you Accept their application, or by clicking the 'Message' button on their profile in the Discover tab." 
+    }
 ];
+
+export const getBotAutoReply = (userInput, faqList) => {
+    if (!userInput) return null;
+    const lowerInput = userInput.toLowerCase().trim();
+
+    // 1. Check for conversational greetings/thanks first
+    const greetings = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "bot"];
+    const thanks = ["thank you", "thanks", "salamat", "ok", "okay", "alright"];
+
+    if (greetings.includes(lowerInput)) {
+        return "🤖 Hello! I am the LiveliMatch Support Bot. How can I help you today? You can ask me about verifications, posting jobs, or managing applicants.";
+    }
+    if (thanks.includes(lowerInput)) {
+        return "🤖 You're very welcome! Let me know if you need help with anything else.";
+    }
+
+    // 2. Check against FAQ keywords
+    const matchedFAQs = faqList.filter(faq => 
+        faq.keywords?.some(keyword => lowerInput.includes(keyword))
+    );
+
+    if (matchedFAQs.length > 0) {
+        return matchedFAQs.map(faq => `🤖 **${faq.question}**\n${faq.answer}`).join("\n\n");
+    }
+    
+    return null; 
+};

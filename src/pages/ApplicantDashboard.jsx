@@ -41,6 +41,7 @@ import RatingsTab from "../components/dashboard/applicant/RatingsTab";
 import SupportTab from "../components/dashboard/applicant/SupportTab";
 import AnnouncementsTab from "../components/dashboard/applicant/AnnouncementsTab";
 import RateEmployerModal from "../components/dashboard/applicant/RateEmployerModal";
+import { BOT_FAQ, getBotAutoReply } from "../utils/applicantConstants";
 
 // --- CONSTANTS ---
 const PUROK_LIST = [ "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary" ];
@@ -59,14 +60,6 @@ const JOB_TYPES = [
   { id: "Part-time", icon: <ClockIcon className="w-5 h-5"/>, color: "text-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/20" },
   { id: "Contract", icon: <CalendarDaysIcon className="w-5 h-5"/>, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
   { id: "One-time", icon: <BoltIcon className="w-5 h-5"/>, color: "text-green-500", bg: "bg-green-500/10", border: "border-green-500/20" }
-];
-
-const BOT_FAQ = [
-    { id: 1, question: "How do I verify my account?", answer: "To verify your account, please upload a Certificate of Residency, Proof of Billing with Address or Government ID in your Profile settings. Admins review this daily." },
-    { id: 2, question: "How to apply for a job?", answer: "Go to 'Find Jobs', click a job card to view details, then click the 'Apply Now' button." },
-    { id: 3, question: "Can I withdraw an application?", answer: "Yes. Go to the 'Applications' tab, find the job, and click the Trash/Withdraw icon." },
-    { id: 4, question: "How to chat with employers?", answer: "You can only message an employer once they accept your application, or if they message you first." },
-    { id: 5, question: "How to save a job?", answer: "Click the Bookmark icon on any job card to save it for later in the 'Saved' tab." },
 ];
 
 const getAvatarUrl = (user) => user?.profilePic || user?.photoURL || user?.avatar || user?.image || null;
@@ -634,7 +627,9 @@ export default function ApplicantDashboard() {
       e.preventDefault();
       if (!ticketMessage.trim() && !supportAttachment) return;
       const now = Date.now();
+      
       if (!activeSupportTicket && (now - lastTicketCreatedAt < 5 * 60 * 1000)) return alert(`Please wait before opening a new ticket.`);
+      
       setIsSupportUploading(true);
       try {
           let imageUrl = null;
@@ -644,19 +639,58 @@ export default function ApplicantDashboard() {
              const uploadTask = await uploadBytes(storageRef, supportAttachment);
              imageUrl = await getDownloadURL(uploadTask.ref);
           }
-          const msgObj = { sender: 'user', text: ticketMessage, imageUrl: imageUrl || null, timestamp: new Date() };
+          
+          // 1. Create the user's message object
+          const userMsgObj = { sender: 'user', text: ticketMessage, imageUrl: imageUrl || null, timestamp: new Date() };
+          
+          // 2. Prepare the array of messages to save
+          const messagesToSave = [userMsgObj];
+
+          // 3. Check for keywords using the helper
+          const botReplyText = getBotAutoReply(ticketMessage, BOT_FAQ);
+          
+          // 4. If triggered, append the bot's response
+          if (botReplyText) {
+              messagesToSave.push({
+                  sender: 'admin', 
+                  text: botReplyText, 
+                  timestamp: new Date()
+              });
+          }
+
           if (activeSupportTicket) {
-              await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), { messages: arrayUnion(msgObj), lastUpdated: serverTimestamp(), status: 'open' });
+              await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), { 
+                  messages: arrayUnion(...messagesToSave), 
+                  lastUpdated: serverTimestamp(), 
+                  status: 'open' 
+              });
           } else {
               const ticketIdString = Math.floor(1000 + Math.random() * 9000).toString();
-              const newTicketRef = await addDoc(collection(db, "support_tickets"), { ticketId: ticketIdString, user: displayName, userId: auth.currentUser.uid, type: 'Applicant', status: 'open', lastUpdated: serverTimestamp(), messages: [msgObj] });
+              const newTicketRef = await addDoc(collection(db, "support_tickets"), { 
+                  ticketId: ticketIdString, 
+                  user: displayName, 
+                  userId: auth.currentUser.uid, 
+                  type: 'Applicant', 
+                  status: 'open', 
+                  lastUpdated: serverTimestamp(), 
+                  messages: messagesToSave 
+              });
               setLastTicketCreatedAt(now);
               const newTicketSnap = await getDoc(newTicketRef);
               setActiveSupportTicket({ id: newTicketRef.id, ...newTicketSnap.data() });
           }
-          setTicketMessage(""); setSupportAttachment(null); if(supportFileRef.current) supportFileRef.current.value = ""; 
-      } catch (err) {} finally { setIsSupportUploading(false); }
+          
+          setTicketMessage(""); 
+          setSupportAttachment(null); 
+          if(supportFileRef.current) supportFileRef.current.value = ""; 
+
+      } catch (err) {
+          console.error(err);
+      } finally { 
+          setIsSupportUploading(false); 
+      }
   };
+  
   const handleCloseSupportTicket = async (id) => { if(!confirm("Close ticket?")) return; await updateDoc(doc(db, "support_tickets", id), { status: 'closed', lastUpdated: serverTimestamp() }); setActiveSupportTicket(null); setIsSupportOpen(false); };
   const handleDeleteTicket = async (id) => { if(confirm("Delete permanently?")) { await deleteDoc(doc(db, "support_tickets", id)); if(activeSupportTicket?.id === id) { setActiveSupportTicket(null); setIsSupportOpen(false); } } };
 
@@ -705,12 +739,6 @@ export default function ApplicantDashboard() {
       
       <style>{`.hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } .animate-content { animation: content-wipe 0.4s cubic-bezier(0.16, 1, 0.3, 1); } @keyframes content-wipe { 0% { opacity: 0; transform: translateY(10px) scale(0.99); } 100% { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
 
-      {/* Verification Banner */}
-      {!isVerified && (
-        <div className={`fixed top-0 left-0 right-0 h-10 z-[60] flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-white shadow-lg ${applicantData.verificationStatus === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`}>
-            {applicantData.verificationStatus === 'rejected' ? "Account Verification Rejected. Update profile." : "Account Pending Verification. Features limited."}
-        </div>
-      )}
 
 
       {/* Header */}
@@ -1014,13 +1042,6 @@ export default function ApplicantDashboard() {
             <AnnouncementsTab announcements={announcements} darkMode={darkMode} />
         )}
 
-        {!isVerified && !["Support", "Profile", "Announcements"].includes(activeTab) && (
-            <div className="flex flex-col items-center justify-center h-full min-h-[50vh] animate-in fade-in zoom-in-95">
-                <div className="w-24 h-24 rounded-full bg-red-500/10 flex items-center justify-center mb-6"><LockClosedIcon className="w-10 h-10 text-red-500"/></div>
-                <h2 className={`text-2xl font-black mb-2 uppercase tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>Feature Locked</h2>
-                <button onClick={() => setActiveTab("Support")} className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-blue-500 shadow-lg">Contact Support</button>
-            </div>
-        )}
 
       </main>
 
