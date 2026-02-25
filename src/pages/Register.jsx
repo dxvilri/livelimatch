@@ -39,7 +39,7 @@ export default function Register() {
     password: "",
     phoneNumber: "", 
     firstName: "",
-    middleName: "", // <-- NEW FIELD
+    middleName: "",
     lastName: "",
     sitio: "", 
     businessName: "",
@@ -64,6 +64,14 @@ export default function Register() {
     return "+63" + num;
   };
 
+  const capitalizeName = (str) => {
+    if (!str) return "";
+    return str
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+  };
+
   const checkDuplicate = async (field, value) => {
     const qApp = query(collection(db, "applicants"), where(field, "==", value));
     const qEmp = query(collection(db, "employers"), where(field, "==", value));
@@ -71,11 +79,13 @@ export default function Register() {
     return !snapApp.empty || !snapEmp.empty;
   };
 
-  // --- DUPLICATE NAME CHECK (First + Middle + Last) ---
+  // --- DUPLICATE NAME CHECK (Robust: Removes spaces and ignores caps) ---
   const checkNameExists = async () => {
-    const fName = formData.firstName.trim().toLowerCase();
-    const mName = formData.middleName.trim().toLowerCase();
-    const lName = formData.lastName.trim().toLowerCase();
+    const normalizeName = (name) => (name || "").replace(/\s+/g, '').toLowerCase();
+
+    const fName = normalizeName(formData.firstName);
+    const mName = normalizeName(formData.middleName);
+    const lName = normalizeName(formData.lastName);
     
     const [appSnap, empSnap] = await Promise.all([
       getDocs(collection(db, "applicants")),
@@ -86,11 +96,10 @@ export default function Register() {
 
     const evaluateDoc = (doc) => {
       const data = doc.data();
-      const dataFName = (data.firstName || "").trim().toLowerCase();
-      const dataMName = (data.middleName || "").trim().toLowerCase();
-      const dataLName = (data.lastName || "").trim().toLowerCase();
+      const dataFName = normalizeName(data.firstName);
+      const dataMName = normalizeName(data.middleName);
+      const dataLName = normalizeName(data.lastName);
 
-      // If all three match exactly (and they aren't already rejected), flag as duplicate
       if (dataFName === fName && dataMName === mName && dataLName === lName && data.status !== 'rejected') {
           duplicateFound = true;
       }
@@ -231,6 +240,11 @@ export default function Register() {
     const userUid = userObj.uid;
     const finalPhone = formData.phoneNumber ? formatPhone(formData.phoneNumber) : "";
 
+    // Capitalize names before saving
+    const formattedFirstName = capitalizeName(formData.firstName.trim());
+    const formattedMiddleName = capitalizeName(formData.middleName.trim());
+    const formattedLastName = capitalizeName(formData.lastName.trim());
+
     try {
         // Upload All Selected Files to Firebase Storage
         const uploadedUrls = [];
@@ -250,9 +264,9 @@ export default function Register() {
             role: role,
             email: formData.email,
             contact: finalPhone || "",
-            firstName: formData.firstName.trim(),
-            middleName: formData.middleName.trim(), // Saves the middle name!
-            lastName: formData.lastName.trim(),
+            firstName: formattedFirstName,
+            middleName: formattedMiddleName, 
+            lastName: formattedLastName,
             sitio: formData.sitio,
             proofOfResidencyUrls: uploadedUrls,
             proofOfResidencyUrl: uploadedUrls[0],
@@ -267,7 +281,7 @@ export default function Register() {
                 subject: "Registration Received - Livelimatch Verification",
                 html: `
                     <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
-                        <h2 style="color: #1e3a8a;">Hello ${formData.firstName},</h2>
+                        <h2 style="color: #1e3a8a;">Hello ${formattedFirstName},</h2>
                         <p>We received your registration for the Brgy. Cawayan Bogtong Livelimatch portal.</p>
                         <p>Your account is currently <strong style="color: #ea580c;">PENDING</strong>. Our admin will verify your proof of residency within 1 to 3 working days.</p>
                         <p>We will send you another email as soon as your account is approved.</p>
@@ -397,8 +411,8 @@ export default function Register() {
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 ml-4 uppercase tracking-widest">Middle Name (Optional)</label>
-                        <input name="middleName" placeholder="Reyes" value={formData.middleName} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-900 transition-all font-medium" onChange={handleInputChange} />
+                        <label className="text-[10px] font-black text-slate-400 ml-4 uppercase tracking-widest">Middle Name *</label>
+                        <input name="middleName" required placeholder="Reyes" value={formData.middleName} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-900 transition-all font-medium" onChange={handleInputChange} />
                       </div>
 
                       <div className="space-y-1 mt-2">
