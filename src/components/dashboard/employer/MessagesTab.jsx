@@ -14,11 +14,12 @@ const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) =>
 
     const onTouchStart = (e) => {
         const touch = e.targetTouches[0];
-        setTouchStartPos({ x: touch.clientX, y: touch.clientY });
+        const clientY = touch.clientY; // Capture the Y position
+        setTouchStartPos({ x: touch.clientX, y: clientY });
         isSwiping.current = false;
         pressTimer.current = setTimeout(() => {
-            if (!isSwiping.current) onLongPress();
-        }, 400); // 400ms hold for mobile menu
+            if (!isSwiping.current) onLongPress(clientY); // Pass it down
+        }, 400); 
     };
 
     const onTouchMove = (e) => {
@@ -63,14 +64,43 @@ const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) =>
 
 export default function MessagesTab({ 
     chatStatus, unsendMessage, deleteChat, togglePinMessage, myProfileImage,
-    isMobile, activeChat, conversations, openChat, closeChat, sendMessage, messages, setActiveChat, currentUser, adminUser, darkMode, setLightboxUrl, onMinimize, isChatMinimized, setIsChatMinimized, isBubbleVisible, setIsBubbleVisible, openBubbles, setOpenBubbles, activeBubbleView, setActiveBubbleView, markConversationAsRead, bubbleSearch, setBubbleSearch, isDesktopInboxVisible, setIsDesktopInboxVisible, chatSearch, setChatSearch, newMessage, setNewMessage, attachment, setAttachment, isUploading, replyingTo, setReplyingTo, chatFileRef, bubbleFileRef, scrollRef, handleSendMessageWrapper, handleFileSelect, formatTime, getAvatarUrl, isChatOptionsOpen, setIsChatOptionsOpen
+    isMobile, activeChat, conversations, openChat, closeChat, sendMessage, messages, setActiveChat, currentUser, adminUser, darkMode, setLightboxUrl, onMinimize, isChatMinimized, setIsChatMinimized, isBubbleVisible, setIsBubbleVisible, openBubbles, setOpenBubbles, activeBubbleView, setActiveBubbleView, markConversationAsRead, bubbleSearch, setBubbleSearch, isDesktopInboxVisible, setIsDesktopInboxVisible, chatSearch, setChatSearch, scrollRef, formatTime, getAvatarUrl, isChatOptionsOpen, setIsChatOptionsOpen
 }) {
     const [activeMenuId, setActiveMenuId] = useState(null); 
+    const [menuPosition, setMenuPosition] = useState('top');
+
+    // --- NATIVE LOCAL STATE FOR CHAT INPUT ---
+    const [newMessage, setNewMessage] = useState("");
+    const [attachment, setAttachment] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [replyingTo, setReplyingTo] = useState(null);
+    const chatFileRef = useRef(null);
     
+    // Force context menus & chat options to close when changing chats
     useEffect(() => {
         setIsChatOptionsOpen(false);
         setActiveMenuId(null);
+        setReplyingTo(null);
     }, [activeChat?.id, setIsChatOptionsOpen]);
+
+    // --- NATIVE SEND HANDLER ---
+    const handleSend = async (e) => {
+        e.preventDefault();
+        if ((!newMessage.trim() && !attachment) || isUploading) return;
+        
+        setIsUploading(true);
+        try {
+            await sendMessage(newMessage, attachment, replyingTo);
+            setNewMessage("");
+            setAttachment(null);
+            setReplyingTo(null);
+            if (chatFileRef.current) chatFileRef.current.value = "";
+        } catch (err) {
+            console.error("Error sending message:", err);
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
     const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
     const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
@@ -198,12 +228,24 @@ export default function MessagesTab({
                                 if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
                                 
                                 return (
-                                    <SwipeableMessage key={msg.id} isMe={isMe} isMobile={isMobile} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} onLongPress={() => setActiveMenuId(msg.id)}>
+                                    <SwipeableMessage 
+                                        key={msg.id} 
+                                        isMe={isMe} 
+                                        isMobile={isMobile} 
+                                        onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} 
+                                        onLongPress={(clientY) => { 
+                                            setMenuPosition(clientY < 250 ? 'bottom' : 'top'); 
+                                            setActiveMenuId(msg.id); 
+                                        }}
+                                    >
                                         <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group/msg relative w-full`}>
                                             
                                             {msg.replyTo && (
                                                 <div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}>
-                                                    <ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.isUnsent ? "Message unsent" : (msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text)}</span>
+                                                    <ArrowUturnLeftIcon className="w-3 h-3"/>
+                                                    <span className="truncate">
+                                                        {msg.replyTo.isUnsent ? "Message unsent" : (msg.replyTo.fileType === 'image' ? 'Image' : msg.replyTo.fileType === 'video' ? 'Video' : msg.replyTo.text)}
+                                                    </span>
                                                 </div>
                                             )}
                                             
@@ -240,7 +282,12 @@ export default function MessagesTab({
                                                         <ArrowUturnLeftIcon className="w-3.5 h-3.5"/>
                                                     </button>
                                                     <div className="relative">
-                                                        <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700' : 'text-slate-500 bg-white hover:bg-slate-100'}`} title="More">
+                                                        <button onClick={(e) => {
+                                                            e.stopPropagation(); 
+                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                            setMenuPosition(rect.top < 250 ? 'bottom' : 'top');
+                                                            setActiveMenuId(activeMenuId === msg.id ? null : msg.id);
+                                                        }} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700' : 'text-slate-500 bg-white hover:bg-slate-100'}`} title="More">
                                                             <EllipsisVerticalIcon className="w-3.5 h-3.5"/>
                                                         </button>
                                                     </div>
@@ -248,7 +295,7 @@ export default function MessagesTab({
                                             )}
 
                                             {activeMenuId === msg.id && (
-                                                <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-12' : 'left-12'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+                                                <div className={`absolute z-50 ${menuPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'} ${isMe ? 'right-12' : 'left-12'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                                                     <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
                                                     <button onClick={(e) => {e.stopPropagation(); if(togglePinMessage) togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-600 dark:text-yellow-400' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
                                                     {isMe && !msg.isUnsent && (
@@ -289,20 +336,20 @@ export default function MessagesTab({
                                         {attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}
                                         <span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span>
                                     </div>
-                                    <button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
+                                    <button onClick={() => {setAttachment(null); if (chatFileRef.current) chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
                                 </div>
                             )}
 
-                            <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-end">
-                                <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
-                                <button type="button" onClick={() => chatFileRef.current.click()} className={`p-3 rounded-xl transition-colors ${darkMode ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'}`}>
+                            <form onSubmit={handleSend} className="flex gap-2 items-end">
+                                <input type="file" ref={chatFileRef} onChange={(e) => setAttachment(e.target.files[0])} className="hidden" />
+                                <button type="button" onClick={() => chatFileRef.current?.click()} className={`p-3 rounded-xl transition-colors ${darkMode ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'}`}>
                                     <PaperClipIcon className="w-5 h-5"/>
                                 </button>
                                 
                                 <div className={`flex-1 rounded-xl flex items-center px-4 py-3 border transition-all ${darkMode ? 'bg-slate-800 border-transparent focus-within:border-blue-500' : 'bg-white border-slate-200 focus-within:border-blue-300 shadow-inner'}`}>
                                     <textarea 
                                         value={newMessage} onChange={e => setNewMessage(e.target.value)} 
-                                        onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessageWrapper(e); } }} 
+                                        onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }} 
                                         placeholder="Type a message..." 
                                         className="w-full bg-transparent outline-none text-sm font-medium resize-none max-h-24 no-scrollbar" 
                                         rows={1} 

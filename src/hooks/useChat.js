@@ -18,7 +18,6 @@ export const useChat = (currentUser, isMobile) => {
   const [isBubbleExpanded, setIsBubbleExpanded] = useState(false);
   const [activeBubbleView, setActiveBubbleView] = useState('inbox');
   
-  // NEW: Holds the absolute latest data (name/pic) of the person you're chatting with
   const [otherUserData, setOtherUserData] = useState(null);
   const [chatStatus, setChatStatus] = useState({ isOnline: false, lastSeen: null });
   const scrollRef = useRef(null);
@@ -27,15 +26,46 @@ export const useChat = (currentUser, isMobile) => {
   useEffect(() => {
     if (!currentUser) return;
     const q = query(collection(db, "conversations"), where("participants", "array-contains", currentUser.uid));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const convos = snap.docs.map(d => {
+    
+    const unsubscribe = onSnapshot(q, async (snap) => {
+      // FIX: Dynamically fetch missing names and profile pics for all conversations
+      const convos = await Promise.all(snap.docs.map(async (d) => {
         const data = d.data();
         const otherId = data.participants.find(p => p !== currentUser.uid);
-        return { id: d.id, ...data, otherId };
-      });
+        
+        let name = data.names?.[otherId];
+        let profilePic = data.profilePics?.[otherId];
+        
+        // If data is missing from the conversation document, fetch it dynamically!
+        if (!name || !profilePic) {
+            try {
+                let userSnap = await getDoc(doc(db, "applicants", otherId));
+                if (!userSnap.exists()) {
+                    userSnap = await getDoc(doc(db, "employers", otherId));
+                }
+                if (userSnap.exists()) {
+                    const uData = userSnap.data();
+                    if (!name) name = `${uData.firstName || ""} ${uData.lastName || ""}`.trim() || uData.companyName || "User";
+                    if (!profilePic) profilePic = uData.profilePic || uData.photoURL || uData.logo || null;
+                }
+            } catch (err) {
+                console.error("Failed to fetch user details for chat", err);
+            }
+        }
+        
+        return { 
+            id: d.id, 
+            ...data, 
+            otherId,
+            names: { ...(data.names || {}), [otherId]: name || "User" },
+            profilePics: { ...(data.profilePics || {}), [otherId]: profilePic || null }
+        };
+      }));
+      
       convos.sort((a, b) => (b.lastTimestamp?.seconds || 0) - (a.lastTimestamp?.seconds || 0));
       setConversations(convos);
     });
+    
     return () => unsubscribe();
   }, [currentUser]);
 
@@ -57,42 +87,54 @@ export const useChat = (currentUser, isMobile) => {
        updateDoc(doc(db, "conversations", chatId), { [`unread_${currentUser.uid}`]: 0 }).catch(() => {});
     }
 
-    // Fetch Messages
+   // Fetch Messages
     const qChat = query(collection(db, "messages"), where("chatId", "==", chatId));
     const unsubChat = onSnapshot(qChat, (snap) => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      msgs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      
+      // FIX: Sort ascending (oldest to newest) AND handle Firebase's temporary null timestamps 
+      // by defaulting them to Date.now() so they instantly appear at the bottom!
+      msgs.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis?.() || Date.now();
+          const timeB = b.createdAt?.toMillis?.() || Date.now();
+          return timeA - timeB;
+      });
+      
       setMessages(msgs);
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
 
-    // --- FIX: FETCH LIVE NAME AND PICTURE ---
-    // We check both collections because we don't know if the other user is an Employer or Applicant
+    // --- FIX: FETCH LIVE NAME, PICTURE AND SUPPORT EMPLOYERS ---
+    let unsubStatus = () => {};
+
     const fetchUserData = async () => {
         let userSnap = await getDoc(doc(db, "applicants", effectiveActiveChatId));
+        let collectionName = "applicants";
+        
         if (!userSnap.exists()) {
             userSnap = await getDoc(doc(db, "employers", effectiveActiveChatId));
+            collectionName = "employers";
         }
         
         if (userSnap.exists()) {
             const data = userSnap.data();
             setOtherUserData({
                 id: effectiveActiveChatId,
-                name: `${data.firstName || ""} ${data.lastName || ""}`.trim() || "User",
-                profilePic: data.profilePic || null,
+                name: `${data.firstName || ""} ${data.lastName || ""}`.trim() || data.companyName || "User",
+                profilePic: data.profilePic || data.photoURL || data.logo || null,
                 isOnline: data.isOnline,
                 lastSeen: data.lastSeen
             });
             setChatStatus({ isOnline: data.isOnline, lastSeen: data.lastSeen });
+            
+            // Listen to the CORRECT collection for real-time status updates
+            unsubStatus = onSnapshot(doc(db, collectionName, effectiveActiveChatId), (snap) => {
+                if(snap.exists()) setChatStatus({ isOnline: snap.data().isOnline, lastSeen: snap.data().lastSeen });
+            });
         }
     };
 
     fetchUserData();
-    
-    // Also listen for real-time status updates (online/offline)
-    const unsubStatus = onSnapshot(doc(db, "applicants", effectiveActiveChatId), (snap) => {
-        if(snap.exists()) setChatStatus({ isOnline: snap.data().isOnline, lastSeen: snap.data().lastSeen });
-    });
 
     return () => { unsubChat(); unsubStatus(); };
   }, [effectiveActiveChatId, isChatMinimized, isBubbleVisible, isBubbleExpanded, currentUser, isMobile]);
@@ -168,7 +210,7 @@ export const useChat = (currentUser, isMobile) => {
     activeChat, setActiveChat, messages, conversations, openBubbles, setOpenBubbles,
     isBubbleVisible, setIsBubbleVisible, isChatMinimized, setIsChatMinimized,
     isBubbleExpanded, setIsBubbleExpanded, activeBubbleView, setActiveBubbleView,
-    chatStatus, scrollRef, effectiveActiveChatId, otherUserData, // <-- Exported otherUserData
+    chatStatus, scrollRef, effectiveActiveChatId, otherUserData, 
     sendMessage, openChat, closeChat, 
     unsendMessage, deleteChat 
   };

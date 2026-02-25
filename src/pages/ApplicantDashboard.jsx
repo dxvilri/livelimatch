@@ -897,6 +897,7 @@ export default function ApplicantDashboard() {
                 openChat={openChat}
                 closeChat={closeChat}
                 sendMessage={sendMessage}
+                unsendMessage={chat.unsendMessage}
                 messages={messages}
                 setActiveChat={setActiveChat}
                 currentUser={auth.currentUser}
@@ -945,6 +946,7 @@ export default function ApplicantDashboard() {
                 getAvatarUrl={getAvatarUrl}
                 isChatOptionsOpen={isChatOptionsOpen}
                 setIsChatOptionsOpen={setIsChatOptionsOpen}
+                
             />
         )}
 

@@ -1130,6 +1130,7 @@ return (
                 openChat={openChat}
                 closeChat={closeChat}
                 sendMessage={sendMessage}
+                unsendMessage={chat.unsendMessage}
                 messages={messages}
                 setActiveChat={setActiveChat}
                 currentUser={auth.currentUser}
@@ -1178,7 +1179,6 @@ return (
                 getAvatarUrl={getAvatarUrl}
                 isChatOptionsOpen={isChatOptionsOpen}
                 setIsChatOptionsOpen={setIsChatOptionsOpen}
-                unsendMessage={unsendMessage}
             />
         )}
 
