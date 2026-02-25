@@ -30,7 +30,7 @@ import {
   BellIcon, QuestionMarkCircleIcon, IdentificationIcon, LockClosedIcon,
   MegaphoneIcon, CpuChipIcon, TagIcon, StarIcon as StarIconOutline,
   Cog8ToothIcon, HomeIcon, UserGroupIcon, WrenchScrewdriverIcon, BookmarkIcon, Bars3BottomRightIcon,
-  EllipsisVerticalIcon
+  EllipsisVerticalIcon, ArrowDownTrayIcon
 } from "@heroicons/react/24/outline";
 
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
@@ -230,13 +230,21 @@ export default function EmployerDashboard() {
   const [modalApplicant, setModalApplicant] = useState(null); 
   const [modalJob, setModalJob] = useState(null); 
   const [modalLoading, setModalLoading] = useState(false);
+
+  // -- NEW STATE FOR PROFILE/RESUME SWITCH --
+  const [modalSubTab, setModalSubTab] = useState("details"); // 'details' | 'resume'
+  
+  // Reset modalSubTab when opening a modal
+  useEffect(() => {
+      if (selectedTalent || selectedApplication) setModalSubTab("details");
+  }, [selectedTalent, selectedApplication]);
   
   // --- JOB MODAL STATES ---
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false); 
   const [isJobCategoryDropdownOpen, setIsJobCategoryDropdownOpen] = useState(false); 
-  const [jobForm, setJobForm] = useState({ title: "", sitio: "", salary: "", type: "Full-time", description: "", category: "" }); 
+  const [jobForm, setJobForm] = useState({ title: "", sitio: "", salary: "", type: "Full-time", description: "", category: "", capacity: "" });
   
   // --- PROFILE STATES ---
   const [profileImage, setProfileImage] = useState(null);
@@ -245,7 +253,6 @@ export default function EmployerDashboard() {
   const fileInputRef = useRef(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   
-  // NEW: Initialize with structured array and object for experience/education
   const [employerData, setEmployerData] = useState({ 
       firstName: "", lastName: "", sitio: "", title: "Employer", contact: "", 
       aboutMe: "", 
@@ -362,9 +369,11 @@ export default function EmployerDashboard() {
      }
      if(activeTab === "Ratings") {
          const fetchReviews = () => {
-             const q = query(collection(db, "reviews"), where("employerId", "==", auth.currentUser.uid), orderBy("createdAt", "desc"));
+             const q = query(collection(db, "reviews"), where("employerId", "==", auth.currentUser.uid));
              const unsub = onSnapshot(q, (snap) => {
-                 const revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                 let revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                 revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                 
                  setReviews(revs);
                  if(revs.length > 0) {
                      const total = revs.reduce((acc, curr) => acc + (Number(curr.rating) || 0), 0);
@@ -391,7 +400,6 @@ export default function EmployerDashboard() {
         if (data.profilePic && !isEditingImage) setProfileImage(data.profilePic);
         if (data.imgScale) setImgScale(data.imgScale);
         
-        // NEW: Map legacy strings safely into objects and arrays
         const parsedEducation = typeof data.education === 'object' && data.education !== null 
             ? { primary: data.education.primary || "", secondary: data.education.secondary || "", college: data.education.college || "" } 
             : { primary: "", secondary: "", college: typeof data.education === 'string' ? data.education : "" };
@@ -416,11 +424,6 @@ export default function EmployerDashboard() {
     });
     return () => { unsubProfile(); setDoc(userRef, { isOnline: false, lastSeen: serverTimestamp() }, { merge: true }).catch(console.error); };
   }, [auth.currentUser, userData, isEditingImage]);
-
-  useEffect(() => {
-    localStorage.setItem("theme", darkMode ? "dark" : "light");
-    document.documentElement.classList.toggle('dark', darkMode);
-  }, [darkMode]);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -588,7 +591,6 @@ export default function EmployerDashboard() {
     }
   };
 
-  // NEW: Updated Save Profile to handle structured data and image uploads together
   const handleSaveProfile = async () => {
     setLoading(true);
     try {
@@ -602,7 +604,6 @@ export default function EmployerDashboard() {
             updatedProfilePicUrl = await getDownloadURL(uploadTask.ref);
         }
 
-        // Clean out empty inputs from the array
         const cleanExperience = (employerData.workExperience || []).filter(e => e.trim() !== "");
 
         await setDoc(doc(db, "employers", auth.currentUser.uid), {
@@ -627,24 +628,34 @@ export default function EmployerDashboard() {
     if (!isVerified) return alert("Your account is pending verification. You cannot post jobs yet.");
     if (job) {
       setEditingJobId(job.id);
-      setJobForm({ title: job.title, sitio: job.sitio || "", salary: job.salary, type: job.type, description: job.description, category: job.category || "" });
+      setJobForm({ title: job.title, sitio: job.sitio || "", salary: job.salary, type: job.type, description: job.description, category: job.category || "", capacity: job.capacity || "" });
     } else {
       setEditingJobId(null);
-      setJobForm({ title: "", sitio: "", salary: "", type: "Full-time", description: "", category: "" });
+      setJobForm({ title: "", sitio: "", salary: "", type: "Full-time", description: "", category: "", capacity: "" });
     }
     setIsJobModalOpen(true); setIsLocationDropdownOpen(false); setIsJobCategoryDropdownOpen(false);
   };
 
   const handleSaveJob = async () => {
     if (!jobForm.title || !jobForm.salary) return alert("Title and Salary are required.");
+    if (!jobForm.category) return alert("Category is required.");
     setLoading(true);
     try {
       const jobData = {
-        ...jobForm, employerId: auth.currentUser.uid, employerName: `${employerData.firstName} ${employerData.lastName}`, 
-        employerLogo: profileImage || "", updatedAt: serverTimestamp(), status: "active"
+        ...jobForm, 
+        capacity: Number(jobForm.capacity) || 0, // 0 means unlimited
+        employerId: auth.currentUser.uid, 
+        employerName: `${employerData.firstName} ${employerData.lastName}`, 
+        employerLogo: profileImage || "", 
+        updatedAt: serverTimestamp(), 
+        status: "active"
       };
-      if (editingJobId) await updateDoc(doc(db, "jobs", editingJobId), jobData);
-      else await addDoc(collection(db, "jobs"), { ...jobData, createdAt: serverTimestamp() });
+      if (editingJobId) {
+          await updateDoc(doc(db, "jobs", editingJobId), jobData);
+      } else {
+          jobData.applicationCount = 0; // Initialize counter for applicants
+          await addDoc(collection(db, "jobs"), { ...jobData, createdAt: serverTimestamp() });
+      }
       setIsJobModalOpen(false); setActiveTab("Listings");
     } catch (err) { alert("Error saving job: " + err.message); } 
     finally { setLoading(false); }
@@ -673,6 +684,15 @@ export default function EmployerDashboard() {
     setLoading(true);
     try {
       await updateDoc(doc(db, "applications", appId), { status: newStatus, isReadByApplicant: false });
+      
+      // Free up a capacity slot if the applicant is rejected
+      if (newStatus === 'rejected') {
+          const appDoc = await getDoc(doc(db, "applications", appId));
+          if (appDoc.exists() && appDoc.data().jobId) {
+              await updateDoc(doc(db, "jobs", appDoc.data().jobId), { applicationCount: increment(-1) });
+          }
+      }
+
       if (selectedApplication?.id === appId) setSelectedApplication(prev => ({ ...prev, status: newStatus }));
     } catch (err) { alert("Error updating status: " + err.message); } finally { setLoading(false); }
   };
@@ -680,7 +700,15 @@ export default function EmployerDashboard() {
   const handleDeleteApplication = async (appId) => {
     if (!window.confirm("Delete this application?")) return;
     setLoading(true);
-    try { await deleteDoc(doc(db, "applications", appId)); if (selectedApplication?.id === appId) setSelectedApplication(null); } catch (err) { alert("Error deleting: " + err.message); } finally { setLoading(false); }
+    try { 
+        // Free up a capacity slot if deleted directly without being withdrawn/rejected first
+        const appDoc = await getDoc(doc(db, "applications", appId));
+        if (appDoc.exists() && appDoc.data().jobId && appDoc.data().status !== 'rejected' && appDoc.data().status !== 'withdrawn') {
+            await updateDoc(doc(db, "jobs", appDoc.data().jobId), { applicationCount: increment(-1) });
+        }
+        await deleteDoc(doc(db, "applications", appId)); 
+        if (selectedApplication?.id === appId) setSelectedApplication(null); 
+    } catch (err) { alert("Error deleting: " + err.message); } finally { setLoading(false); }
   };
   
   const handleSubmitApplicantRating = async (ratingData) => {
@@ -702,7 +730,6 @@ export default function EmployerDashboard() {
      localStorage.setItem("lastReadAnnounce", annId);
   };
 
-  // --- TOUCH HANDLERS FOR BUBBLES ---
   const handleTouchStart = (e) => { setIsDragging(true); const touch = e.touches[0]; dragOffset.current = { x: touch.clientX - bubblePos.x, y: touch.clientY - bubblePos.y }; };
   const handleTouchMove = (e) => { if (!isDragging) return; const touch = e.touches[0]; const bubbleSize = 56; let newX = touch.clientX - dragOffset.current.x; let newY = touch.clientY - dragOffset.current.y; newY = Math.max(0, Math.min(newY, window.innerHeight - 80)); newX = Math.max(0, Math.min(newX, window.innerWidth - bubbleSize)); setBubblePos({ x: newX, y: newY }); };
   const handleTouchEnd = () => { setIsDragging(false); const trashX = window.innerWidth / 2; const trashY = window.innerHeight - 80; const dist = Math.hypot((bubblePos.x + 28) - trashX, (bubblePos.y + 28) - trashY); if (dist < 60) { setIsBubbleVisible(false); setOpenBubbles([]); return; } if (bubblePos.x < window.innerWidth / 2) setBubblePos(prev => ({ ...prev, x: 0 })); else setBubblePos(prev => ({ ...prev, x: window.innerWidth - 56 })); };
@@ -765,7 +792,6 @@ return (
         @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
       `}</style>
         
-      {/* 5. IMAGE LIGHTBOX OVERLAY */}
       {lightboxUrl && createPortal(
         <div className="fixed inset-0 flex items-center justify-center bg-black/95 backdrop-blur-sm animate-in fade-in duration-200" style={{ zIndex: 999999 }} onClick={(e) => { e.stopPropagation(); setLightboxUrl(null); }}>
             <button onClick={(e) => { e.stopPropagation(); setLightboxUrl(null); }} className="absolute top-6 right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" style={{ zIndex: 9999999 }}>
@@ -807,9 +833,9 @@ return (
                                           {hasNewAnnouncement && <span className="bg-pink-500 w-2 h-2 rounded-full shrink-0"></span>}
                                      </button>
                                  )}
-                                 <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-amber-500 bg-amber-500/10' : 'opacity-50'}`}>
-                                          <span>New Applicants</span><span className="bg-amber-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
-                                 </button>
+                                 <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-red-500 bg-red-500/10' : 'opacity-50'}`}>
+                                    <span>New Applicants</span><span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
+                                </button>
                                  {totalNotifications === 0 && <div className="text-center py-4 opacity-30 text-xs font-bold uppercase">No new notifications</div>}
                              </div>
                         </div>
@@ -826,7 +852,6 @@ return (
             </div>
       </header>
 
-{/* Sidebar (copied from ApplicantDashboard.jsx) */}
 <aside
   className={`fixed top-0 right-0 h-full w-64 z-[100] rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel(darkMode)} ${
     isSidebarOpen ? "translate-x-0 shadow-2xl" : "translate-x-full"
@@ -1167,8 +1192,8 @@ return (
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${(isFullScreenPage) ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
         <button onClick={() => setActiveTab("Discover")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Discover" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}><SparklesIcon className="w-6 h-6" /></button>
         <button onClick={() => setActiveTab("Listings")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Listings" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}><BriefcaseIcon className="w-6 h-6" /></button>
-        <button onClick={() => setActiveTab("Applicants")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Applicants" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
-            <div className="relative"><UsersIcon className="w-6 h-6" />{newAppCount > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white animate-pulse"></span>}</div>
+       <button onClick={() => setActiveTab("Applicants")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Applicants" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <div className="relative"><UsersIcon className="w-6 h-6" />{newAppCount > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>}</div>
         </button>
         <button onClick={() => setActiveTab("Messages")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Messages" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
             <div className="relative"><ChatBubbleLeftRightIcon className="w-6 h-6" />{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1 rounded-full min-w-[16px] text-center">{unreadMsgCount}</span>}</div>
@@ -1184,117 +1209,197 @@ return (
       />
 
      {/* =========================================================
-          JOB CREATION / EDITING MODAL
+          JOB CREATION / EDITING MODAL (Restyled to Job Card Theme)
           ========================================================= */}
       {isJobModalOpen && (
-          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsJobModalOpen(false)}>
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in" onClick={() => setIsJobModalOpen(false)}>
               <div 
                   onClick={(e) => e.stopPropagation()} 
-                  className={`relative w-full max-w-lg p-6 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 overflow-y-auto max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                  className={`relative w-full max-w-2xl p-6 md:p-8 rounded-[2.5rem] shadow-2xl border animate-in zoom-in-95 duration-300 overflow-y-auto max-h-[90vh] hide-scrollbar 
+                    ${darkMode 
+                        ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border-white/10 text-white' 
+                        : 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 border-white/40 ring-1 ring-inset ring-white/40 text-white shadow-[0_20px_50px_-10px_rgba(37,99,235,0.5)]'}`}
               >
-                  <button onClick={() => setIsJobModalOpen(false)} className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
-                      <XMarkIcon className="w-5 h-5"/>
-                  </button>
-                  <h2 className="text-2xl font-black mb-6">{editingJobId ? 'Edit Job Listing' : 'Post New Job'}</h2>
+                  {/* Decorative Icon Background (Matching Job Card) */}
+                  <div className={`absolute -right-10 -bottom-10 opacity-10 pointer-events-none rotate-12 transition-transform duration-500`}>
+                      <BriefcaseIcon className="w-64 h-64 text-white" />
+                  </div>
+
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-8 relative z-10">
+                      <div className="flex items-center gap-4">
+                          <div className={`p-3 rounded-2xl backdrop-blur-md border shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] ${darkMode ? 'bg-blue-500/20 border-blue-500/30' : 'bg-white/20 border-white/30'}`}>
+                              <PlusIcon className="w-8 h-8 text-white"/>
+                          </div>
+                          <div>
+                              <h2 className="text-2xl font-black tracking-tight drop-shadow-md">{editingJobId ? 'Edit Job Listing' : 'Post New Job'}</h2>
+                              <p className={`text-[10px] font-bold uppercase tracking-widest opacity-80 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>
+                                  {editingJobId ? 'Update details below' : 'Fill in the details below'}
+                              </p>
+                          </div>
+                      </div>
+                      <button onClick={() => setIsJobModalOpen(false)} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-white/20 hover:bg-white/30 text-white border border-white/30'}`}>
+                          <XMarkIcon className="w-6 h-6"/>
+                      </button>
+                  </div>
                   
-                  <div className="space-y-4">
-                      {/* Job Title */}
-                      <div>
-                          <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Job Title</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10">
+                      {/* 1. Job Title */}
+                      <div className="md:col-span-2">
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Job Title <span className="text-red-400">*</span></label>
                           <input 
                               type="text" 
                               value={jobForm.title} 
                               onChange={e => setJobForm({...jobForm, title: e.target.value})} 
-                              className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} 
+                              className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm shadow-inner backdrop-blur-md 
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/20 border-white/30 focus:border-white focus:bg-white/30 text-white placeholder-blue-100'}`} 
                               placeholder="e.g. Need Carpenter" 
                           />
                       </div>
                       
-                      <div className="flex flex-col sm:flex-row gap-4">
-                          {/* Salary */}
-                          <div className="flex-1">
-                              <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Salary (₱)</label>
-                              <input 
-                                  type="number" 
-                                  value={jobForm.salary} 
-                                  onChange={e => setJobForm({...jobForm, salary: e.target.value})} 
-                                  className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} 
-                                  placeholder="e.g. 500" 
-                              />
-                          </div>
-                          {/* Job Type */}
-                          <div className="flex-1 relative">
-                              <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Job Type</label>
-                              <div className="relative">
-                                  <select 
-                                      value={jobForm.type} 
-                                      onChange={e => setJobForm({...jobForm, type: e.target.value})} 
-                                      className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm appearance-none pr-10 ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`}
-                                  >
-                                      {JOB_TYPES.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}
-                                  </select>
-                                  <ChevronDownIcon className="w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
+                      {/* 2A. Location Dropdown */}
+                      <div className="relative">
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Location (Sitio) <span className="text-red-400">*</span></label>
+                          <button 
+                              onClick={(e) => { e.preventDefault(); setIsLocationDropdownOpen(!isLocationDropdownOpen); setIsJobCategoryDropdownOpen(false); }}
+                              className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm text-left shadow-inner flex items-center justify-between backdrop-blur-md
+                                ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/20 border-white/30 text-white'}`}
+                          >
+                              <span className={jobForm.sitio ? '' : 'opacity-60'}>{jobForm.sitio || "Select Location"}</span>
+                              <ChevronDownIcon className={`w-5 h-5 transition-transform ${isLocationDropdownOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          
+                          {isLocationDropdownOpen && (
+                              <div className={`absolute z-[70] top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-blue-200 text-slate-900'}`}>
+                                  <div className="max-h-48 overflow-y-auto p-2 space-y-1 hide-scrollbar">
+                                      {PUROK_LIST.map(purok => (
+                                          <button 
+                                              key={purok} 
+                                              onClick={(e) => { e.preventDefault(); setJobForm({...jobForm, sitio: purok}); setIsLocationDropdownOpen(false); }}
+                                              className={`w-full text-left p-3 rounded-xl transition-colors text-xs font-bold ${jobForm.sitio === purok ? 'bg-blue-600 text-white' : 'hover:bg-blue-50'}`}
+                                          >
+                                              {purok}
+                                          </button>
+                                      ))}
+                                  </div>
                               </div>
-                          </div>
+                          )}
                       </div>
 
-                      {/* Category */}
+                      {/* 2B. Category Dropdown */}
                       <div className="relative">
-                          <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Category</label>
-                          <div className="relative">
-                              <select 
-                                  value={jobForm.category} 
-                                  onChange={e => setJobForm({...jobForm, category: e.target.value})} 
-                                  className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm appearance-none pr-10 ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`}
-                              >
-                                  <option value="">Select a Category</option>
-                                  {JOB_CATEGORIES.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
-                              </select>
-                              <ChevronDownIcon className="w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
-                          </div>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Category <span className="text-red-400">*</span></label>
+                          <button 
+                              onClick={(e) => { e.preventDefault(); setIsJobCategoryDropdownOpen(!isJobCategoryDropdownOpen); setIsLocationDropdownOpen(false); }}
+                              className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm text-left shadow-inner flex items-center justify-between backdrop-blur-md
+                                ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/20 border-white/30 text-white'}`}
+                          >
+                              <span className={jobForm.category ? '' : 'opacity-60'}>{jobForm.category ? JOB_CATEGORIES.find(c => c.id === jobForm.category)?.label : "Select Category"}</span>
+                              <ChevronDownIcon className={`w-5 h-5 transition-transform ${isJobCategoryDropdownOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          
+                          {isJobCategoryDropdownOpen && (
+                              <div className={`absolute z-[70] top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-blue-200 text-slate-900'}`}>
+                                  <div className="max-h-48 overflow-y-auto p-2 space-y-1 hide-scrollbar">
+                                      {JOB_CATEGORIES.map(cat => (
+                                          <button 
+                                              key={cat.id} 
+                                              onClick={(e) => { e.preventDefault(); setJobForm({...jobForm, category: cat.id}); setIsJobCategoryDropdownOpen(false); }}
+                                              className={`w-full text-left p-3 rounded-xl transition-colors text-xs font-bold ${jobForm.category === cat.id ? 'bg-blue-600 text-white' : 'hover:bg-blue-50'}`}
+                                          >
+                                              {cat.label}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+                          )}
                       </div>
 
-                      {/* Location */}
-                      <div className="relative">
-                          <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Location (Sitio)</label>
-                          <div className="relative">
-                              <select 
-                                  value={jobForm.sitio} 
-                                  onChange={e => setJobForm({...jobForm, sitio: e.target.value})} 
-                                  className={`w-full p-3.5 rounded-xl outline-none border transition-colors font-bold text-sm appearance-none pr-10 ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`}
-                              >
-                                  <option value="">Select Location</option>
-                                  {PUROK_LIST.map(purok => <option key={purok} value={purok}>{purok}</option>)}
-                              </select>
-                              <ChevronDownIcon className="w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
-                          </div>
-                      </div>
-
-                      {/* Description */}
+                      {/* 3A. Salary */}
                       <div>
-                          <label className="block text-[10px] font-black uppercase tracking-widest opacity-50 mb-1.5">Description</label>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Salary (₱) <span className="text-red-400">*</span></label>
+                          <input 
+                              type="number" 
+                              value={jobForm.salary} 
+                              onChange={e => setJobForm({...jobForm, salary: e.target.value})} 
+                              className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm shadow-inner backdrop-blur-md
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/20 border-white/30 focus:border-white text-white placeholder-blue-100'}`} 
+                              placeholder="e.g. 500" 
+                          />
+                      </div>
+
+                      {/* 3B. Application Capacity */}
+                      <div>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Capacity</label>
+                          <input 
+                              type="number" 
+                              value={jobForm.capacity} 
+                              onChange={e => setJobForm({...jobForm, capacity: e.target.value})} 
+                              className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm shadow-inner backdrop-blur-md
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/20 border-white/30 focus:border-white text-white placeholder-blue-100'}`} 
+                              placeholder="Unlimited" 
+                              min="1"
+                          />
+                      </div>
+
+                      {/* 4. Job Type Icons Picker */}
+                      <div className="md:col-span-2 mt-2">
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-3 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Select Job Type <span className="text-red-400">*</span></label>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              {JOB_TYPES.map(type => {
+                                  const isSelected = jobForm.type === type.id;
+                                  return (
+                                      <button 
+                                          key={type.id}
+                                          onClick={(e) => { e.preventDefault(); setJobForm({...jobForm, type: type.id}); }}
+                                          className={`flex flex-col items-center justify-center p-4 rounded-[1.5rem] border transition-all duration-300 group
+                                            ${isSelected 
+                                                ? (darkMode ? 'bg-blue-600 border-blue-400 shadow-lg scale-105' : 'bg-white border-white text-blue-600 shadow-xl scale-105') 
+                                                : (darkMode ? 'bg-slate-800/50 border-white/10 text-slate-400 hover:bg-slate-700' : 'bg-white/10 border-white/20 text-white/70 hover:bg-white/20 hover:text-white')}`}
+                                      >
+                                          <div className={`mb-2 transition-transform duration-300 group-hover:scale-110 ${isSelected ? '' : 'opacity-60'}`}>
+                                              {cloneElement(type.icon, { className: "w-8 h-8" })}
+                                          </div>
+                                          <span className="text-[10px] font-black uppercase tracking-widest">{type.id}</span>
+                                      </button>
+                                  )
+                              })}
+                          </div>
+                      </div>
+
+                      {/* 5. Description */}
+                      <div className="md:col-span-2 mt-2">
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Description</label>
                           <textarea 
                               value={jobForm.description} 
                               onChange={e => setJobForm({...jobForm, description: e.target.value})} 
                               rows="4" 
-                              className={`w-full p-3.5 rounded-xl outline-none border transition-colors resize-none font-bold text-sm ${darkMode ? 'bg-slate-800 border-white/10 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} 
-                              placeholder="Describe the job requirements..."
+                              className={`w-full p-4 rounded-2xl outline-none border transition-all resize-none font-bold text-sm shadow-inner backdrop-blur-md
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/20 border-white/30 focus:border-white text-white placeholder-blue-100'}`} 
+                              placeholder="Describe the job requirements, responsibilities, and schedule..."
                           ></textarea>
                       </div>
 
                       {/* Action Button */}
-                      <button 
-                          onClick={handleSaveJob} 
-                          disabled={loading} 
-                          className="w-full py-4 mt-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-50"
-                      >
-                          {loading ? 'Saving...' : (editingJobId ? 'Save Changes' : 'Post Job')}
-                      </button>
+                      <div className="md:col-span-2 pt-4">
+                          <button 
+                              onClick={handleSaveJob} 
+                              disabled={loading} 
+                              className={`w-full py-5 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-2xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3
+                                ${darkMode 
+                                    ? 'bg-blue-600 text-white hover:bg-blue-500' 
+                                    : 'bg-white text-blue-600 hover:bg-blue-50'}`}
+                          >
+                              {loading 
+                                ? <div className={`w-5 h-5 border-2 rounded-full animate-spin ${darkMode ? 'border-white/30 border-t-white' : 'border-blue-600/30 border-t-blue-600'}`}></div> 
+                                : <>{editingJobId ? 'Save Changes' : 'Publish Listing'} <BriefcaseIcon className="w-4 h-4" /></>}
+                          </button>
+                      </div>
                   </div>
               </div>
           </div>
       )}
-
+      
      {/* =========================================================
           CANDIDATE DETAILS MODAL (Discover Tab)
           ========================================================= */}
@@ -1379,10 +1484,10 @@ return (
                                     <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
                                     <span className={!selectedTalent.sitio ? 'opacity-50 italic' : ''}>{selectedTalent.sitio || "Location not set"}</span>
                                 </div>
-                                {(selectedTalent.contact || selectedTalent.email) && (
-                                    <div className="flex items-center gap-1.5">
+                                {selectedTalent.email && (
+                                    <div className="flex items-center gap-1.5" title="Email">
                                         <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                        <span className="text-slate-500 truncate max-w-[150px]">{selectedTalent.contact || selectedTalent.email}</span>
+                                        <span className="text-slate-500 truncate max-w-[150px]">{selectedTalent.email}</span>
                                     </div>
                                 )}
                             </div>
@@ -1406,48 +1511,118 @@ return (
 
                     {/* --- RIGHT SIDE: Candidate Details --- */}
                     <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
+                        
+                        {/* Switch Sub-Header */}
+                        <div className="flex justify-end mb-4 shrink-0">
+                            <button 
+                                onClick={() => setModalSubTab(prev => prev === "details" ? "resume" : "details")}
+                                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                            >
+                                {modalSubTab === "details" ? (
+                                    <><DocumentIcon className="w-4 h-4" /><span>View Resume</span></>
+                                ) : (
+                                    <><UserCircleIcon className="w-4 h-4" /><span>Profile Details</span></>
+                                )}
+                            </button>
+                        </div>
+
                         {/* Scrollable Container */}
                         <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
-                            
-                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">About Candidate</p>
-                                <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedTalent.aboutMe || selectedTalent.bio || "No bio provided."}</p>
-                            </div>
-                            
-                            {/* DYNAMIC EDUCATION/EXPERIENCE IN MODAL */}
-                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
-                                {typeof selectedTalent.education === 'object' && selectedTalent.education !== null ? (
-                                    <div className="space-y-2">
-                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{selectedTalent.education.primary || "-"}</p>
-                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{selectedTalent.education.secondary || "-"}</p>
-                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{selectedTalent.education.college || "-"}</p>
+                            {modalSubTab === "details" ? (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">About Candidate</p>
+                                        <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedTalent.aboutMe || selectedTalent.bio || "No bio provided."}</p>
                                     </div>
-                                ) : (
-                                    <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.education ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                        {selectedTalent.education || "No educational background provided."}
-                                    </p>
-                                )}
-                            </div>
+                                    
+                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
+                                        {typeof selectedTalent.education === 'object' && selectedTalent.education !== null ? (
+                                            <div className="space-y-2">
+                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{selectedTalent.education.primary || "-"}</p>
+                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{selectedTalent.education.secondary || "-"}</p>
+                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{selectedTalent.education.college || "-"}</p>
+                                            </div>
+                                        ) : (
+                                            <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.education ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                                {selectedTalent.education || "No educational background provided."}
+                                            </p>
+                                        )}
+                                    </div>
 
-                            <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
-                                {Array.isArray(selectedTalent.experience) || Array.isArray(selectedTalent.workExperience) ? (
-                                    <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
-                                        {(selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').length > 0 
-                                            ? (selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
-                                                <li key={idx} className="text-sm opacity-90 font-medium pl-1">{exp}</li>
-                                            ))
-                                            : <p className="text-sm opacity-50 italic -ml-4">No work experience provided.</p>
-                                        }
-                                    </ul>
-                                ) : (
-                                    <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.workExperience || selectedTalent.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                        {selectedTalent.workExperience || selectedTalent.experience || "No work experience provided."}
-                                    </p>
-                                )}
-                            </div>
+                                    <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
+                                        {Array.isArray(selectedTalent.experience) || Array.isArray(selectedTalent.workExperience) ? (
+                                            <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
+                                                {(selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').length > 0 
+                                                    ? (selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
+                                                        <li key={idx} className="text-sm opacity-90 font-medium pl-1">{exp}</li>
+                                                    ))
+                                                    : <p className="text-sm opacity-50 italic -ml-4">No work experience provided.</p>
+                                                }
+                                            </ul>
+                                        ) : (
+                                            <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.workExperience || selectedTalent.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                                {selectedTalent.workExperience || selectedTalent.experience || "No work experience provided."}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2"><PhotoIcon className="w-4 h-4"/> Resume Image</p>
+                                        {selectedTalent.resumeImageUrl ? (
+                                            <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 shadow-sm group bg-black/5">
+                                                <img src={selectedTalent.resumeImageUrl} alt="Resume" className="w-full h-full object-contain cursor-pointer" onClick={() => setLightboxUrl(selectedTalent.resumeImageUrl)} />
+                                                <div className="absolute top-2 right-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                    Click to Expand
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className={`w-full h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center opacity-50 ${darkMode ? 'border-white/20' : 'border-slate-300'}`}>
+                                                <PhotoIcon className="w-6 h-6 mb-1" />
+                                                <span className="text-[10px] font-bold uppercase tracking-widest">No Image Uploaded</span>
+                                            </div>
+                                        )}
+                                    </div>
 
+                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2"><DocumentIcon className="w-4 h-4"/> Resume Document</p>
+                                        {isHired ? (
+                                            selectedTalent.resumeFileUrl ? (
+                                                <a 
+                                                    href={selectedTalent.resumeFileUrl} 
+                                                    download={selectedTalent.resumeFileName || "Applicant_Resume"}
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className={`w-full p-4 rounded-xl flex items-center gap-4 border transition-all group ${darkMode ? 'bg-slate-800 border-white/10 hover:bg-slate-700 text-white' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-lg text-slate-800'}`}
+                                                >
+                                                    <div className={`p-3 rounded-lg transition-colors ${darkMode ? 'bg-blue-500/20 text-blue-400 group-hover:bg-blue-500/40' : 'bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
+                                                        <ArrowDownTrayIcon className="w-6 h-6"/>
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-black text-sm group-hover:text-blue-500 transition-colors truncate">
+                                                            {selectedTalent.resumeFileName || "Download Resume File"}
+                                                        </p>
+                                                        <p className="text-[10px] uppercase font-bold opacity-50 tracking-widest mt-0.5">Click to view or save</p>
+                                                    </div>
+                                                </a>
+                                            ) : (
+                                                <div className={`w-full p-4 rounded-xl flex flex-col items-center justify-center gap-1 border-2 border-dashed opacity-50 ${darkMode ? 'border-white/20' : 'border-slate-300'}`}>
+                                                    <p className="font-bold text-[10px] uppercase tracking-widest">No File Uploaded</p>
+                                                </div>
+                                            )
+                                        ) : (
+                                            <div className={`w-full p-6 flex flex-col items-center justify-center text-center rounded-xl border-2 border-dashed opacity-60 ${darkMode ? 'border-white/20 text-white' : 'border-slate-300 text-slate-600'}`}>
+                                                <LockClosedIcon className="w-6 h-6 mb-2" />
+                                                <p className="font-bold text-[10px] uppercase tracking-widest">Resume Document Locked</p>
+                                                <p className="text-[10px] font-medium mt-1 max-w-[200px]">You can only download the resume document once you hire this candidate.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                        {/* --- ACTIONS (Pinned to Bottom) --- */}
@@ -1496,6 +1671,8 @@ return (
           const theme = getModalTheme(appliedCategory, darkMode);
           const pic = getAvatarUrl(modalApplicant) || modalApplicant.profilePic || selectedApplication.applicantProfilePic;
           
+          const isHired = selectedApplication.status === 'accepted';
+
           return (
             <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedApplication(null)}>
                 <div 
@@ -1529,10 +1706,10 @@ return (
                                     <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
                                     <span className={!modalApplicant.sitio ? 'opacity-50 italic' : ''}>{modalApplicant.sitio || "Location not set"}</span>
                                 </div>
-                                {(modalApplicant.contact || modalApplicant.email) && (
-                                    <div className="flex items-center gap-1.5">
+                                {modalApplicant.email && (
+                                    <div className="flex items-center gap-1.5" title="Email">
                                         <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                        <span className="text-slate-500 truncate max-w-[150px]">{modalApplicant.contact || modalApplicant.email}</span>
+                                        <span className="text-slate-500 truncate max-w-[150px]">{modalApplicant.email}</span>
                                     </div>
                                 )}
                             </div>
@@ -1556,49 +1733,120 @@ return (
 
                     {/* --- RIGHT SIDE: Candidate Details --- */}
                     <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
+                        
+                        {/* Switch Sub-Header */}
+                        <div className="flex justify-end mb-4 shrink-0">
+                            <button 
+                                onClick={() => setModalSubTab(prev => prev === "details" ? "resume" : "details")}
+                                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                            >
+                                {modalSubTab === "details" ? (
+                                    <><DocumentIcon className="w-4 h-4" /><span>View Resume</span></>
+                                ) : (
+                                    <><UserCircleIcon className="w-4 h-4" /><span>Profile Details</span></>
+                                )}
+                            </button>
+                        </div>
+
                         {/* Scrollable Container */}
                         <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
-                            
-                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">About Candidate</p>
-                                <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalApplicant.aboutMe || modalApplicant.bio || "No bio provided."}</p>
-                            </div>
-                            
-                            {/* DYNAMIC EDUCATION IN MODAL */}
-                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
-                                {typeof modalApplicant.education === 'object' && modalApplicant.education !== null ? (
-                                    <div className="space-y-2">
-                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{modalApplicant.education.primary || "-"}</p>
-                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{modalApplicant.education.secondary || "-"}</p>
-                                        <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{modalApplicant.education.college || "-"}</p>
+                            {modalSubTab === "details" ? (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">About Candidate</p>
+                                        <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalApplicant.aboutMe || modalApplicant.bio || "No bio provided."}</p>
                                     </div>
-                                ) : (
-                                    <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.education ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                        {modalApplicant.education || "No educational background provided."}
-                                    </p>
-                                )}
-                            </div>
+                                    
+                                    {/* DYNAMIC EDUCATION IN MODAL */}
+                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
+                                        {typeof modalApplicant.education === 'object' && modalApplicant.education !== null ? (
+                                            <div className="space-y-2">
+                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{modalApplicant.education.primary || "-"}</p>
+                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{modalApplicant.education.secondary || "-"}</p>
+                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{modalApplicant.education.college || "-"}</p>
+                                            </div>
+                                        ) : (
+                                            <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.education ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                                {modalApplicant.education || "No educational background provided."}
+                                            </p>
+                                        )}
+                                    </div>
 
-                            {/* DYNAMIC EXPERIENCE IN MODAL */}
-                            <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
-                                {Array.isArray(modalApplicant.experience) || Array.isArray(modalApplicant.workExperience) ? (
-                                    <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
-                                        {(modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').length > 0 
-                                            ? (modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
-                                                <li key={idx} className="text-sm opacity-90 font-medium pl-1">{exp}</li>
-                                            ))
-                                            : <p className="text-sm opacity-50 italic -ml-4">No work experience provided.</p>
-                                        }
-                                    </ul>
-                                ) : (
-                                    <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.workExperience || modalApplicant.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                        {modalApplicant.workExperience || modalApplicant.experience || "No work experience provided."}
-                                    </p>
-                                )}
-                            </div>
+                                    {/* DYNAMIC EXPERIENCE IN MODAL */}
+                                    <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
+                                        {Array.isArray(modalApplicant.experience) || Array.isArray(modalApplicant.workExperience) ? (
+                                            <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
+                                                {(modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').length > 0 
+                                                    ? (modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
+                                                        <li key={idx} className="text-sm opacity-90 font-medium pl-1">{exp}</li>
+                                                    ))
+                                                    : <p className="text-sm opacity-50 italic -ml-4">No work experience provided.</p>
+                                                }
+                                            </ul>
+                                        ) : (
+                                            <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.workExperience || modalApplicant.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
+                                                {modalApplicant.workExperience || modalApplicant.experience || "No work experience provided."}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2"><PhotoIcon className="w-4 h-4"/> Resume Image</p>
+                                        {modalApplicant.resumeImageUrl ? (
+                                            <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 shadow-sm group bg-black/5">
+                                                <img src={modalApplicant.resumeImageUrl} alt="Resume" className="w-full h-full object-contain cursor-pointer" onClick={() => setLightboxUrl(modalApplicant.resumeImageUrl)} />
+                                                <div className="absolute top-2 right-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                    Click to Expand
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className={`w-full h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center opacity-50 ${darkMode ? 'border-white/20' : 'border-slate-300'}`}>
+                                                <PhotoIcon className="w-6 h-6 mb-1" />
+                                                <span className="text-[10px] font-bold uppercase tracking-widest">No Image Uploaded</span>
+                                            </div>
+                                        )}
+                                    </div>
 
+                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2"><DocumentIcon className="w-4 h-4"/> Resume Document</p>
+                                        {isHired ? (
+                                            modalApplicant.resumeFileUrl ? (
+                                                <a 
+                                                    href={modalApplicant.resumeFileUrl} 
+                                                    download={modalApplicant.resumeFileName || "Applicant_Resume"}
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className={`w-full p-4 rounded-xl flex items-center gap-4 border transition-all group ${darkMode ? 'bg-slate-800 border-white/10 hover:bg-slate-700 text-white' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-lg text-slate-800'}`}
+                                                >
+                                                    <div className={`p-3 rounded-lg transition-colors ${darkMode ? 'bg-blue-500/20 text-blue-400 group-hover:bg-blue-500/40' : 'bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
+                                                        <ArrowDownTrayIcon className="w-6 h-6"/>
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-black text-sm group-hover:text-blue-500 transition-colors truncate">
+                                                            {modalApplicant.resumeFileName || "Download Resume File"}
+                                                        </p>
+                                                        <p className="text-[10px] uppercase font-bold opacity-50 tracking-widest mt-0.5">Click to view or save</p>
+                                                    </div>
+                                                </a>
+                                            ) : (
+                                                <div className={`w-full p-4 rounded-xl flex flex-col items-center justify-center gap-1 border-2 border-dashed opacity-50 ${darkMode ? 'border-white/20' : 'border-slate-300'}`}>
+                                                    <p className="font-bold text-[10px] uppercase tracking-widest">No File Uploaded</p>
+                                                </div>
+                                            )
+                                        ) : (
+                                            <div className={`w-full p-6 flex flex-col items-center justify-center text-center rounded-xl border-2 border-dashed opacity-60 ${darkMode ? 'border-white/20 text-white' : 'border-slate-300 text-slate-600'}`}>
+                                                <LockClosedIcon className="w-6 h-6 mb-2" />
+                                                <p className="font-bold text-[10px] uppercase tracking-widest">Resume Document Locked</p>
+                                                <p className="text-[10px] font-medium mt-1 max-w-[200px]">You can only download the resume document once you accept this application.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                        {/* --- ACTIONS (Pinned to Bottom) --- */}

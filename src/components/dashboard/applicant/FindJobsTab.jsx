@@ -2,7 +2,8 @@ import {
     MagnifyingGlassIcon, MapPinIcon, BookmarkIcon, BriefcaseIcon, 
     SparklesIcon, ChevronDownIcon, TagIcon, PaperAirplaneIcon, 
     ChatBubbleLeftRightIcon, MegaphoneIcon, AcademicCapIcon, 
-    SunIcon, Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon 
+    SunIcon, Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon,
+    UsersIcon // Added UsersIcon for the applicant count
 } from "@heroicons/react/24/outline";
 import { cloneElement, useRef, useEffect } from "react"; 
 
@@ -181,6 +182,10 @@ export default function FindJobsTab({
         const isSaved = savedJobs.some(s => s.jobId === job.id);
         const theme = getCardTheme(job.category, darkMode);
 
+        // CAPACITY LOGIC
+        const applicantCount = job.applicationCount || 0;
+        const isFull = job.capacity > 0 && applicantCount >= job.capacity;
+
         return (
             <div key={job.id} onClick={() => onSelectJob(job)} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 ${theme.hoverShadow} cursor-pointer flex flex-col justify-between min-h-[220px] ${theme.cardBg} ${isHorizontal ? 'w-[85vw] sm:w-[320px] shrink-0 snap-start' : 'w-full'}`}>
                 {/* Large Background Icon */}
@@ -230,12 +235,26 @@ export default function FindJobsTab({
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            {/* Applicants Counter */}
+                            <div className={`flex items-center gap-1.5 mr-1 ${theme.salaryLabel}`} title={`${applicantCount} Applicants`}>
+                                <UsersIcon className="w-4 h-4" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">{applicantCount} {job.capacity > 0 ? `/ ${job.capacity}` : ''}</span>
+                            </div>
+
                             <button onClick={(e) => { e.stopPropagation(); onSelectJob(job); }} className={`px-3 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${theme.btnSecondary}`}>
                                 Details
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); onApply(job); }} className={`px-4 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${theme.btnPrimary}`}>
-                                Apply
-                            </button>
+
+                            {/* Conditional Apply/Full Button */}
+                            {isFull ? (
+                                <button disabled className={`px-4 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest cursor-not-allowed border bg-slate-500/10 text-slate-500 border-slate-500/20`}>
+                                    Full
+                                </button>
+                            ) : (
+                                <button onClick={(e) => { e.stopPropagation(); onApply(job); }} className={`px-4 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${theme.btnPrimary}`}>
+                                    Apply
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -254,7 +273,7 @@ export default function FindJobsTab({
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{availableJobs.length}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>Jobs</p>
                         </div>
-                        <BriefcaseIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
+                        <BriefcaseIcon className={`w-16 h-16 md:w-24 h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
                     <div onClick={() => setActiveTab("Saved")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
@@ -262,7 +281,7 @@ export default function FindJobsTab({
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{savedJobs.length}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-purple-200' : 'text-blue-800'}`}>Saved</p>
                         </div>
-                        <BookmarkIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
+                        <BookmarkIcon className={`w-16 h-16 md:w-24 h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
                     <div onClick={() => setActiveTab("Applications")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-amber-500/20 to-amber-500/5 border-amber-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
@@ -270,7 +289,7 @@ export default function FindJobsTab({
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{myApplications.length}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-amber-200' : 'text-blue-800'}`}>Applied</p>
                         </div>
-                        <PaperAirplaneIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
+                        <PaperAirplaneIcon className={`w-16 h-16 md:w-24 h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
                     <div onClick={() => setActiveTab("Messages")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer shine-effect ${darkMode ? 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border-pink-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
@@ -278,7 +297,7 @@ export default function FindJobsTab({
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{unreadCount}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-pink-200' : 'text-blue-800'}`}>Messages</p>
                         </div>
-                        <ChatBubbleLeftRightIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
+                        <ChatBubbleLeftRightIcon className={`w-16 h-16 md:w-24 h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
                 </div>
 

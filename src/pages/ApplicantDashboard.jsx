@@ -347,10 +347,17 @@ export default function ApplicantDashboard() {
     }
     if(activeTab === "Ratings") {
         const fetchReviews = () => {
-            const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid), orderBy("createdAt", "desc"));
+            // FIX: Removed orderBy() from the Firebase query to bypass the Index requirement
+            const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid));
+            
             const unsub = onSnapshot(q, (snap) => {
-                const revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                let revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                
+                // FIX: Sort them locally in React instead
+                revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                
                 setReviews(revs);
+                
                 if(revs.length > 0) {
                     const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
                     setAverageRating((total / revs.length).toFixed(1));
@@ -402,7 +409,7 @@ export default function ApplicantDashboard() {
       } catch(err) { } 
   };
 
-  const handleApplyToJob = async (job) => {
+ const handleApplyToJob = async (job) => {
     if(!window.confirm(`Apply to ${job.title}?`)) return;
     setLoading(true);
     try {
@@ -413,6 +420,10 @@ export default function ApplicantDashboard() {
             applicantProfilePic: profileImage || "", status: 'pending', appliedAt: serverTimestamp(),
             isViewed: false, isReadByApplicant: true, isRatedByApplicant: false
         });
+
+        // NEW: Increment the job's application counter to keep track of capacity
+        await updateDoc(doc(db, "jobs", job.id), { applicationCount: increment(1) });
+
         if (!savedJobs.some(s => s.jobId === job.id)) {
              await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() });
         }
@@ -423,7 +434,17 @@ export default function ApplicantDashboard() {
   const handleWithdrawApplication = async (appId) => { 
       if(!window.confirm("Withdraw this application?")) return; 
       setLoading(true); 
-      try { await updateDoc(doc(db, "applications", appId), { status: 'withdrawn' }); setViewingApplication(null); } catch (err) { alert("Error: " + err.message); } finally { setLoading(false); } 
+      try { 
+          // NEW: Decrement the job's application counter to free up a slot
+          const appDoc = await getDoc(doc(db, "applications", appId));
+          if (appDoc.exists()) {
+              const jobId = appDoc.data().jobId;
+              if (jobId) await updateDoc(doc(db, "jobs", jobId), { applicationCount: increment(-1) });
+          }
+
+          await updateDoc(doc(db, "applications", appId), { status: 'withdrawn' }); 
+          setViewingApplication(null); 
+      } catch (err) { alert("Error: " + err.message); } finally { setLoading(false); } 
   };
 
   const handleDeleteApplication = async (appId) => {
@@ -459,14 +480,25 @@ export default function ApplicantDashboard() {
       setIsBubbleVisible(false); setIsBubbleExpanded(false); setIsDesktopInboxVisible(false);
   };
 
-  // --- UPDATED: PROFILE SAVING WITH RESUME UPLOADS ---
+ // --- UPDATED: PROFILE SAVING WITH PROPER AVATAR AND RESUME UPLOADS ---
   const handleSaveProfile = async () => { 
     setLoading(true); 
     try { 
         let resumeImageUpdate = applicantData.resumeImageUrl || null;
         let resumeDocUpdate = applicantData.resumeFileUrl || null;
+        let resumeNameUpdate = applicantData.resumeFileName || null;
+        let newProfilePicUrl = applicantData.profilePic || null; 
 
         const storage = getStorage(auth.app);
+
+        // FIX 1: Upload Profile Avatar using the actual File object from the HTML input ref
+        const avatarFile = fileInputRef.current?.files?.[0];
+        if (isEditingImage && avatarFile) {
+            const fileExt = avatarFile.name.split('.').pop();
+            const avatarRef = ref(storage, `profilePics/${auth.currentUser.uid}_${Date.now()}.${fileExt}`);
+            await uploadBytes(avatarRef, avatarFile);
+            newProfilePicUrl = await getDownloadURL(avatarRef);
+        }
 
         // Upload Resume Image if selected
         if (resumeImageFile) {
@@ -476,15 +508,22 @@ export default function ApplicantDashboard() {
             resumeImageUpdate = await getDownloadURL(imgRef);
         }
 
-        // Upload Resume Doc if selected
+        // FIX 2: Upload Resume Doc with Content-Disposition metadata so it downloads with the original name
         if (resumeDocFile) {
             const fileExt = resumeDocFile.name.split('.').pop();
             const docRef = ref(storage, `resumes/${auth.currentUser.uid}_doc_${Date.now()}.${fileExt}`);
-            await uploadBytes(docRef, resumeDocFile);
+            
+            // This metadata forces the browser to save it using the original file name!
+            const metadata = {
+                contentDisposition: `attachment; filename="${resumeDocFile.name}"`
+            };
+
+            await uploadBytes(docRef, resumeDocFile, metadata);
             resumeDocUpdate = await getDownloadURL(docRef);
+            resumeNameUpdate = resumeDocFile.name; 
         }
 
-        await setDoc(doc(db, "applicants", auth.currentUser.uid), { 
+        const updatedData = { 
             title: applicantData.title, 
             aboutMe: applicantData.bio, 
             education: applicantData.education, 
@@ -492,13 +531,26 @@ export default function ApplicantDashboard() {
             category: applicantData.category, 
             resumeImageUrl: resumeImageUpdate,
             resumeFileUrl: resumeDocUpdate,
+            resumeFileName: resumeNameUpdate,
+            profilePic: newProfilePicUrl, // Saves profile picture permanently
             updatedAt: serverTimestamp() 
-        }, { merge: true }); 
+        };
+
+        // Save to Firestore
+        await setDoc(doc(db, "applicants", auth.currentUser.uid), updatedData, { merge: true }); 
         
-        setApplicantData(prev => ({...prev, resumeImageUrl: resumeImageUpdate, resumeFileUrl: resumeDocUpdate}));
+        // Update local state instantly
+        setApplicantData(prev => ({ ...prev, ...updatedData }));
+        if (newProfilePicUrl) setProfileImage(newProfilePicUrl);
+
         setIsEditingProfile(false); 
+        setIsEditingImage(false); // Reset image edit state
         setResumeImageFile(null);
         setResumeDocFile(null);
+        
+        // Clear the HTML file input so it's ready for the next time
+        if (fileInputRef.current) fileInputRef.current.value = "";
+
     } catch (err) { 
         alert("Error saving profile: " + err.message); 
     } finally { 
@@ -988,11 +1040,12 @@ export default function ApplicantDashboard() {
                         <XMarkIcon className="w-5 h-5"/>
                     </button>
                     
-                    {/* --- LEFT SIDE: Employer Info --- */}
+                   {/* --- LEFT SIDE: Employer Info --- */}
                     <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
                         <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
-                            {selectedJob.employerLogo ? (
-                                <img src={selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
+                            {/* PRIORITY TO LIVE EMPLOYER DATA */}
+                            {(employerContact?.profilePic || selectedJob.employerLogo) ? (
+                                <img src={employerContact?.profilePic || selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
                             ) : (
                                 <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
                             )}
@@ -1010,16 +1063,25 @@ export default function ApplicantDashboard() {
                                 </div>
                                 
                                 {(() => {
-                                    const contactInfo = employerContact?.contact || selectedJob.contact;
-                                    if (!contactInfo) return null;
-                                    const contactStr = String(contactInfo);
-                                    const isEmail = contactStr.includes('@');
-                                    const ContactIcon = isEmail ? EnvelopeIcon : PhoneIcon;
+                                    // Fetch email first, then phone number
+                                    const emailInfo = employerContact?.email || selectedJob.email;
+                                    const phoneInfo = employerContact?.contact || selectedJob.contact;
+                                    
                                     return (
-                                        <div className="flex items-center gap-1.5">
-                                            <ContactIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                            <span className="text-slate-500 truncate max-w-[150px]">{contactStr}</span>
-                                        </div>
+                                        <>
+                                            {emailInfo && (
+                                                <div className="flex items-center gap-1.5" title="Email">
+                                                    <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                                    <span className="text-slate-500 truncate max-w-[150px]">{emailInfo}</span>
+                                                </div>
+                                            )}
+                                            {phoneInfo && (
+                                                <div className="flex items-center gap-1.5" title="Phone Number">
+                                                    <PhoneIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                                    <span className="text-slate-500 truncate max-w-[150px]">{phoneInfo}</span>
+                                                </div>
+                                            )}
+                                        </>
                                     );
                                 })()}
                             </div>
@@ -1086,15 +1148,31 @@ export default function ApplicantDashboard() {
 
                        {/* --- THEMED ACTIONS (Pinned to bottom) --- */}
                         <div className="w-full flex gap-3 pt-2 shrink-0 mt-2">
-                            {myApplications.some(app => app.jobId === selectedJob.id) ? (
-                                <button disabled className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest cursor-not-allowed border ${theme.appliedBtn}`}>
-                                    Application Sent
-                                </button>
-                            ) : (
-                                <button onClick={() => handleApplyToJob(selectedJob)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg ${theme.solid}`}>
-                                    Apply Now
-                                </button>
-                            )}
+                            {(() => {
+                                const isAtCapacity = selectedJob.capacity > 0 && (selectedJob.applicationCount || 0) >= selectedJob.capacity;
+                                const hasApplied = myApplications.some(app => app.jobId === selectedJob.id && app.status !== 'withdrawn' && app.status !== 'rejected');
+
+                                if (hasApplied) {
+                                    return (
+                                        <button disabled className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest cursor-not-allowed border ${theme.appliedBtn}`}>
+                                            Application Sent
+                                        </button>
+                                    );
+                                } else if (isAtCapacity) {
+                                    return (
+                                        <button disabled className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest cursor-not-allowed border bg-slate-500/10 text-slate-500 border-slate-500/20`}>
+                                            Capacity Reached
+                                        </button>
+                                    );
+                                } else {
+                                    return (
+                                        <button onClick={() => handleApplyToJob(selectedJob)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg ${theme.solid}`}>
+                                            Apply Now
+                                        </button>
+                                    );
+                                }
+                            })()}
+                            
                             <button onClick={() => handleToggleSaveJob(selectedJob)} className={`flex-none p-4 rounded-xl transition-all border ${isSaved ? theme.saveActive : theme.saveIdle}`}>
                                 <BookmarkIcon className={`w-6 h-6 ${isSaved ? 'fill-current' : ''}`}/>
                             </button>
@@ -1115,8 +1193,9 @@ export default function ApplicantDashboard() {
                 {/* --- LEFT SIDE: Employer Info --- */}
                 <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
                     <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
-                        {viewingApplication.employerLogo ? (
-                            <img src={viewingApplication.employerLogo} alt={viewingApplication.employerName} className="w-full h-full object-cover" />
+                         {/* PRIORITY TO LIVE EMPLOYER DATA */}
+                        {(employerContact?.profilePic || viewingApplication.employerLogo) ? (
+                            <img src={employerContact?.profilePic || viewingApplication.employerLogo} alt={viewingApplication.employerName} className="w-full h-full object-cover" />
                         ) : (
                             <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{viewingApplication.employerName?.charAt(0)}</div>
                         )}
@@ -1137,16 +1216,25 @@ export default function ApplicantDashboard() {
                                 </div>
                                 
                                 {(() => {
-                                    const contactInfo = employerContact?.contact || modalJobDetails?.contact;
-                                    if (!contactInfo) return null;
-                                    const contactStr = String(contactInfo);
-                                    const isEmail = contactStr.includes('@');
-                                    const ContactIcon = isEmail ? EnvelopeIcon : PhoneIcon;
+                                    // Fetch email first, then phone number
+                                    const emailInfo = employerContact?.email || modalJobDetails?.email;
+                                    const phoneInfo = employerContact?.contact || modalJobDetails?.contact;
+                                    
                                     return (
-                                        <div className="flex items-center gap-1.5">
-                                            <ContactIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                            <span className="text-slate-500 truncate max-w-[150px]">{contactStr}</span>
-                                        </div>
+                                        <>
+                                            {emailInfo && (
+                                                <div className="flex items-center gap-1.5" title="Email">
+                                                    <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                                    <span className="text-slate-500 truncate max-w-[150px]">{emailInfo}</span>
+                                                </div>
+                                            )}
+                                            {phoneInfo && (
+                                                <div className="flex items-center gap-1.5" title="Phone Number">
+                                                    <PhoneIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                                    <span className="text-slate-500 truncate max-w-[150px]">{phoneInfo}</span>
+                                                </div>
+                                            )}
+                                        </>
                                     );
                                 })()}
                             </div>
@@ -1619,7 +1707,14 @@ export default function ApplicantDashboard() {
          <button onClick={() => setActiveTab("FindJobs")}><SparklesIcon className={`w-6 h-6 ${activeTab === 'FindJobs' ? 'text-blue-500' : 'text-slate-500'}`}/></button>
          <button onClick={() => setActiveTab("Saved")}><BookmarkIcon className={`w-6 h-6 ${activeTab === 'Saved' ? 'text-blue-500' : 'text-slate-500'}`}/></button>
          {/* Changed bg-amber-500 to bg-red-500 */}
-         <button onClick={() => setActiveTab("Applications")}><div className="relative"><PaperAirplaneIcon className={`w-6 h-6 ${activeTab === 'Applications' ? 'text-blue-500' : 'text-slate-500'}`}/>{hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse"></span>}</div></button>
+         <button onClick={() => setActiveTab("Applications")}>
+             <div className="relative">
+                 <PaperAirplaneIcon className={`w-6 h-6 ${activeTab === 'Applications' ? 'text-blue-500' : 'text-slate-500'}`}/>
+                 {hasUnreadUpdates && (
+                     <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>
+                 )}
+             </div>
+         </button>
          <button onClick={() => setActiveTab("Messages")}><div className="relative"><ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-500' : 'text-slate-500'}`}/>{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 min-w-[16px] h-[16px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-none">{unreadMsgCount}</span>}</div></button>
       </nav>
 

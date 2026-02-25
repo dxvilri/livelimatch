@@ -1,17 +1,42 @@
+import { useState, useEffect } from "react";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../../../firebase/config"; // Added db import to fetch live data
 import { CheckCircleIcon, ClockIcon, XMarkIcon, EyeIcon, ChatBubbleLeftRightIcon, StarIcon as StarIconOutline, TrashIcon } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
-export default function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCount, isAccepted, isRejected, onRate }) {
+export default function ApplicationCard({ app, darkMode, onWithdraw, onView, onChat, unreadCount, isAccepted, isRejected, onRate, employerPic }) {
+    
+    // State to hold the live picture
+    const [liveEmployerPic, setLiveEmployerPic] = useState(null);
+
+    // Fetch the absolute latest employer profile picture when the card loads
+    useEffect(() => {
+        let isMounted = true;
+        if (app.employerId) {
+            getDoc(doc(db, "employers", app.employerId))
+                .then(snap => {
+                    if (snap.exists() && isMounted) {
+                        setLiveEmployerPic(snap.data().profilePic);
+                    }
+                })
+                .catch(err => console.error("Error fetching live employer pic:", err));
+        }
+        return () => { isMounted = false; };
+    }, [app.employerId]);
+
     const borderColorClass = isAccepted ? 'border-l-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.1)]' : isRejected ? 'border-l-red-500 opacity-80' : 'border-l-amber-500';
     const iconBgClass = isAccepted ? 'bg-blue-500/10' : isRejected ? 'bg-red-500/10' : 'bg-amber-500/10';
     const iconContent = isAccepted ? '🤝' : isRejected ? '❌' : '📄';
+
+    // Prioritize Live DB Pic -> Chat Pic -> Snapshot Pic
+    const displayImage = liveEmployerPic || employerPic || app.employerLogo;
 
     return (
       <div className={`p-4 md:p-8 rounded-[2.5rem] border-l-8 flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 transition-all relative overflow-hidden group hover:shadow-lg backdrop-blur-md ${darkMode ? 'bg-slate-900/60 border-white/5' : 'bg-white/60 border-white/40 shadow-md'} ${borderColorClass}`}>
         <div className="flex items-start gap-4 md:gap-5">
           <div className={`w-12 h-12 md:w-14 md:h-14 rounded-[1.2rem] flex items-center justify-center text-xl md:text-2xl shadow-inner select-none overflow-hidden shrink-0 ${iconBgClass}`}>
-               {app.employerLogo ? (
-                   <img src={app.employerLogo} alt={app.employerName} className="w-full h-full object-cover"/>
+               {displayImage ? (
+                   <img src={displayImage} alt={app.employerName} className="w-full h-full object-cover"/>
                ) : (
                    <span>{iconContent}</span>
                )}
