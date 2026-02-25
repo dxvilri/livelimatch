@@ -5,12 +5,26 @@ import {
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
 // Internal Component for the individual Applicant Card
-function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDelete, onRate, isAccepted, unreadCount }) {
+function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDelete, onRate, isAccepted, isRejected, unreadCount }) {
+    // Dynamic border and icon logic
+    const borderColorClass = isAccepted 
+        ? 'border-l-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.1)]' 
+        : isRejected 
+            ? 'border-l-red-500 opacity-80' 
+            : 'border-l-amber-500';
+
+    const iconBgClass = isAccepted ? 'bg-blue-500/10' : isRejected ? 'bg-red-500/10' : 'bg-amber-500/10';
+    const iconContent = isAccepted ? '🤝' : isRejected ? '❌' : '📄';
+
     return (
-        <div className={`p-4 md:p-8 rounded-[2.5rem] border-l-8 flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 transition-all relative overflow-hidden group hover:shadow-xl backdrop-blur-md ${darkMode ? 'bg-slate-900/60 border-white/5' : 'bg-white border-white/40 shadow-md'} ${isAccepted ? 'border-l-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.1)]' : 'border-l-amber-500'}`}>
+        <div className={`p-4 md:p-8 rounded-[2.5rem] border-l-8 flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 transition-all relative overflow-hidden group hover:shadow-xl backdrop-blur-md ${darkMode ? 'bg-slate-900/60 border-white/5' : 'bg-white border-white/40 shadow-md'} ${borderColorClass}`}>
             <div className="flex items-start gap-4 md:gap-5">
-                <div className={`w-12 h-12 md:w-14 md:h-14 rounded-[1.2rem] flex items-center justify-center text-xl md:text-2xl shadow-inner select-none overflow-hidden shrink-0 ${isAccepted ? 'bg-blue-500/10' : 'bg-amber-500/10'}`}>
-                    {app.applicantProfilePic ? <img src={app.applicantProfilePic} alt={app.applicantName} className="w-full h-full object-cover"/> : <span>{isAccepted ? '🤝' : '📄'}</span>}
+                <div className={`w-12 h-12 md:w-14 md:h-14 rounded-[1.2rem] flex items-center justify-center text-xl md:text-2xl shadow-inner select-none overflow-hidden shrink-0 ${iconBgClass}`}>
+                    {app.applicantProfilePic ? (
+                        <img src={app.applicantProfilePic} alt={app.applicantName} className="w-full h-full object-cover"/>
+                    ) : (
+                        <span>{iconContent}</span>
+                    )}
                 </div>
                 <div>
                     <div className="flex items-center gap-2">
@@ -23,6 +37,11 @@ function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDe
                         )}
                     </div>
                     <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1.5 md:mt-2 select-none cursor-default truncate max-w-[200px]">{app.jobTitle}</p>
+                    {isRejected && (
+                        <p className="text-[9px] font-black text-red-500 uppercase tracking-widest mt-2">
+                            {app.status === 'withdrawn' ? 'Withdrawn' : 'Rejected'}
+                        </p>
+                    )}
                 </div>
             </div>
             
@@ -31,12 +50,14 @@ function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDe
                     <EyeIcon className="w-4 h-4" /> View
                 </button>
                 
-                {!isAccepted ? (
+                {!isAccepted && !isRejected && (
                     <>
-                        <button title="Reject" onClick={onReject} className={`flex-1 md:flex-none justify-center flex p-3 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}><XMarkIcon className="w-5 h-5" /></button>
-                        <button title="Accept" onClick={onAccept} className={`flex-1 md:flex-none justify-center flex p-3 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-green-500/10 text-green-500 hover:bg-green-500/20' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}><CheckCircleIcon className="w-5 h-5" /></button>
+                        <button title="Reject" onClick={onReject} className={`flex-1 md:flex-none justify-center flex p-3 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-500 hover:bg-red-100'}`}><XMarkIcon className="w-5 h-5" /></button>
+                        <button title="Accept" onClick={onAccept} className={`flex-1 md:flex-none justify-center flex p-3 rounded-2xl transition-all active:scale-95 ${darkMode ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}><CheckCircleIcon className="w-5 h-5" /></button>
                     </>
-                ) : (
+                )}
+
+                {isAccepted && (
                     <>
                         {app.isRatedByEmployer ? (
                             <button disabled className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest opacity-50 cursor-not-allowed ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-500'}`}>
@@ -56,7 +77,7 @@ function ApplicantCard({ app, darkMode, onAccept, onReject, onView, onChat, onDe
                 )}
                 
                 <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-white/10' : 'bg-slate-300'}`}></div>
-                <button title="Delete Application" onClick={(e) => { e.stopPropagation(); onDelete(); }} className={`flex-none p-3 rounded-2xl transition-all active:scale-95 group-hover:opacity-100 opacity-60 ${darkMode ? 'text-slate-500 hover:text-red-500 hover:bg-red-500/10' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}><TrashIcon className="w-5 h-5" /></button>
+                <button title={isRejected ? "Delete Record" : "Delete Application"} onClick={(e) => { e.stopPropagation(); onDelete(); }} className={`flex-none p-3 rounded-2xl transition-all active:scale-95 group-hover:opacity-100 opacity-60 ${darkMode ? 'text-slate-500 hover:text-red-500 hover:bg-red-500/10' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}><TrashIcon className="w-5 h-5" /></button>
             </div>
         </div>
     );
@@ -81,6 +102,7 @@ export default function ApplicantsTab({
 
     const pendingApplications = filteredApps.filter(app => app.status === 'pending');
     const acceptedApplications = filteredApps.filter(app => app.status === 'accepted');
+    const rejectedApplications = filteredApps.filter(app => app.status === 'rejected' || app.status === 'withdrawn');
 
     return (
         <div className="animate-content space-y-10 mt-4 md:mt-8">
@@ -98,7 +120,40 @@ export default function ApplicantsTab({
                 </div>
             </div>
 
-            {/* Pending Applications Section */}
+            {/* 1. Accepted Candidates Section (Now at the top) */}
+            <section className="space-y-6">
+                <div className="flex items-center gap-3">
+                    <CheckCircleIcon className="w-5 h-5 text-blue-500" />
+                    <h3 className="font-black text-sm uppercase tracking-[0.2em] text-blue-500 select-none cursor-default">
+                        Accepted Candidates ({acceptedApplications.length})
+                    </h3>
+                    <div className="flex-1 h-px bg-blue-500/10"></div>
+                </div>
+                
+                <div className="space-y-4">
+                    {acceptedApplications.length > 0 ? (
+                        acceptedApplications.map(app => (
+                            <ApplicantCard 
+                                key={app.id} 
+                                app={app} 
+                                darkMode={darkMode} 
+                                isAccepted={true} 
+                                onChat={() => handleStartChatFromExternal({ id: app.applicantId, name: app.applicantName, profilePic: app.applicantProfilePic || null })} 
+                                onView={() => handleViewApplication(app)} 
+                                onDelete={() => handleDeleteApplication(app.id)} 
+                                unreadCount={conversations.find(c => c.chatId.includes(app.applicantId))?.[`unread_${currentUser?.uid}`] || 0} 
+                                onRate={() => { setSelectedApplicantToRate(app); setIsRatingApplicantModalOpen(true); }} 
+                            />
+                        ))
+                    ) : (
+                        <div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No accepted candidates found</p>
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {/* 2. Pending Review Section (Now in the middle) */}
             <section className="space-y-6">
                 <div className="flex items-center gap-3">
                     <ClockIcon className="w-5 h-5 text-amber-500" />
@@ -129,34 +184,31 @@ export default function ApplicantsTab({
                 </div>
             </section>
 
-            {/* Accepted Candidates Section */}
+            {/* 3. Rejected / Withdrawn Section (Added to the bottom) */}
             <section className="space-y-6">
                 <div className="flex items-center gap-3">
-                    <CheckCircleIcon className="w-5 h-5 text-blue-500" />
-                    <h3 className="font-black text-sm uppercase tracking-[0.2em] text-blue-500 select-none cursor-default">
-                        Accepted Candidates ({acceptedApplications.length})
+                    <XMarkIcon className="w-5 h-5 text-red-500" />
+                    <h3 className="font-black text-sm uppercase tracking-[0.2em] text-red-500 select-none cursor-default">
+                        Rejected / Withdrawn ({rejectedApplications.length})
                     </h3>
-                    <div className="flex-1 h-px bg-blue-500/10"></div>
+                    <div className="flex-1 h-px bg-red-500/10"></div>
                 </div>
                 
                 <div className="space-y-4">
-                    {acceptedApplications.length > 0 ? (
-                        acceptedApplications.map(app => (
+                    {rejectedApplications.length > 0 ? (
+                        rejectedApplications.map(app => (
                             <ApplicantCard 
                                 key={app.id} 
                                 app={app} 
                                 darkMode={darkMode} 
-                                isAccepted={true} 
-                                onChat={() => handleStartChatFromExternal({ id: app.applicantId, name: app.applicantName, profilePic: app.applicantProfilePic || null })} 
-                                onView={() => handleViewApplication(app)} 
+                                isRejected={true}
                                 onDelete={() => handleDeleteApplication(app.id)} 
-                                unreadCount={conversations.find(c => c.chatId.includes(app.applicantId))?.[`unread_${currentUser?.uid}`] || 0} 
-                                onRate={() => { setSelectedApplicantToRate(app); setIsRatingApplicantModalOpen(true); }} 
+                                onView={() => handleViewApplication(app)} 
                             />
                         ))
                     ) : (
                         <div className={`p-10 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center ${darkMode ? 'border-white/5 bg-white/5' : 'border-slate-300 bg-slate-50'}`}>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No accepted candidates found</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 select-none cursor-default">No history found</p>
                         </div>
                     )}
                 </div>

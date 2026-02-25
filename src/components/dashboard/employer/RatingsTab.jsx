@@ -3,7 +3,6 @@ import { StarIcon as StarIconOutline } from "@heroicons/react/24/outline";
 
 export default function RatingsTab({ reviews, averageRating, darkMode, formatTime }) {
     
-    // --- STYLES ---
     const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
 
     return (
@@ -47,36 +46,46 @@ export default function RatingsTab({ reviews, averageRating, darkMode, formatTim
 
                 {reviews.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {reviews.map((rev) => (
-                            <div key={rev.id} className={`p-6 rounded-[2rem] border relative group transition-all hover:-translate-y-1 ${darkMode ? 'bg-slate-800/40 border-white/5' : 'bg-white border-slate-200 shadow-sm'}`}>
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden">
-                                            {rev.applicantPic ? <img src={rev.applicantPic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center font-bold text-slate-500">{rev.applicantName?.charAt(0)}</div>}
+                        {reviews.map((rev) => {
+                            // FIX: Use reviewerName/reviewerPic to match the DB fields
+                            const reviewerName = rev.reviewerName || rev.applicantName || "Anonymous";
+                            const reviewerPic = rev.reviewerPic || rev.applicantPic;
+
+                            return (
+                                <div key={rev.id} className={`p-6 rounded-[2rem] border relative group transition-all hover:-translate-y-1 ${darkMode ? 'bg-slate-800/40 border-white/5' : 'bg-white border-slate-200 shadow-sm'}`}>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden shrink-0">
+                                                {reviewerPic ? (
+                                                    <img src={reviewerPic} className="w-full h-full object-cover" alt="Reviewer"/>
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center font-black text-slate-500 uppercase">{reviewerName.charAt(0)}</div>
+                                                )}
+                                            </div>
+                                            <div className="overflow-hidden">
+                                                <h4 className={`font-bold text-sm truncate max-w-[150px] ${darkMode ? 'text-white' : 'text-slate-900'}`}>{reviewerName}</h4>
+                                                <p className="text-[9px] font-bold opacity-40 uppercase">{rev.createdAt ? formatTime(rev.createdAt) : 'Just now'}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h4 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-slate-900'}`}>{rev.applicantName || "Anonymous"}</h4>
-                                            <p className="text-[9px] font-bold opacity-40 uppercase">{rev.createdAt ? formatTime(rev.createdAt) : 'Just now'}</p>
+                                        <div className="flex bg-amber-500/10 px-2 py-1 rounded-lg shrink-0">
+                                            {[1, 2, 3, 4, 5].map((s) => (
+                                                s <= rev.rating ? (
+                                                    <StarIconSolid key={s} className="w-3 h-3 text-amber-500" />
+                                                ) : (
+                                                    <StarIconOutline key={s} className="w-3 h-3 text-amber-500/40" />
+                                                )
+                                            ))}
                                         </div>
                                     </div>
-                                    <div className="flex bg-amber-500/10 px-2 py-1 rounded-lg">
-                                        {[1, 2, 3, 4, 5].map((s) => (
-                                            s <= rev.rating ? (
-                                                <StarIconSolid key={s} className="w-3 h-3 text-amber-500" />
-                                            ) : (
-                                                <StarIconOutline key={s} className="w-3 h-3 text-amber-500/40" />
-                                            )
-                                        ))}
+                                    <div className="relative">
+                                        <span className="absolute -top-2 -left-1 text-4xl font-serif opacity-10">“</span>
+                                        <p className={`text-sm leading-relaxed pl-4 relative z-10 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                                            {rev.comment || "No comment provided."}
+                                        </p>
                                     </div>
                                 </div>
-                                <div className="relative">
-                                    <span className="absolute -top-2 -left-1 text-4xl font-serif opacity-10">“</span>
-                                    <p className={`text-sm leading-relaxed pl-4 relative z-10 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                                        {rev.comment || "No comment provided."}
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 ) : (
                     <div className="py-20 text-center flex flex-col items-center opacity-40">

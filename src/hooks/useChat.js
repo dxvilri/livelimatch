@@ -3,13 +3,12 @@ import { useState, useEffect, useRef } from "react";
 import { 
   collection, query, where, onSnapshot, addDoc, 
   serverTimestamp, setDoc, doc, updateDoc, increment, getDoc,
-  deleteDoc, writeBatch, getDocs // <-- Added imports
+  deleteDoc, writeBatch, getDocs 
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, auth } from "../firebase/config"; 
+import { db } from "../firebase/config"; 
 
 export const useChat = (currentUser, isMobile) => {
-  // ... (keep existing state and refs)
   const [activeChat, setActiveChat] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -18,10 +17,13 @@ export const useChat = (currentUser, isMobile) => {
   const [isChatMinimized, setIsChatMinimized] = useState(false);
   const [isBubbleExpanded, setIsBubbleExpanded] = useState(false);
   const [activeBubbleView, setActiveBubbleView] = useState('inbox');
+  
+  // NEW: Holds the absolute latest data (name/pic) of the person you're chatting with
+  const [otherUserData, setOtherUserData] = useState(null);
   const [chatStatus, setChatStatus] = useState({ isOnline: false, lastSeen: null });
   const scrollRef = useRef(null);
 
-  // ... (keep existing useEffects: 1. Fetch Conversations, 2. Effective ID, 3. Fetch Messages)
+  // 1. Fetch Conversations
   useEffect(() => {
     if (!currentUser) return;
     const q = query(collection(db, "conversations"), where("participants", "array-contains", currentUser.uid));
@@ -41,22 +43,53 @@ export const useChat = (currentUser, isMobile) => {
     ? (activeBubbleView !== 'inbox' ? activeBubbleView : null) 
     : activeChat?.id;
 
+  // 2. Fetch Active Chat Messages and LIVE User Data
   useEffect(() => {
-    if (!effectiveActiveChatId || !currentUser) return;
+    if (!effectiveActiveChatId || !currentUser) {
+        setOtherUserData(null);
+        return;
+    }
+    
     const chatId = [currentUser.uid, effectiveActiveChatId].sort().join("_");
 
+    // Clear unread count when viewing
     if ((!isMobile && !isChatMinimized) || (isMobile && isBubbleVisible && isBubbleExpanded)) {
        updateDoc(doc(db, "conversations", chatId), { [`unread_${currentUser.uid}`]: 0 }).catch(() => {});
     }
 
+    // Fetch Messages
     const qChat = query(collection(db, "messages"), where("chatId", "==", chatId));
     const unsubChat = onSnapshot(qChat, (snap) => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      msgs.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+      msgs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setMessages(msgs);
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
 
+    // --- FIX: FETCH LIVE NAME AND PICTURE ---
+    // We check both collections because we don't know if the other user is an Employer or Applicant
+    const fetchUserData = async () => {
+        let userSnap = await getDoc(doc(db, "applicants", effectiveActiveChatId));
+        if (!userSnap.exists()) {
+            userSnap = await getDoc(doc(db, "employers", effectiveActiveChatId));
+        }
+        
+        if (userSnap.exists()) {
+            const data = userSnap.data();
+            setOtherUserData({
+                id: effectiveActiveChatId,
+                name: `${data.firstName || ""} ${data.lastName || ""}`.trim() || "User",
+                profilePic: data.profilePic || null,
+                isOnline: data.isOnline,
+                lastSeen: data.lastSeen
+            });
+            setChatStatus({ isOnline: data.isOnline, lastSeen: data.lastSeen });
+        }
+    };
+
+    fetchUserData();
+    
+    // Also listen for real-time status updates (online/offline)
     const unsubStatus = onSnapshot(doc(db, "applicants", effectiveActiveChatId), (snap) => {
         if(snap.exists()) setChatStatus({ isOnline: snap.data().isOnline, lastSeen: snap.data().lastSeen });
     });
@@ -64,8 +97,6 @@ export const useChat = (currentUser, isMobile) => {
     return () => { unsubChat(); unsubStatus(); };
   }, [effectiveActiveChatId, isChatMinimized, isBubbleVisible, isBubbleExpanded, currentUser, isMobile]);
 
-
-  // ... (keep existing sendMessage)
   const sendMessage = async (text, attachment, replyingTo) => {
     if ((!text.trim() && !attachment) || !effectiveActiveChatId) return;
     
@@ -94,7 +125,6 @@ export const useChat = (currentUser, isMobile) => {
     }, { merge: true });
   };
 
-  // --- NEW: Unsend Message Function ---
   const unsendMessage = async (messageId) => {
     try {
       await updateDoc(doc(db, "messages", messageId), {
@@ -104,29 +134,21 @@ export const useChat = (currentUser, isMobile) => {
         fileType: 'text',
         fileName: null
       });
-    } catch (err) {
-      console.error("Error unsending message:", err);
-    }
+    } catch (err) { console.error(err); }
   };
 
-  // --- NEW: Delete Conversation Function ---
   const deleteChat = async (otherUserId) => {
     if (!currentUser || !otherUserId) return;
     const chatId = [currentUser.uid, otherUserId].sort().join("_");
     try {
-      // 1. Delete the conversation tracker document
       await deleteDoc(doc(db, "conversations", chatId));
-      // 2. Batch delete all messages in that chat
       const q = query(collection(db, "messages"), where("chatId", "==", chatId));
       const snap = await getDocs(q);
       const batch = writeBatch(db);
       snap.forEach(d => batch.delete(d.ref));
       await batch.commit();
-      
-      setActiveChat(null); // Close the chat window
-    } catch (err) {
-      console.error("Error deleting chat:", err);
-    }
+      setActiveChat(null);
+    } catch (err) { console.error(err); }
   };
 
   const openChat = (user) => {
@@ -146,8 +168,8 @@ export const useChat = (currentUser, isMobile) => {
     activeChat, setActiveChat, messages, conversations, openBubbles, setOpenBubbles,
     isBubbleVisible, setIsBubbleVisible, isChatMinimized, setIsChatMinimized,
     isBubbleExpanded, setIsBubbleExpanded, activeBubbleView, setActiveBubbleView,
-    chatStatus, scrollRef, effectiveActiveChatId,
+    chatStatus, scrollRef, effectiveActiveChatId, otherUserData, // <-- Exported otherUserData
     sendMessage, openChat, closeChat, 
-    unsendMessage, deleteChat // <-- Don't forget to export them!
+    unsendMessage, deleteChat 
   };
 };

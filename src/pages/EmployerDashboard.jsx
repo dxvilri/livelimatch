@@ -369,16 +369,24 @@ export default function EmployerDashboard() {
      }
      if(activeTab === "Ratings") {
          const fetchReviews = () => {
-             const q = query(collection(db, "reviews"), where("employerId", "==", auth.currentUser.uid));
+             // FIX: Query 'targetId' and remove 'orderBy' to avoid Index requirement
+             const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid));
+             
              const unsub = onSnapshot(q, (snap) => {
                  let revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                 
+                 // FIX: Sort locally by createdAt descending
                  revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                  
                  setReviews(revs);
+                 
                  if(revs.length > 0) {
-                     const total = revs.reduce((acc, curr) => acc + (Number(curr.rating) || 0), 0);
+                     // Ensure rating is treated as a number for calculation
+                     const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
                      setAverageRating((total / revs.length).toFixed(1));
-                 } else { setAverageRating(0); }
+                 } else { 
+                     setAverageRating(0); 
+                 }
              });
              return unsub;
          };
@@ -1209,7 +1217,7 @@ return (
       />
 
      {/* =========================================================
-          JOB CREATION / EDITING MODAL (Restyled to Job Card Theme)
+          JOB CREATION / EDITING MODAL (Refined Stats-Card Theme)
           ========================================================= */}
       {isJobModalOpen && (
           <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in" onClick={() => setIsJobModalOpen(false)}>
@@ -1218,27 +1226,27 @@ return (
                   className={`relative w-full max-w-2xl p-6 md:p-8 rounded-[2.5rem] shadow-2xl border animate-in zoom-in-95 duration-300 overflow-y-auto max-h-[90vh] hide-scrollbar 
                     ${darkMode 
                         ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border-white/10 text-white' 
-                        : 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 border-white/40 ring-1 ring-inset ring-white/40 text-white shadow-[0_20px_50px_-10px_rgba(37,99,235,0.5)]'}`}
+                        : 'bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200 border-white/60 ring-1 ring-inset ring-white/40 text-blue-900 shadow-[0_20px_50px_-10px_rgba(37,99,235,0.2)]'}`}
               >
-                  {/* Decorative Icon Background (Matching Job Card) */}
-                  <div className={`absolute -right-10 -bottom-10 opacity-10 pointer-events-none rotate-12 transition-transform duration-500`}>
-                      <BriefcaseIcon className="w-64 h-64 text-white" />
+                  {/* Decorative Icon Background */}
+                  <div className={`absolute -right-10 -bottom-10 opacity-[0.08] pointer-events-none rotate-12 transition-transform duration-500 ${darkMode ? 'text-white' : 'text-blue-600'}`}>
+                      <BriefcaseIcon className="w-64 h-64" />
                   </div>
 
                   {/* Header */}
                   <div className="flex items-center justify-between mb-8 relative z-10">
                       <div className="flex items-center gap-4">
-                          <div className={`p-3 rounded-2xl backdrop-blur-md border shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] ${darkMode ? 'bg-blue-500/20 border-blue-500/30' : 'bg-white/20 border-white/30'}`}>
-                              <PlusIcon className="w-8 h-8 text-white"/>
+                          <div className={`p-3 rounded-2xl backdrop-blur-md border shadow-sm ${darkMode ? 'bg-blue-500/20 border-blue-500/30 text-white' : 'bg-white/60 border-white text-blue-600 shadow-inner'}`}>
+                              <PlusIcon className="w-8 h-8"/>
                           </div>
                           <div>
-                              <h2 className="text-2xl font-black tracking-tight drop-shadow-md">{editingJobId ? 'Edit Job Listing' : 'Post New Job'}</h2>
-                              <p className={`text-[10px] font-bold uppercase tracking-widest opacity-80 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>
+                              <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{editingJobId ? 'Edit Job Listing' : 'Post New Job'}</h2>
+                              <p className={`text-[10px] font-bold uppercase tracking-widest opacity-70 ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
                                   {editingJobId ? 'Update details below' : 'Fill in the details below'}
                               </p>
                           </div>
                       </div>
-                      <button onClick={() => setIsJobModalOpen(false)} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-white/20 hover:bg-white/30 text-white border border-white/30'}`}>
+                      <button onClick={() => setIsJobModalOpen(false)} className={`p-2 rounded-full transition-all hover:scale-110 active:scale-95 ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-white/40 hover:bg-white/60 text-blue-900 border border-white/60'}`}>
                           <XMarkIcon className="w-6 h-6"/>
                       </button>
                   </div>
@@ -1246,31 +1254,31 @@ return (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10">
                       {/* 1. Job Title */}
                       <div className="md:col-span-2">
-                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Job Title <span className="text-red-400">*</span></label>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Job Title <span className="text-red-500">*</span></label>
                           <input 
                               type="text" 
                               value={jobForm.title} 
                               onChange={e => setJobForm({...jobForm, title: e.target.value})} 
                               className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm shadow-inner backdrop-blur-md 
-                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/20 border-white/30 focus:border-white focus:bg-white/30 text-white placeholder-blue-100'}`} 
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/80 focus:border-blue-400 text-blue-900 placeholder-blue-400/60'}`} 
                               placeholder="e.g. Need Carpenter" 
                           />
                       </div>
                       
                       {/* 2A. Location Dropdown */}
                       <div className="relative">
-                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Location (Sitio) <span className="text-red-400">*</span></label>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Location (Sitio) <span className="text-red-500">*</span></label>
                           <button 
                               onClick={(e) => { e.preventDefault(); setIsLocationDropdownOpen(!isLocationDropdownOpen); setIsJobCategoryDropdownOpen(false); }}
                               className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm text-left shadow-inner flex items-center justify-between backdrop-blur-md
-                                ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/20 border-white/30 text-white'}`}
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 text-white' : 'bg-white/40 border-white/60 text-blue-900'}`}
                           >
-                              <span className={jobForm.sitio ? '' : 'opacity-60'}>{jobForm.sitio || "Select Location"}</span>
+                              <span className={jobForm.sitio ? '' : 'opacity-50'}>{jobForm.sitio || "Select Location"}</span>
                               <ChevronDownIcon className={`w-5 h-5 transition-transform ${isLocationDropdownOpen ? 'rotate-180' : ''}`} />
                           </button>
                           
                           {isLocationDropdownOpen && (
-                              <div className={`absolute z-[70] top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-blue-200 text-slate-900'}`}>
+                              <div className={`absolute z-[70] top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-blue-100 text-slate-900'}`}>
                                   <div className="max-h-48 overflow-y-auto p-2 space-y-1 hide-scrollbar">
                                       {PUROK_LIST.map(purok => (
                                           <button 
@@ -1288,18 +1296,18 @@ return (
 
                       {/* 2B. Category Dropdown */}
                       <div className="relative">
-                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Category <span className="text-red-400">*</span></label>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Category <span className="text-red-500">*</span></label>
                           <button 
                               onClick={(e) => { e.preventDefault(); setIsJobCategoryDropdownOpen(!isJobCategoryDropdownOpen); setIsLocationDropdownOpen(false); }}
                               className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm text-left shadow-inner flex items-center justify-between backdrop-blur-md
-                                ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/20 border-white/30 text-white'}`}
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 text-white' : 'bg-white/40 border-white/60 text-blue-900'}`}
                           >
-                              <span className={jobForm.category ? '' : 'opacity-60'}>{jobForm.category ? JOB_CATEGORIES.find(c => c.id === jobForm.category)?.label : "Select Category"}</span>
+                              <span className={jobForm.category ? '' : 'opacity-50'}>{jobForm.category ? JOB_CATEGORIES.find(c => c.id === jobForm.category)?.label : "Select Category"}</span>
                               <ChevronDownIcon className={`w-5 h-5 transition-transform ${isJobCategoryDropdownOpen ? 'rotate-180' : ''}`} />
                           </button>
                           
                           {isJobCategoryDropdownOpen && (
-                              <div className={`absolute z-[70] top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-blue-200 text-slate-900'}`}>
+                              <div className={`absolute z-[70] top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-blue-100 text-slate-900'}`}>
                                   <div className="max-h-48 overflow-y-auto p-2 space-y-1 hide-scrollbar">
                                       {JOB_CATEGORIES.map(cat => (
                                           <button 
@@ -1317,26 +1325,26 @@ return (
 
                       {/* 3A. Salary */}
                       <div>
-                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Salary (₱) <span className="text-red-400">*</span></label>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Salary (₱) <span className="text-red-500">*</span></label>
                           <input 
                               type="number" 
                               value={jobForm.salary} 
                               onChange={e => setJobForm({...jobForm, salary: e.target.value})} 
                               className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm shadow-inner backdrop-blur-md
-                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/20 border-white/30 focus:border-white text-white placeholder-blue-100'}`} 
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/80 focus:border-blue-400 text-blue-900 placeholder-blue-400/60'}`} 
                               placeholder="e.g. 500" 
                           />
                       </div>
 
                       {/* 3B. Application Capacity */}
                       <div>
-                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Capacity</label>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Capacity</label>
                           <input 
                               type="number" 
                               value={jobForm.capacity} 
                               onChange={e => setJobForm({...jobForm, capacity: e.target.value})} 
                               className={`w-full p-4 rounded-2xl outline-none border transition-all font-bold text-sm shadow-inner backdrop-blur-md
-                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/20 border-white/30 focus:border-white text-white placeholder-blue-100'}`} 
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/80 focus:border-blue-400 text-blue-900 placeholder-blue-400/60'}`} 
                               placeholder="Unlimited" 
                               min="1"
                           />
@@ -1344,7 +1352,7 @@ return (
 
                       {/* 4. Job Type Icons Picker */}
                       <div className="md:col-span-2 mt-2">
-                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-3 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Select Job Type <span className="text-red-400">*</span></label>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-3 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Select Job Type <span className="text-red-500">*</span></label>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                               {JOB_TYPES.map(type => {
                                   const isSelected = jobForm.type === type.id;
@@ -1354,8 +1362,8 @@ return (
                                           onClick={(e) => { e.preventDefault(); setJobForm({...jobForm, type: type.id}); }}
                                           className={`flex flex-col items-center justify-center p-4 rounded-[1.5rem] border transition-all duration-300 group
                                             ${isSelected 
-                                                ? (darkMode ? 'bg-blue-600 border-blue-400 shadow-lg scale-105' : 'bg-white border-white text-blue-600 shadow-xl scale-105') 
-                                                : (darkMode ? 'bg-slate-800/50 border-white/10 text-slate-400 hover:bg-slate-700' : 'bg-white/10 border-white/20 text-white/70 hover:bg-white/20 hover:text-white')}`}
+                                                ? (darkMode ? 'bg-blue-600 border-blue-400 shadow-lg scale-105 text-white' : 'bg-blue-600 border-blue-500 text-white shadow-lg scale-105') 
+                                                : (darkMode ? 'bg-slate-800/50 border-white/10 text-slate-400 hover:bg-slate-700' : 'bg-white/40 border-white/60 text-blue-700 hover:bg-white/80 hover:text-blue-900')}`}
                                       >
                                           <div className={`mb-2 transition-transform duration-300 group-hover:scale-110 ${isSelected ? '' : 'opacity-60'}`}>
                                               {cloneElement(type.icon, { className: "w-8 h-8" })}
@@ -1369,13 +1377,13 @@ return (
 
                       {/* 5. Description */}
                       <div className="md:col-span-2 mt-2">
-                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-100'}`}>Description</label>
+                          <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Description</label>
                           <textarea 
                               value={jobForm.description} 
                               onChange={e => setJobForm({...jobForm, description: e.target.value})} 
                               rows="4" 
                               className={`w-full p-4 rounded-2xl outline-none border transition-all resize-none font-bold text-sm shadow-inner backdrop-blur-md
-                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/20 border-white/30 focus:border-white text-white placeholder-blue-100'}`} 
+                                ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/80 focus:border-blue-400 text-blue-900 placeholder-blue-400/60'}`} 
                               placeholder="Describe the job requirements, responsibilities, and schedule..."
                           ></textarea>
                       </div>
@@ -1385,14 +1393,14 @@ return (
                           <button 
                               onClick={handleSaveJob} 
                               disabled={loading} 
-                              className={`w-full py-5 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-2xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3
+                              className={`w-full py-5 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3
                                 ${darkMode 
-                                    ? 'bg-blue-600 text-white hover:bg-blue-500' 
-                                    : 'bg-white text-blue-600 hover:bg-blue-50'}`}
+                                    ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-500/20' 
+                                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/30'}`}
                           >
                               {loading 
-                                ? <div className={`w-5 h-5 border-2 rounded-full animate-spin ${darkMode ? 'border-white/30 border-t-white' : 'border-blue-600/30 border-t-blue-600'}`}></div> 
-                                : <>{editingJobId ? 'Save Changes' : 'Publish Listing'} <BriefcaseIcon className="w-4 h-4" /></>}
+                                ? <div className={`w-5 h-5 border-2 rounded-full animate-spin border-white/30 border-t-white`}></div> 
+                                : <>{editingJobId ? 'Update Listing' : 'Publish Listing'} <PaperAirplaneIcon className="w-4 h-4" /></>}
                           </button>
                       </div>
                   </div>
@@ -1693,12 +1701,7 @@ return (
                             )}
                         </div>
                         
-                        <h2 className="text-2xl font-black mb-2 text-center leading-tight w-full">{selectedApplication.applicantName}</h2>
-                        
-                        {/* Target Job Title Indicator */}
-                        <div className={`text-[10px] font-black uppercase tracking-widest text-center opacity-80 mb-6 px-4 py-2 rounded-xl border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200'}`}>
-                            Applied for <br /> <span className={`text-xs mt-1 block ${theme.text}`}>{modalJob?.title || "Unknown Job"}</span>
-                        </div>
+                        <h2 className="text-2xl font-black mb-6 text-center leading-tight w-full">{selectedApplication.applicantName}</h2>
                         
                         <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
                             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
@@ -1734,11 +1737,18 @@ return (
                     {/* --- RIGHT SIDE: Candidate Details --- */}
                     <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
                         
-                        {/* Switch Sub-Header */}
-                        <div className="flex justify-end mb-4 shrink-0">
+                        {/* HEADER: Leveled Applied For Badge & Switch Button */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6 shrink-0">
+                            {/* Applied for Badge (Matching switch button size/style) */}
+                            <div className={`flex-1 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border truncate flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-blue-300' : 'bg-blue-50 border-blue-100 text-blue-600'}`}>
+                                <span className="opacity-50 shrink-0">Applied for:</span>
+                                <span className="truncate font-black">{modalJob?.title || "Unknown Job"}</span>
+                            </div>
+
+                            {/* Switch Button */}
                             <button 
                                 onClick={() => setModalSubTab(prev => prev === "details" ? "resume" : "details")}
-                                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-sm ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                             >
                                 {modalSubTab === "details" ? (
                                     <><DocumentIcon className="w-4 h-4" /><span>View Resume</span></>
@@ -1757,7 +1767,6 @@ return (
                                         <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalApplicant.aboutMe || modalApplicant.bio || "No bio provided."}</p>
                                     </div>
                                     
-                                    {/* DYNAMIC EDUCATION IN MODAL */}
                                     <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
                                         <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
                                         {typeof modalApplicant.education === 'object' && modalApplicant.education !== null ? (
@@ -1773,7 +1782,6 @@ return (
                                         )}
                                     </div>
 
-                                    {/* DYNAMIC EXPERIENCE IN MODAL */}
                                     <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
                                         <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
                                         {Array.isArray(modalApplicant.experience) || Array.isArray(modalApplicant.workExperience) ? (
@@ -1849,34 +1857,36 @@ return (
                             )}
                         </div>
 
-                       {/* --- ACTIONS (Pinned to Bottom) --- */}
-                        <div className="w-full flex flex-wrap gap-2 pt-2 shrink-0 mt-2">
+                       {/* --- ACTIONS (Centered Centering Fix for Mobile) --- */}
+                        <div className="w-full flex flex-col sm:flex-row gap-2 pt-2 shrink-0 mt-2">
                             <button onClick={() => { 
                                 setSelectedApplication(null); 
                                 handleStartChatFromExternal({ id: selectedApplication.applicantId, name: selectedApplication.applicantName, profilePic: pic || null }); 
-                            }} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg min-w-[120px] ${theme.solid}`}>
-                                Message
+                            }} className={`w-full sm:flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg ${theme.solid}`}>
+                                Message Candidate
                             </button>
                             
                             {selectedApplication.status === 'pending' && (
-                                <>
-                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg min-w-[100px] bg-green-500 hover:bg-green-400 text-white`}>
+                                <div className="flex gap-2 w-full sm:flex-[2]">
+                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg bg-green-500 hover:bg-green-400 text-white`}>
                                         Accept
                                     </button>
-                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg min-w-[100px] bg-red-500 hover:bg-red-400 text-white`}>
+                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg bg-red-500 hover:bg-red-400 text-white`}>
                                         Reject
                                     </button>
-                                </>
+                                </div>
                             )}
                             
                             {selectedApplication.status === 'accepted' && (
-                                <div className="flex-[2] flex items-center justify-center py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-green-500/10 text-green-500 border border-green-500/20 shadow-sm">
-                                    <CheckCircleIcon className="w-5 h-5 mr-2" /> Application Accepted
+                                <div className="w-full sm:flex-[2] flex items-center justify-center py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-green-500/10 text-green-500 border border-green-500/20 shadow-sm text-center">
+                                    <CheckCircleIcon className="w-5 h-5 mr-2 shrink-0" /> 
+                                    <span>Application Accepted</span>
                                 </div>
                             )}
                             {selectedApplication.status === 'rejected' && (
-                                <div className="flex-[2] flex items-center justify-center py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 shadow-sm">
-                                    <XMarkIcon className="w-5 h-5 mr-2" /> Application Rejected
+                                <div className="w-full sm:flex-[2] flex items-center justify-center py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 shadow-sm text-center">
+                                    <XMarkIcon className="w-5 h-5 mr-2 shrink-0" /> 
+                                    <span>Application Rejected</span>
                                 </div>
                             )}
                         </div>
