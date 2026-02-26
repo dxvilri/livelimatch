@@ -52,7 +52,7 @@ export default function LandingPage() {
   const [registerConfirmation, setRegisterConfirmation] = useState(null);
   const [registerData, setRegisterData] = useState({
     email: "", password: "", phoneNumber: "", firstName: "",
-    middleName: "", lastName: "", sitio: "", businessName: "",
+    middleName: "", lastName: "", suffix: "", sitio: "", businessName: "",
   });
 
   const PUROK_LIST = ["Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary"];
@@ -96,8 +96,18 @@ export default function LandingPage() {
   };
 
   // --- LOGIN LOGIC ---
-  const routeUserToDashboard = async (uid) => {
+  const routeUserToDashboard = async (user) => {
+    const uid = user.uid;
+    const email = user.email;
+
     try {
+        // Fix: Check Admin Collection by Email
+        if (email) {
+            const adminQ = query(collection(db, "admins"), where("email", "==", email));
+            const adminSnapByEmail = await getDocs(adminQ);
+            if (!adminSnapByEmail.empty) return navigate("/admin-dashboard");
+        }
+
         const adminRef = doc(db, "admins", uid);
         const adminSnap = await getDoc(adminRef);
         if (adminSnap.exists()) return navigate("/admin-dashboard");
@@ -135,7 +145,7 @@ export default function LandingPage() {
       const exists = await checkDuplicate("email", loginIdentifier);
       if (!exists) { triggerToast("Account not existing. Please register first."); setLoading(false); return; }
       const userCredential = await signInWithEmailAndPassword(auth, loginIdentifier, loginPassword);
-      await routeUserToDashboard(userCredential.user.uid);
+      await routeUserToDashboard(userCredential.user);
     } catch (err) { triggerToast("Invalid Email or Password.", "error"); }
     setLoading(false);
   };
@@ -162,7 +172,7 @@ export default function LandingPage() {
     setLoading(true);
     try {
       const result = await loginConfirmation.confirm(loginOtp);
-      await routeUserToDashboard(result.user.uid);
+      await routeUserToDashboard(result.user);
     } catch (err) { triggerToast("Invalid OTP code."); }
     setLoading(false);
   };
@@ -186,12 +196,17 @@ export default function LandingPage() {
       const fName = normalizeName(registerData.firstName);
       const mName = normalizeName(registerData.middleName);
       const lName = normalizeName(registerData.lastName);
+      const sName = normalizeName(registerData.suffix);
       
       const [appSnap, empSnap] = await Promise.all([getDocs(collection(db, "applicants")), getDocs(collection(db, "employers"))]);
       let duplicateFound = false;
       const evaluateDoc = (d) => {
         const data = d.data();
-        if (normalizeName(data.firstName) === fName && normalizeName(data.middleName) === mName && normalizeName(data.lastName) === lName && data.status !== 'rejected') duplicateFound = true;
+        if (normalizeName(data.firstName) === fName && 
+            normalizeName(data.middleName) === mName && 
+            normalizeName(data.lastName) === lName && 
+            normalizeName(data.suffix || "") === sName && 
+            data.status !== 'rejected') duplicateFound = true;
       };
       appSnap.forEach(evaluateDoc); empSnap.forEach(evaluateDoc);
 
@@ -263,6 +278,7 @@ export default function LandingPage() {
             firstName: capitalizeName(registerData.firstName.trim()),
             middleName: capitalizeName(registerData.middleName.trim()), 
             lastName: capitalizeName(registerData.lastName.trim()),
+            suffix: capitalizeName(registerData.suffix.trim()),
             sitio: registerData.sitio, proofOfResidencyUrls: uploadedUrls, proofOfResidencyUrl: uploadedUrls[0],
             status: "pending", createdAt: new Date().toISOString(),
             ...(registerRole === "employer" && hasBusiness && { businessName: registerData.businessName })
@@ -300,7 +316,7 @@ export default function LandingPage() {
       
       {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ show: false, message: "", type: "error" })} />}
 
-      {/* HEADER (Matches Login.jsx perfectly) */}
+      {/* HEADER */}
       <header className={`w-full h-20 fixed top-0 left-0 z-50 flex items-center transition-all duration-300 border-b backdrop-blur-md 
         ${darkMode ? 'border-white/10 bg-slate-900/50' : 'border-blue-200/50 bg-white/50'}`}>
         <div className="max-w-7xl mx-auto w-full px-6 flex justify-between items-center">
@@ -311,7 +327,7 @@ export default function LandingPage() {
       </header>
 
       <main className="grow">
-        {/* HERO SECTION - VERTICALLY CENTERED on Desktop */}
+        {/* HERO SECTION */}
         <section className="relative min-h-screen flex items-center pt-20 px-6">
           
           <div className={`absolute top-20 -left-20 lg:w-125 lg:h-125 bg-blue-400 rounded-full mix-blend-multiply filter blur-[100px] animate-blob transition-opacity duration-500 ${darkMode ? 'opacity-20' : 'opacity-10'}`}></div>
@@ -324,7 +340,7 @@ export default function LandingPage() {
               <div className="lg:col-span-7 space-y-8 text-center lg:text-left">
                 <h2 className={`text-5xl md:text-6xl lg:text-8xl font-black leading-[1.05] tracking-tight ${darkMode ? 'text-white' : 'text-blue-950'}`}>
                   Connecting <br className="hidden lg:block" />
-                  <span className="text-blue-700 dark:text-blue-500 relative inline-block">
+                  <span className="text-blue-600 dark:text-blue-500 relative inline-block">
                     Talent
                     <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 338 12" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M3 9C118.5 -1.5 219.5 -1.5 335 9" stroke="currentColor" strokeWidth="6" strokeLinecap="round"/>
@@ -333,7 +349,7 @@ export default function LandingPage() {
                 </h2>
                 
                 <p className={`text-lg lg:text-xl font-medium max-w-xl leading-relaxed mx-auto lg:mx-0 ${darkMode ? 'text-slate-300' : 'text-blue-900/80'}`}>
-                  The official job-matching portal for Barangay Bogtong residents. 
+                  The official job-matching portal for Barangay Cawayan Bogtong residents. 
                   Simple, secure, and built specifically for our community's livelihood.
                 </p>
 
@@ -343,7 +359,7 @@ export default function LandingPage() {
                     Get Started!
                   </button>
                   <button onClick={() => navigate("/login")} className={`w-full sm:w-auto px-10 py-5 border rounded-2xl font-black text-sm uppercase tracking-widest hover:-translate-y-1 transition-all ${darkMode ? 'bg-transparent text-white border-white/20 hover:border-white/50 hover:bg-white/5' : 'bg-white/60 text-blue-900 border-white/60 hover:border-blue-400 hover:bg-white/90 shadow-sm'}`}>
-                    Get back and Login!
+                    Resume Session
                   </button>
                 </div>
               </div>
@@ -417,8 +433,22 @@ export default function LandingPage() {
                               </div>
                             )}
 
-                            {registerStep === 2 && (<form onSubmit={(e) => { e.preventDefault(); setRegisterStep(3); }} className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className={labelStyle}>First Name *</label><input name="firstName" required placeholder="Juan" value={registerData.firstName} className={inputStyle} onChange={handleRegisterInputChange} /></div><div><label className={labelStyle}>Last Name *</label><input name="lastName" required placeholder="Dela Cruz" value={registerData.lastName} className={inputStyle} onChange={handleRegisterInputChange} /></div></div><div><label className={labelStyle}>Middle Name *</label><input name="middleName" required placeholder="Reyes" value={registerData.middleName} className={inputStyle} onChange={handleRegisterInputChange} /></div><button type="submit" className={`w-full py-4 mt-2 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>Next Step</button></form>)}
-                            {registerStep === 3 && (<form onSubmit={handleRegisterStep3Next} className="space-y-3"><div id="recaptcha-landing-register"></div><div><label className={labelStyle}>Email *</label><input name="email" type="email" required placeholder="name@example.com" value={registerData.email} className={inputStyle} onChange={handleRegisterInputChange} /></div><div><label className={labelStyle}>Password *</label><div className="relative"><input name="password" type={showPassword ? "text" : "password"} required placeholder="••••••••" value={registerData.password} className={inputStyle} onChange={handleRegisterInputChange} /><button type="button" onClick={() => setShowPassword(!showPassword)} className={`absolute right-4 top-1/2 -translate-y-1/2 transition-colors ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-600'}`}>{showPassword ? <EyeSlashIcon className="w-4 h-4"/> : <EyeIcon className="w-4 h-4"/>}</button></div></div><div><label className={labelStyle}>Phone (Optional)</label><div className={`flex w-full rounded-2xl border transition-all shadow-inner backdrop-blur-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 ${darkMode ? 'bg-slate-800/50 border-white/10 focus-within:border-blue-500 text-white' : 'bg-white/60 border-white/60 focus:bg-white/90 focus:border-blue-400 text-blue-900'}`}><div className={`px-4 py-3.5 font-black border-r flex items-center justify-center ${darkMode ? 'bg-slate-900/50 border-white/10 text-slate-400' : 'bg-white/50 border-white/60 text-blue-700'}`}>+63</div><input name="phoneNumber" type="tel" maxLength="10" placeholder="9123456789" value={registerData.phoneNumber} className="w-full px-4 py-3.5 bg-transparent outline-none font-bold text-sm tracking-widest select-text cursor-text placeholder-current/40" onChange={(e) => setRegisterData({...registerData, phoneNumber: e.target.value.replace(/\D/g, '')})} /></div></div><button disabled={loading} type="submit" className={`w-full py-4 mt-2 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Create & Continue"}</button></form>)}
+                            {/* ADDED SUFFIX TO STEP 2 */}
+                            {registerStep === 2 && (
+                              <form onSubmit={(e) => { e.preventDefault(); setRegisterStep(3); }} className="space-y-4">
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div><label className={labelStyle}>First Name *</label><input name="firstName" required placeholder="Juan" value={registerData.firstName} className={inputStyle} onChange={handleRegisterInputChange} /></div>
+                                    <div><label className={labelStyle}>Last Name *</label><input name="lastName" required placeholder="Dela Cruz" value={registerData.lastName} className={inputStyle} onChange={handleRegisterInputChange} /></div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div><label className={labelStyle}>Middle Name *</label><input name="middleName" required placeholder="Reyes" value={registerData.middleName} className={inputStyle} onChange={handleRegisterInputChange} /></div>
+                                    <div><label className={labelStyle}>Suffix (Opt)</label><input name="suffix" placeholder="Jr, Sr, III" value={registerData.suffix} className={inputStyle} onChange={handleRegisterInputChange} /></div>
+                                  </div>
+                                  <button type="submit" className={`w-full py-4 mt-2 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>Next Step</button>
+                              </form>
+                            )}
+
+                            {registerStep === 3 && (<form onSubmit={handleRegisterStep3Next} className="space-y-3"><div id="recaptcha-landing-register"></div><div><label className={labelStyle}>Email *</label><input name="email" type="email" required placeholder="name@example.com" value={registerData.email} className={inputStyle} onChange={handleRegisterInputChange} /></div><div><label className={labelStyle}>Password *</label><div className="relative"><input name="password" type={showPassword ? "text" : "password"} required placeholder="••••••••" value={registerData.password} className={inputStyle} onChange={handleRegisterInputChange} /><button type="button" onClick={() => setShowPassword(!showPassword)} className={`absolute right-4 top-1/2 -translate-y-1/2 transition-colors ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-600'}`}>{showPassword ? <EyeSlashIcon className="w-4 h-4"/> : <EyeIcon className="w-4 h-4"/>}</button></div></div><div><label className={labelStyle}>Phone (Optional)</label><div className={`flex w-full rounded-2xl border transition-all shadow-inner backdrop-blur-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 ${darkMode ? 'bg-slate-800/50 border-white/10 focus-within:border-blue-500 text-white' : 'bg-white/60 border-white/60 focus-within:bg-white/90 focus-within:border-blue-400 text-blue-900'}`}><div className={`px-4 py-3.5 font-black border-r flex items-center justify-center ${darkMode ? 'bg-slate-900/50 border-white/10 text-slate-400' : 'bg-white/50 border-white/60 text-blue-700'}`}>+63</div><input name="phoneNumber" type="tel" maxLength="10" placeholder="9123456789" value={registerData.phoneNumber} className="w-full px-4 py-3.5 bg-transparent outline-none font-bold text-sm tracking-widest select-text cursor-text placeholder-current/40" onChange={(e) => setRegisterData({...registerData, phoneNumber: e.target.value.replace(/\D/g, '')})} /></div></div><button disabled={loading} type="submit" className={`w-full py-4 mt-2 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Create & Continue"}</button></form>)}
                             {registerStep === 4 && (<form onSubmit={handleVerifyRegisterOtp} className="space-y-4 pt-6"><p className={`text-center text-[10px] font-black uppercase tracking-widest mb-3 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Code sent to <span className={darkMode ? 'text-white' : 'text-blue-900'}>+63 {registerData.phoneNumber}</span></p><input type="text" placeholder="000000" maxLength="6" value={registerOtp} onChange={(e) => setRegisterOtp(e.target.value.replace(/\D/g, ''))} className={`w-full p-4 rounded-2xl text-center text-4xl font-black tracking-[0.5em] outline-none border transition-all shadow-inner backdrop-blur-md select-text cursor-text ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/90 focus:border-blue-400 text-blue-900'}`} /><button disabled={loading || registerOtp.length < 6} className={`w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-green-600 text-white' : 'bg-green-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Verify Phone"}</button></form>)}
                             {registerStep === 5 && (<form onSubmit={handleFinalRegisterSubmit} className="space-y-3"><div><label className={labelStyle}>Select Purok *</label><div className="flex flex-wrap gap-2">{PUROK_LIST.map((sName) => (<button type="button" key={sName} onClick={() => setRegisterData({ ...registerData, sitio: sName })} className={`px-3 py-2.5 rounded-xl border transition-all font-black text-[9px] uppercase tracking-widest flex-grow text-center ${registerData.sitio === sName ? (darkMode ? 'bg-blue-600 border-blue-500 text-white shadow-md' : 'bg-blue-600 border-blue-600 text-white shadow-lg') : (darkMode ? 'bg-slate-800/50 border-white/10 text-slate-400 hover:bg-slate-700' : 'bg-white/60 border-white/60 text-blue-900 hover:bg-white/90')}`}>{sName}</button>))}</div></div><div className={`p-3 rounded-2xl border transition-colors ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/60 border-white/60 shadow-inner'}`}><label className={`text-[10px] font-black uppercase tracking-widest flex justify-between mb-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}><span>Proof of Residency *</span><span className={darkMode ? 'text-blue-400' : 'text-blue-600'}>{proofFiles.length}/3</span></label><input type="file" accept="image/*,application/pdf" multiple onChange={handleFileChange} className={`w-full px-2 py-1.5 border rounded-xl text-xs outline-none transition-all font-medium ${darkMode ? 'bg-slate-900/50 border-white/10 text-slate-300' : 'bg-white/50 border-white/60 text-blue-900'} file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:transition-colors ${darkMode ? 'file:bg-blue-600 file:text-white hover:file:bg-blue-500' : 'file:bg-blue-600 file:text-white hover:file:bg-blue-700'}`} />{proofFiles.length > 0 && (<div className="mt-2 space-y-1.5">{proofFiles.map((file, idx) => (<div key={idx} className={`flex justify-between items-center px-2.5 py-1.5 rounded-lg border ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`}><span className={`text-[10px] font-bold truncate pr-4 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{file.name}</span><button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-500"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button></div>))}</div>)}</div>{registerRole === "employer" && (<div className="space-y-2 pt-1"><div onClick={() => setHasBusiness(!hasBusiness)} className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${hasBusiness ? (darkMode ? 'border-blue-500 bg-blue-900/20' : 'border-blue-400 bg-blue-50') : (darkMode ? 'border-white/10 bg-slate-800/50' : 'border-white/60 bg-white/60')}`}><div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors ${hasBusiness ? 'bg-blue-600 border-blue-600' : (darkMode ? 'border-slate-600' : 'border-slate-300')}`}>{hasBusiness && <span className="text-white text-[10px] font-bold">✓</span>}</div><span className={`text-[10px] font-black uppercase tracking-widest ${hasBusiness ? (darkMode ? 'text-blue-300' : 'text-blue-800') : (darkMode ? 'text-slate-400' : 'text-slate-500')}`}>I have a registered business</span></div>{hasBusiness && <input name="businessName" required placeholder="Company Name" className={`${inputStyle} py-3 text-xs`} onChange={handleRegisterInputChange} />}</div>)}<div className="pt-2"><button disabled={loading || !registerData.sitio || proofFiles.length === 0} type="submit" className={`w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Complete"}</button></div></form>)}
 
@@ -444,7 +474,7 @@ export default function LandingPage() {
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-3 gap-8 lg:gap-12">
               {[
-                { title: "Localized Jobs", desc: "Find work opportunities directly inside Barangay Bogtong and nearby areas.", icon: "📍" },
+                { title: "Localized Jobs", desc: "Find work opportunities directly inside Barangay Cawayan Bogtong and nearby areas.", icon: "📍" },
                 { title: "User-Friendly", desc: "Clean and simple interface for residents who are not tech-savvy.", icon: "✨" },
                 { title: "Secure Profile", desc: "Every account is verified by email or phone to ensure community safety.", icon: "🛡️" }
               ].map((feature, idx) => (
@@ -471,7 +501,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="text-center md:text-left">
             <p className="text-xl font-black tracking-tighter leading-none">LIVELI<span className="text-blue-600 dark:text-blue-500">MATCH</span></p>
-            <p className={`text-[8px] font-bold uppercase tracking-widest mt-2 ${darkMode ? 'opacity-40 text-slate-300' : 'opacity-60 text-blue-900'}`}>© 2026 Barangay Bogtong Livelihood Portal</p>
+            <p className={`text-[8px] font-bold uppercase tracking-widest mt-2 ${darkMode ? 'opacity-40 text-slate-300' : 'opacity-60 text-blue-900'}`}>© 2026 Barangay Cawayan Bogtong Livelihood Portal</p>
           </div>
           <div className="flex gap-6 sm:gap-10">
             <button className={`text-[10px] font-black uppercase tracking-widest transition-colors ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-blue-900'}`}>Privacy Policy</button>

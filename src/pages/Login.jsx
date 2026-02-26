@@ -67,12 +67,25 @@ export default function Login() {
     return !snapApp.empty || !snapEmp.empty || !snapAdmin.empty;
   };
 
-  const routeUserToDashboard = async (uid) => {
+  // UPDATED: Now accepts the full 'user' object so we can check by email
+  const routeUserToDashboard = async (user) => {
+    const uid = user.uid;
+    const email = user.email;
+
     try {
+        // 1. Check Admins Collection by Email (Fixes the manual Firestore document mismatch)
+        if (email) {
+            const adminQ = query(collection(db, "admins"), where("email", "==", email));
+            const adminSnapByEmail = await getDocs(adminQ);
+            if (!adminSnapByEmail.empty) return navigate("/admin-dashboard");
+        }
+
+        // Fallback: Check Admin by UID just in case
         const adminRef = doc(db, "admins", uid);
         const adminSnap = await getDoc(adminRef);
         if (adminSnap.exists()) return navigate("/admin-dashboard");
 
+        // 2. Check Applicants
         const appRef = doc(db, "applicants", uid);
         const appSnap = await getDoc(appRef);
         if (appSnap.exists()) {
@@ -85,6 +98,7 @@ export default function Login() {
             return navigate("/applicant-dashboard");
         }
 
+        // 3. Check Employers
         const empRef = doc(db, "employers", uid);
         const empSnap = await getDoc(empRef);
         if (empSnap.exists()) {
@@ -127,7 +141,8 @@ export default function Login() {
         return;
       }
       const userCredential = await signInWithEmailAndPassword(auth, identifier, password);
-      await routeUserToDashboard(userCredential.user.uid);
+      // UPDATED: Pass the full user object
+      await routeUserToDashboard(userCredential.user);
     } catch (err) {
       console.error(err);
       alert("Invalid Email or Password.");
@@ -164,7 +179,8 @@ export default function Login() {
     setLoading(true);
     try {
       const result = await confirmationResult.confirm(otp);
-      await routeUserToDashboard(result.user.uid);
+      // UPDATED: Pass the full user object
+      await routeUserToDashboard(result.user);
     } catch (err) {
       alert("Invalid OTP code. Please try again.");
     }
@@ -216,7 +232,6 @@ export default function Login() {
       <main className="flex-1 flex items-center justify-start px-8 md:px-16 lg:px-24 relative z-10 overflow-hidden pb-24 md:pb-0">
         
         {/* FROSTED GLASS RECTANGULAR CARD */}
-        {/* On Mobile: Vertical, Max-w-sm. On Desktop: Horizontal, Max-w-3xl, Fixed Height to prevent shifting */}
         <div 
           className={`w-full max-w-sm md:max-w-3xl flex flex-col md:flex-row rounded-[2rem] relative overflow-hidden transition-all duration-300 shadow-2xl border backdrop-blur-xl md:h-[420px]
             ${darkMode 
@@ -377,6 +392,12 @@ export default function Login() {
       {/* Footer (Aligned with Header Logo) */}
       <footer className={`w-full h-14 shrink-0 border-t flex items-center transition-colors duration-300 
         ${darkMode ? 'border-white/10' : 'border-blue-200/50'}`}>
+        <div className="max-w-7xl mx-auto w-full px-6 flex justify-start items-center">
+          <div className="flex flex-col items-start text-left">
+              <p className="text-base font-black tracking-tighter leading-none">LIVELI<span className="text-blue-600 dark:text-blue-500">MATCH</span></p>
+              <p className={`text-[8px] font-bold uppercase tracking-widest mt-1 ${darkMode ? 'opacity-40' : 'opacity-60'}`}>© 2026 Barangay Cawayan Bogtong</p>
+          </div>
+        </div>
       </footer>
     </div>
   );

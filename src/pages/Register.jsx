@@ -20,20 +20,17 @@ export default function Register() {
   const [role, setRole] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(1); // Now 1 through 5
+  const [step, setStep] = useState(1); 
   
-  // Custom Toast State
   const [toast, setToast] = useState({ show: false, message: "", type: "error" });
 
-  // States for business & file upload
   const [hasBusiness, setHasBusiness] = useState(false);
   const [proofFiles, setProofFiles] = useState([]); 
 
-  // States for OTP Verification
   const [otp, setOtp] = useState("");
   const [confirmationResult, setConfirmationResult] = useState(null);
 
-  // --- DATA STATES ---
+  // --- DATA STATES (Added Suffix) ---
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -41,6 +38,7 @@ export default function Register() {
     firstName: "",
     middleName: "",
     lastName: "",
+    suffix: "", 
     sitio: "", 
     businessName: "",
   });
@@ -60,7 +58,6 @@ export default function Register() {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
-  // --- HELPER FUNCTIONS ---
   const triggerToast = (message, type = "error") => {
     setToast({ show: true, message, type });
   };
@@ -96,6 +93,7 @@ export default function Register() {
     const fName = normalizeName(formData.firstName);
     const mName = normalizeName(formData.middleName);
     const lName = normalizeName(formData.lastName);
+    const sName = normalizeName(formData.suffix);
     
     const [appSnap, empSnap] = await Promise.all([
       getDocs(collection(db, "applicants")),
@@ -109,8 +107,9 @@ export default function Register() {
       const dataFName = normalizeName(data.firstName);
       const dataMName = normalizeName(data.middleName);
       const dataLName = normalizeName(data.lastName);
+      const dataSName = normalizeName(data.suffix || "");
 
-      if (dataFName === fName && dataMName === mName && dataLName === lName && data.status !== 'rejected') {
+      if (dataFName === fName && dataMName === mName && dataLName === lName && dataSName === sName && data.status !== 'rejected') {
           duplicateFound = true;
       }
     };
@@ -123,7 +122,6 @@ export default function Register() {
 
   const handleFileChange = (e) => {
     const selected = Array.from(e.target.files);
-    
     if (proofFiles.length + selected.length > 3) {
       triggerToast("You can only upload a maximum of 3 files.", "error");
       return;
@@ -135,7 +133,7 @@ export default function Register() {
     setProofFiles(proofFiles.filter((_, index) => index !== indexToRemove));
   };
 
-  // --- STEP 3 SUBMIT (AUTH & OTP) ---
+  // --- STEP 3 SUBMIT ---
   const handleStep3Next = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -143,7 +141,7 @@ export default function Register() {
     try {
       const isNameTaken = await checkNameExists();
       if (isNameTaken) {
-         triggerToast("An account with this exact First, Middle, and Last Name already exists.", "error");
+         triggerToast("An account with this exact Full Name already exists.", "error");
          setLoading(false); return;
       }
 
@@ -196,7 +194,7 @@ export default function Register() {
           try {
               const confirmation = await linkWithPhoneNumber(userObj, finalPhone, window.recaptchaVerifier);
               setConfirmationResult(confirmation);
-              setStep(4); // Go to OTP step
+              setStep(4); 
           } catch (smsErr) {
               console.error("SMS Error:", smsErr);
               triggerToast("Failed to send SMS OTP. Please check your number.", "error");
@@ -206,7 +204,7 @@ export default function Register() {
               }
           }
       } else {
-          setStep(5); // Skip OTP if no phone
+          setStep(5);
       }
     } catch (err) {
         console.error(err);
@@ -243,6 +241,7 @@ export default function Register() {
     const formattedFirstName = capitalizeName(formData.firstName.trim());
     const formattedMiddleName = capitalizeName(formData.middleName.trim());
     const formattedLastName = capitalizeName(formData.lastName.trim());
+    const formattedSuffix = capitalizeName(formData.suffix.trim());
 
     try {
         const uploadedUrls = [];
@@ -265,6 +264,7 @@ export default function Register() {
             firstName: formattedFirstName,
             middleName: formattedMiddleName, 
             lastName: formattedLastName,
+            suffix: formattedSuffix, // Saved Suffix
             sitio: formData.sitio,
             proofOfResidencyUrls: uploadedUrls,
             proofOfResidencyUrl: uploadedUrls[0],
@@ -309,11 +309,10 @@ export default function Register() {
   };
 
   const handleBack = () => {
-    if (step === 5 && !formData.phoneNumber) setStep(3); // Skip OTP step backward if no phone
+    if (step === 5 && !formData.phoneNumber) setStep(3);
     else setStep(step - 1);
   };
 
-  // Reusable Input Style
   const inputStyle = `w-full p-3.5 rounded-2xl outline-none border transition-all font-bold text-sm shadow-inner backdrop-blur-md select-text cursor-text 
     ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/60 border-white/60 focus:bg-white/90 focus:border-blue-400 text-blue-900 placeholder-blue-400/60'}`;
   const labelStyle = `block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`;
@@ -330,13 +329,11 @@ export default function Register() {
         />
       )}
 
-      {/* Large Background Watermark (Right side, high opacity) */}
       <div className={`absolute -right-10 top-1/2 -translate-y-1/2 opacity-20 pointer-events-none rotate-12 transition-transform duration-500 z-0 
         ${darkMode ? 'text-white/30' : 'text-blue-500'}`}>
           <UserPlusIcon className="w-[30rem] h-[30rem] md:w-[45rem] md:h-[45rem]" />
       </div>
 
-      {/* Header */}
       <header className={`w-full h-16 shrink-0 z-50 flex items-center transition-all duration-300 border-b 
         ${darkMode ? 'border-white/10' : 'border-blue-200/50'}`}>
         <div className="max-w-7xl mx-auto w-full px-6 flex justify-start sm:justify-between items-center">
@@ -346,10 +343,7 @@ export default function Register() {
         </div>
       </header>
 
-      {/* Main Content: Exact Match to Login.jsx Container Size */}
       <main className="flex-1 flex items-center justify-start px-8 md:px-16 lg:px-24 relative z-10 overflow-hidden pb-24 md:pb-0">
-        
-        {/* FROSTED GLASS RECTANGULAR CARD - STRICT HEIGHT */}
         <div 
           className={`w-full max-w-sm md:max-w-3xl flex flex-col md:flex-row rounded-[2rem] relative overflow-hidden transition-all duration-300 shadow-2xl border backdrop-blur-xl md:h-[420px] md:min-h-[420px]
             ${darkMode 
@@ -357,7 +351,6 @@ export default function Register() {
               : 'bg-white/60 border-white/60 shadow-[0_20px_50px_-10px_rgba(37,99,235,0.15)]'}`}
         >
           
-          {/* DESKTOP LEFT SIDE */}
           <div className="hidden md:flex w-2/5 p-8 flex-col justify-start relative z-10">
               {step > 1 && (
                 <button 
@@ -388,7 +381,6 @@ export default function Register() {
                 </p>
               </div>
 
-              {/* Progress Bar */}
               <div className="flex space-x-2 mt-auto pb-4">
                 {[1, 2, 3, 4, 5].map((s) => (
                   <div key={s} className={`h-1.5 rounded-full transition-all duration-700 ${step >= s ? 'w-6 bg-blue-600' : (darkMode ? 'w-2 bg-slate-700' : 'w-2 bg-white/50')}`} />
@@ -396,10 +388,8 @@ export default function Register() {
               </div>
           </div>
 
-          {/* RIGHT SIDE: Form Area */}
           <div className={`w-full md:w-3/5 flex flex-col p-6 md:p-8 relative z-10 md:border-l ${darkMode ? 'md:bg-slate-900/40 md:border-white/10' : 'md:bg-white/40 md:border-white/50'}`}>
               
-              {/* Mobile Header */}
               <div className="md:hidden flex flex-col mb-6">
                   <div className="flex justify-between items-center mb-4">
                       {step > 1 ? (
@@ -418,7 +408,6 @@ export default function Register() {
 
               <div className="flex-1 flex flex-col justify-start">
                   
-                  {/* STEP 1: ROLE */}
                   {step === 1 && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
                       <div className="grid grid-cols-2 gap-4">
@@ -442,7 +431,7 @@ export default function Register() {
                     </div>
                   )}
 
-                  {/* STEP 2: PERSONAL INFO */}
+                  {/* ADDED SUFFIX FIELD TO STEP 2 */}
                   {step === 2 && (
                     <form onSubmit={(e) => { e.preventDefault(); setStep(3); }} className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
                         <div className="grid grid-cols-2 gap-3">
@@ -455,9 +444,15 @@ export default function Register() {
                             <input name="lastName" required placeholder="Dela Cruz" value={formData.lastName} className={inputStyle} onChange={handleInputChange} />
                           </div>
                         </div>
-                        <div>
-                          <label className={labelStyle}>Middle Name *</label>
-                          <input name="middleName" required placeholder="Reyes" value={formData.middleName} className={inputStyle} onChange={handleInputChange} />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelStyle}>Middle Name *</label>
+                            <input name="middleName" required placeholder="Reyes" value={formData.middleName} className={inputStyle} onChange={handleInputChange} />
+                          </div>
+                          <div>
+                            <label className={labelStyle}>Suffix (Opt)</label>
+                            <input name="suffix" placeholder="Jr, Sr, III" value={formData.suffix} className={inputStyle} onChange={handleInputChange} />
+                          </div>
                         </div>
                         <div className="pt-3">
                           <button type="submit" className={`w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 flex justify-center items-center gap-3
@@ -468,7 +463,6 @@ export default function Register() {
                     </form>
                   )}
 
-                  {/* STEP 3: ACCOUNT SECURITY */}
                   {step === 3 && (
                     <form onSubmit={handleStep3Next} className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-500">
                         <div id="recaptcha-register"></div>
@@ -515,7 +509,6 @@ export default function Register() {
                     </form>
                   )}
 
-                  {/* STEP 4: VERIFY OTP */}
                   {step === 4 && (
                     <form onSubmit={handleVerifyOtp} className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500 pt-6">
                         <p className={`text-center text-[10px] font-black uppercase tracking-widest mb-3 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>
@@ -539,7 +532,6 @@ export default function Register() {
                     </form>
                   )}
 
-                  {/* STEP 5: FINAL VERIFICATION */}
                   {step === 5 && (
                     <form onSubmit={handleFinalSubmit} className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-500">
                       <div>
@@ -624,11 +616,9 @@ export default function Register() {
         </div>
       </main>
 
-      {/* Footer */}
       <footer className={`w-full h-14 shrink-0 border-t flex items-center transition-colors duration-300 
         ${darkMode ? 'border-white/10' : 'border-blue-200/50'}`}>
         <div className="max-w-7xl mx-auto w-full px-6 flex justify-start items-center">
-          
         </div>
       </footer>
     </div>
