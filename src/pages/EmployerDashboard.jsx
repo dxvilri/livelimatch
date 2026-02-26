@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, cloneElement } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config"; 
@@ -139,6 +140,7 @@ const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) =>
 };
 
 export default function EmployerDashboard() {
+  const navigate = useNavigate();
   const { userData } = useAuth(); 
   const [activeTab, setActiveTab] = useState("Discover"); 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
@@ -742,7 +744,10 @@ export default function EmployerDashboard() {
   const handleTouchMove = (e) => { if (!isDragging) return; const touch = e.touches[0]; const bubbleSize = 56; let newX = touch.clientX - dragOffset.current.x; let newY = touch.clientY - dragOffset.current.y; newY = Math.max(0, Math.min(newY, window.innerHeight - 80)); newX = Math.max(0, Math.min(newX, window.innerWidth - bubbleSize)); setBubblePos({ x: newX, y: newY }); };
   const handleTouchEnd = () => { setIsDragging(false); const trashX = window.innerWidth / 2; const trashY = window.innerHeight - 80; const dist = Math.hypot((bubblePos.x + 28) - trashX, (bubblePos.y + 28) - trashY); if (dist < 60) { setIsBubbleVisible(false); setOpenBubbles([]); return; } if (bubblePos.x < window.innerWidth / 2) setBubblePos(prev => ({ ...prev, x: 0 })); else setBubblePos(prev => ({ ...prev, x: window.innerWidth - 56 })); };
 
-  const handleLogout = () => { signOut(auth); };
+  const handleLogout = async () => { 
+      await signOut(auth); 
+      navigate("/"); 
+  };
 
   const displayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
   const newAppCount = receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length;

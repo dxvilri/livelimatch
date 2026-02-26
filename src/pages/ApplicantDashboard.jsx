@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, cloneElement } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config";
@@ -139,6 +140,7 @@ const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) =>
 };
 
 export default function ApplicantDashboard() {
+  const navigate = useNavigate();
   const { userData } = useAuth();
   const [activeTab, setActiveTab] = useState("FindJobs");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -808,7 +810,7 @@ export default function ApplicantDashboard() {
            </nav>
            <div className="p-4 space-y-3">
                <button onClick={() => setDarkMode(!darkMode)} className="w-full p-3 rounded-2xl flex items-center gap-3 bg-white/5 hover:bg-white/10">{darkMode ? <SunIcon className="w-6 h-6 text-amber-400"/> : <MoonIcon className="w-6 h-6 text-slate-600"/>}<span className="text-xs font-bold">Switch Theme</span></button>
-               <button onClick={() => signOut(auth)} className="w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 hover:bg-red-500/10"><ArrowLeftOnRectangleIcon className="w-6 h-6"/><span className="text-xs font-bold">Logout</span></button>
+               <button onClick={async () => { await signOut(auth); navigate("/"); }} className="w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 hover:bg-red-500/10"><ArrowLeftOnRectangleIcon className="w-6 h-6"/><span className="text-xs font-bold">Logout</span></button>
            </div>
       </aside>
 

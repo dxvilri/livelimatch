@@ -215,9 +215,12 @@ export default function Register() {
               setLoading(false); return;
           }
 
-          if (!window.recaptchaVerifier) {
-              window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-register', { size: 'invisible' });
+          // FIX: Always clear and recreate the verifier here
+          if (window.recaptchaVerifier) {
+              window.recaptchaVerifier.clear();
+              window.recaptchaVerifier = null;
           }
+          window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-register', { size: 'invisible' });
 
           try {
               const confirmation = await linkWithPhoneNumber(userObj, finalPhone, window.recaptchaVerifier);
@@ -225,7 +228,6 @@ export default function Register() {
               setStep(4); 
           } catch (smsErr) {
               console.error("SMS Error:", smsErr);
-              // UPDATED: Handle duplicate phone number error natively from Firebase
               if (smsErr.code === 'auth/credential-already-in-use') {
                   triggerToast("This phone number is already used by another account.", "error");
               } else {
@@ -442,6 +444,9 @@ export default function Register() {
 
               <div className="flex-1 flex flex-col justify-start">
                   
+                  {/* FIX: Moved Recaptcha to always be in the DOM */}
+                  <div id="recaptcha-register"></div>
+
                   {step === 1 && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
                       <div className="grid grid-cols-2 gap-4">
@@ -498,7 +503,6 @@ export default function Register() {
 
                   {step === 3 && (
                     <form onSubmit={handleStep3Next} className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-500">
-                        <div id="recaptcha-register"></div>
                         <div>
                           <label className={labelStyle}>Email Address *</label>
                           <input name="email" type="email" placeholder="name@example.com" value={formData.email} required className={inputStyle} onChange={handleInputChange} />
@@ -563,7 +567,6 @@ export default function Register() {
                           </button>
                         </div>
                         
-                        {/* ADDED: Resend Code UI */}
                         <div className="flex justify-center items-center mt-4">
                             <button type="button" onClick={handleResendOtp} disabled={loading} className={`text-[10px] font-black uppercase tracking-widest transition-all ${darkMode ? 'text-slate-400 hover:text-white' : 'text-blue-600 opacity-60 hover:opacity-100'}`}>
                                 Resend Code

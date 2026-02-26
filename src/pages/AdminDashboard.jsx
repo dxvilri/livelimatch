@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config"; 
 import { 
@@ -36,6 +37,7 @@ const PUROK_STYLES = {
 };
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("Overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
   const [darkMode, setDarkMode] = useState(false);
@@ -401,7 +403,10 @@ export default function AdminDashboard() {
              </button>
 
              <button 
-                onClick={() => signOut(auth)}
+                onClick={async () => {
+                    await signOut(auth);
+                    navigate("/"); // This redirects to the Landing Page
+                }}
                 className={`w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 transition-all duration-300 hover:bg-red-500/10 ${!isSidebarOpen && 'lg:justify-center'}`}
             >
                 <ArrowLeftOnRectangleIcon className="w-6 h-6"/>

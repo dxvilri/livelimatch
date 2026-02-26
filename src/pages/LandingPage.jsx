@@ -67,14 +67,11 @@ export default function LandingPage() {
   }, [authMode, loginMethod]);
 
   const clearRecaptcha = () => {
+    // FIX: Removed innerHTML clearing which breaks React DOM nodes
     if (window.recaptchaVerifier) {
       window.recaptchaVerifier.clear();
       window.recaptchaVerifier = null;
     }
-    const containerL = document.getElementById("recaptcha-landing-login");
-    const containerR = document.getElementById("recaptcha-landing-register");
-    if (containerL) containerL.innerHTML = "";
-    if (containerR) containerR.innerHTML = "";
   };
 
   const formatPhone = (input) => {
@@ -415,6 +412,10 @@ export default function LandingPage() {
                     {/* SCROLLABLE INNER CONTENT */}
                     <div className={`h-full overflow-y-auto overflow-x-hidden pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full ${darkMode ? '[&::-webkit-scrollbar-thumb]:bg-white/10' : '[&::-webkit-scrollbar-thumb]:bg-blue-900/10'}`}>
 
+                        {/* FIX: Move both recaptcha divs here so they are permanently in the DOM */}
+                        <div id="recaptcha-landing-login"></div>
+                        <div id="recaptcha-landing-register"></div>
+
                         {/* --- LOGIN MODE --- */}
                         {authMode === 'login' && (
                           <div className="flex-1 flex flex-col animate-in fade-in duration-500 min-h-full">
@@ -439,7 +440,6 @@ export default function LandingPage() {
                                 {!loginConfirmation ? (
                                   <form onSubmit={handlePhoneLogin} className="space-y-3">
                                     <div><label className={labelStyle}>Phone Number</label><div className={`flex w-full rounded-2xl border transition-all shadow-inner backdrop-blur-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 ${darkMode ? 'bg-slate-800/50 border-white/10 focus-within:border-blue-500 text-white' : 'bg-white/60 border-white/60 focus-within:bg-white/90 focus-within:border-blue-400 text-blue-900'}`}><div className={`px-4 py-3.5 font-black border-r flex items-center justify-center ${darkMode ? 'bg-slate-900/50 border-white/10 text-slate-400' : 'bg-white/50 border-white/60 text-blue-700'}`}>+63</div><input type="tel" required maxLength="10" placeholder="9123456789" value={loginIdentifier} onChange={(e) => setLoginIdentifier(e.target.value.replace(/\D/g, ''))} className="w-full px-4 py-3.5 bg-transparent outline-none font-bold text-sm tracking-widest select-text cursor-text placeholder-current/40" /></div></div>
-                                    <div id="recaptcha-landing-login"></div>
                                     <div className="pt-2"><button disabled={loading || loginIdentifier.length !== 10} className={`w-full py-3.5 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-500/20' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/30'}`}>{loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Send Login Code"}</button></div>
                                   </form>
                                 ) : (
@@ -497,7 +497,7 @@ export default function LandingPage() {
                               </form>
                             )}
 
-                            {registerStep === 3 && (<form onSubmit={handleRegisterStep3Next} className="space-y-3"><div id="recaptcha-landing-register"></div><div><label className={labelStyle}>Email *</label><input name="email" type="email" required placeholder="name@example.com" value={registerData.email} className={inputStyle} onChange={handleRegisterInputChange} /></div><div><label className={labelStyle}>Password *</label><div className="relative"><input name="password" type={showPassword ? "text" : "password"} required placeholder="••••••••" value={registerData.password} className={inputStyle} onChange={handleRegisterInputChange} /><button type="button" onClick={() => setShowPassword(!showPassword)} className={`absolute right-4 top-1/2 -translate-y-1/2 transition-colors ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-600'}`}>{showPassword ? <EyeSlashIcon className="w-4 h-4"/> : <EyeIcon className="w-4 h-4"/>}</button></div></div><div><label className={labelStyle}>Phone (Optional)</label><div className={`flex w-full rounded-2xl border transition-all shadow-inner backdrop-blur-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 ${darkMode ? 'bg-slate-800/50 border-white/10 focus-within:border-blue-500 text-white' : 'bg-white/60 border-white/60 focus-within:bg-white/90 focus-within:border-blue-400 text-blue-900'}`}><div className={`px-4 py-3.5 font-black border-r flex items-center justify-center ${darkMode ? 'bg-slate-900/50 border-white/10 text-slate-400' : 'bg-white/50 border-white/60 text-blue-700'}`}>+63</div><input name="phoneNumber" type="tel" maxLength="10" placeholder="9123456789" value={registerData.phoneNumber} className="w-full px-4 py-3.5 bg-transparent outline-none font-bold text-sm tracking-widest select-text cursor-text placeholder-current/40" onChange={(e) => setRegisterData({...registerData, phoneNumber: e.target.value.replace(/\D/g, '')})} /></div></div><button disabled={loading} type="submit" className={`w-full py-4 mt-2 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Create & Continue"}</button></form>)}
+                            {registerStep === 3 && (<form onSubmit={handleRegisterStep3Next} className="space-y-3"><div><label className={labelStyle}>Email *</label><input name="email" type="email" required placeholder="name@example.com" value={registerData.email} className={inputStyle} onChange={handleRegisterInputChange} /></div><div><label className={labelStyle}>Password *</label><div className="relative"><input name="password" type={showPassword ? "text" : "password"} required placeholder="••••••••" value={registerData.password} className={inputStyle} onChange={handleRegisterInputChange} /><button type="button" onClick={() => setShowPassword(!showPassword)} className={`absolute right-4 top-1/2 -translate-y-1/2 transition-colors ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-600'}`}>{showPassword ? <EyeSlashIcon className="w-4 h-4"/> : <EyeIcon className="w-4 h-4"/>}</button></div></div><div><label className={labelStyle}>Phone (Optional)</label><div className={`flex w-full rounded-2xl border transition-all shadow-inner backdrop-blur-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 ${darkMode ? 'bg-slate-800/50 border-white/10 focus-within:border-blue-500 text-white' : 'bg-white/60 border-white/60 focus-within:bg-white/90 focus-within:border-blue-400 text-blue-900'}`}><div className={`px-4 py-3.5 font-black border-r flex items-center justify-center ${darkMode ? 'bg-slate-900/50 border-white/10 text-slate-400' : 'bg-white/50 border-white/60 text-blue-700'}`}>+63</div><input name="phoneNumber" type="tel" maxLength="10" placeholder="9123456789" value={registerData.phoneNumber} className="w-full px-4 py-3.5 bg-transparent outline-none font-bold text-sm tracking-widest select-text cursor-text placeholder-current/40" onChange={(e) => setRegisterData({...registerData, phoneNumber: e.target.value.replace(/\D/g, '')})} /></div></div><button disabled={loading} type="submit" className={`w-full py-4 mt-2 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Create & Continue"}</button></form>)}
                             
                             {registerStep === 4 && (
                               <form onSubmit={handleVerifyRegisterOtp} className="space-y-4 pt-6">
