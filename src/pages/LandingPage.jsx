@@ -89,10 +89,44 @@ export default function LandingPage() {
   };
 
   const checkDuplicate = async (field, value) => {
+    if (!value) return false;
     const qApp = query(collection(db, "applicants"), where(field, "==", value));
     const qEmp = query(collection(db, "employers"), where(field, "==", value));
-    const [snapApp, snapEmp] = await Promise.all([getDocs(qApp), getDocs(qEmp)]);
-    return !snapApp.empty || !snapEmp.empty;
+    const qAdmin = query(collection(db, "admins"), where(field, "==", value));
+    
+    const [snapApp, snapEmp, snapAdmin] = await Promise.all([getDocs(qApp), getDocs(qEmp), getDocs(qAdmin)]);
+    return !snapApp.empty || !snapEmp.empty || !snapAdmin.empty;
+  };
+
+  // --- RESEND OTP LOGIC ---
+  const handleResendLoginOtp = async () => {
+    setLoading(true);
+    try {
+      clearRecaptcha();
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-landing-login", { size: "invisible" });
+      const confirmation = await signInWithPhoneNumber(auth, formatPhone(loginIdentifier), window.recaptchaVerifier);
+      setLoginConfirmation(confirmation);
+      triggerToast("OTP resent successfully!", "info");
+    } catch (err) {
+      triggerToast("Failed to resend SMS code.");
+      clearRecaptcha();
+    }
+    setLoading(false);
+  };
+
+  const handleResendRegisterOtp = async () => {
+    setLoading(true);
+    try {
+      clearRecaptcha();
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-landing-register', { size: 'invisible' });
+      const confirmation = await linkWithPhoneNumber(auth.currentUser, formatPhone(registerData.phoneNumber), window.recaptchaVerifier);
+      setRegisterConfirmation(confirmation);
+      triggerToast("OTP resent successfully!", "info");
+    } catch (err) {
+      triggerToast("Failed to resend SMS OTP.");
+      clearRecaptcha();
+    }
+    setLoading(false);
   };
 
   // --- LOGIN LOGIC ---
@@ -101,7 +135,6 @@ export default function LandingPage() {
     const email = user.email;
 
     try {
-        // Fix: Check Admin Collection by Email
         if (email) {
             const adminQ = query(collection(db, "admins"), where("email", "==", email));
             const adminSnapByEmail = await getDocs(adminQ);
@@ -239,7 +272,14 @@ export default function LandingPage() {
               const confirmation = await linkWithPhoneNumber(userObj, finalPhone, window.recaptchaVerifier);
               setRegisterConfirmation(confirmation);
               setRegisterStep(4);
-          } catch (smsErr) { triggerToast("Failed to send SMS OTP."); clearRecaptcha(); }
+          } catch (smsErr) { 
+              if (smsErr.code === 'auth/credential-already-in-use') {
+                  triggerToast("This phone number is already used by another account.");
+              } else {
+                  triggerToast("Failed to send SMS OTP."); 
+              }
+              clearRecaptcha(); 
+          }
       } else { setRegisterStep(5); }
     } catch (err) { triggerToast("An unexpected error occurred."); }
     setLoading(false);
@@ -403,7 +443,17 @@ export default function LandingPage() {
                                     <div className="pt-2"><button disabled={loading || loginIdentifier.length !== 10} className={`w-full py-3.5 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-500/20' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/30'}`}>{loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Send Login Code"}</button></div>
                                   </form>
                                 ) : (
-                                  <form onSubmit={handleVerifyLoginOtp} className="space-y-3 animate-in fade-in zoom-in duration-300"><p className={`text-center text-[10px] font-black uppercase tracking-widest mb-3 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Code sent to <span className={darkMode ? 'text-white' : 'text-blue-900'}>+63 {loginIdentifier}</span></p><input type="text" placeholder="000000" maxLength="6" value={loginOtp} onChange={(e) => setLoginOtp(e.target.value.replace(/\D/g, ''))} className={`w-full p-4 rounded-2xl text-center text-4xl font-black tracking-[0.5em] outline-none border transition-all shadow-inner backdrop-blur-md select-text cursor-text ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/90 focus:border-blue-400 text-blue-900'}`} /><div className="pt-2"><button disabled={loading || loginOtp.length < 6} className={`w-full py-3.5 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-green-600 text-white hover:bg-green-500 shadow-green-500/20' : 'bg-green-600 text-white hover:bg-green-700 shadow-green-600/30'}`}>{loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Verify & Login"}</button></div><button type="button" onClick={() => { setLoginConfirmation(null); clearRecaptcha(); setLoginOtp(""); }} className={`w-full mt-2 text-[10px] font-black uppercase tracking-widest transition-all ${darkMode ? 'text-slate-400 hover:text-white' : 'text-blue-600 opacity-60 hover:opacity-100'}`}>Change Number</button></form>
+                                  <form onSubmit={handleVerifyLoginOtp} className="space-y-3 animate-in fade-in zoom-in duration-300">
+                                      <p className={`text-center text-[10px] font-black uppercase tracking-widest mb-3 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Code sent to <span className={darkMode ? 'text-white' : 'text-blue-900'}>+63 {loginIdentifier}</span></p>
+                                      <input type="text" placeholder="000000" maxLength="6" value={loginOtp} onChange={(e) => setLoginOtp(e.target.value.replace(/\D/g, ''))} className={`w-full p-4 rounded-2xl text-center text-4xl font-black tracking-[0.5em] outline-none border transition-all shadow-inner backdrop-blur-md select-text cursor-text ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/90 focus:border-blue-400 text-blue-900'}`} />
+                                      <div className="pt-2">
+                                          <button disabled={loading || loginOtp.length < 6} className={`w-full py-3.5 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-green-600 text-white hover:bg-green-500 shadow-green-500/20' : 'bg-green-600 text-white hover:bg-green-700 shadow-green-600/30'}`}>{loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Verify & Login"}</button>
+                                      </div>
+                                      <div className="flex justify-between items-center mt-3 px-2">
+                                          <button type="button" onClick={handleResendLoginOtp} disabled={loading} className={`text-[10px] font-black uppercase tracking-widest transition-all ${darkMode ? 'text-slate-400 hover:text-white' : 'text-blue-600 opacity-60 hover:opacity-100'}`}>Resend Code</button>
+                                          <button type="button" onClick={() => { setLoginConfirmation(null); clearRecaptcha(); setLoginOtp(""); }} className={`text-[10px] font-black uppercase tracking-widest transition-all ${darkMode ? 'text-slate-400 hover:text-white' : 'text-blue-600 opacity-60 hover:opacity-100'}`}>Change Number</button>
+                                      </div>
+                                  </form>
                                 )}
                               </div>
                             )}
@@ -433,7 +483,6 @@ export default function LandingPage() {
                               </div>
                             )}
 
-                            {/* ADDED SUFFIX TO STEP 2 */}
                             {registerStep === 2 && (
                               <form onSubmit={(e) => { e.preventDefault(); setRegisterStep(3); }} className="space-y-4">
                                   <div className="grid grid-cols-2 gap-3">
@@ -449,7 +498,18 @@ export default function LandingPage() {
                             )}
 
                             {registerStep === 3 && (<form onSubmit={handleRegisterStep3Next} className="space-y-3"><div id="recaptcha-landing-register"></div><div><label className={labelStyle}>Email *</label><input name="email" type="email" required placeholder="name@example.com" value={registerData.email} className={inputStyle} onChange={handleRegisterInputChange} /></div><div><label className={labelStyle}>Password *</label><div className="relative"><input name="password" type={showPassword ? "text" : "password"} required placeholder="••••••••" value={registerData.password} className={inputStyle} onChange={handleRegisterInputChange} /><button type="button" onClick={() => setShowPassword(!showPassword)} className={`absolute right-4 top-1/2 -translate-y-1/2 transition-colors ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-600'}`}>{showPassword ? <EyeSlashIcon className="w-4 h-4"/> : <EyeIcon className="w-4 h-4"/>}</button></div></div><div><label className={labelStyle}>Phone (Optional)</label><div className={`flex w-full rounded-2xl border transition-all shadow-inner backdrop-blur-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 ${darkMode ? 'bg-slate-800/50 border-white/10 focus-within:border-blue-500 text-white' : 'bg-white/60 border-white/60 focus-within:bg-white/90 focus-within:border-blue-400 text-blue-900'}`}><div className={`px-4 py-3.5 font-black border-r flex items-center justify-center ${darkMode ? 'bg-slate-900/50 border-white/10 text-slate-400' : 'bg-white/50 border-white/60 text-blue-700'}`}>+63</div><input name="phoneNumber" type="tel" maxLength="10" placeholder="9123456789" value={registerData.phoneNumber} className="w-full px-4 py-3.5 bg-transparent outline-none font-bold text-sm tracking-widest select-text cursor-text placeholder-current/40" onChange={(e) => setRegisterData({...registerData, phoneNumber: e.target.value.replace(/\D/g, '')})} /></div></div><button disabled={loading} type="submit" className={`w-full py-4 mt-2 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Create & Continue"}</button></form>)}
-                            {registerStep === 4 && (<form onSubmit={handleVerifyRegisterOtp} className="space-y-4 pt-6"><p className={`text-center text-[10px] font-black uppercase tracking-widest mb-3 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Code sent to <span className={darkMode ? 'text-white' : 'text-blue-900'}>+63 {registerData.phoneNumber}</span></p><input type="text" placeholder="000000" maxLength="6" value={registerOtp} onChange={(e) => setRegisterOtp(e.target.value.replace(/\D/g, ''))} className={`w-full p-4 rounded-2xl text-center text-4xl font-black tracking-[0.5em] outline-none border transition-all shadow-inner backdrop-blur-md select-text cursor-text ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/90 focus:border-blue-400 text-blue-900'}`} /><button disabled={loading || registerOtp.length < 6} className={`w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-green-600 text-white' : 'bg-green-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Verify Phone"}</button></form>)}
+                            
+                            {registerStep === 4 && (
+                              <form onSubmit={handleVerifyRegisterOtp} className="space-y-4 pt-6">
+                                  <p className={`text-center text-[10px] font-black uppercase tracking-widest mb-3 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Code sent to <span className={darkMode ? 'text-white' : 'text-blue-900'}>+63 {registerData.phoneNumber}</span></p>
+                                  <input type="text" placeholder="000000" maxLength="6" value={registerOtp} onChange={(e) => setRegisterOtp(e.target.value.replace(/\D/g, ''))} className={`w-full p-4 rounded-2xl text-center text-4xl font-black tracking-[0.5em] outline-none border transition-all shadow-inner backdrop-blur-md select-text cursor-text ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-blue-500 text-white' : 'bg-white/40 border-white/60 focus:bg-white/90 focus:border-blue-400 text-blue-900'}`} />
+                                  <button disabled={loading || registerOtp.length < 6} className={`w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3 ${darkMode ? 'bg-green-600 text-white' : 'bg-green-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Verify Phone"}</button>
+                                  <div className="flex justify-center items-center mt-4">
+                                      <button type="button" onClick={handleResendRegisterOtp} disabled={loading} className={`text-[10px] font-black uppercase tracking-widest transition-all ${darkMode ? 'text-slate-400 hover:text-white' : 'text-blue-600 opacity-60 hover:opacity-100'}`}>Resend Code</button>
+                                  </div>
+                              </form>
+                            )}
+
                             {registerStep === 5 && (<form onSubmit={handleFinalRegisterSubmit} className="space-y-3"><div><label className={labelStyle}>Select Purok *</label><div className="flex flex-wrap gap-2">{PUROK_LIST.map((sName) => (<button type="button" key={sName} onClick={() => setRegisterData({ ...registerData, sitio: sName })} className={`px-3 py-2.5 rounded-xl border transition-all font-black text-[9px] uppercase tracking-widest flex-grow text-center ${registerData.sitio === sName ? (darkMode ? 'bg-blue-600 border-blue-500 text-white shadow-md' : 'bg-blue-600 border-blue-600 text-white shadow-lg') : (darkMode ? 'bg-slate-800/50 border-white/10 text-slate-400 hover:bg-slate-700' : 'bg-white/60 border-white/60 text-blue-900 hover:bg-white/90')}`}>{sName}</button>))}</div></div><div className={`p-3 rounded-2xl border transition-colors ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/60 border-white/60 shadow-inner'}`}><label className={`text-[10px] font-black uppercase tracking-widest flex justify-between mb-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}><span>Proof of Residency *</span><span className={darkMode ? 'text-blue-400' : 'text-blue-600'}>{proofFiles.length}/3</span></label><input type="file" accept="image/*,application/pdf" multiple onChange={handleFileChange} className={`w-full px-2 py-1.5 border rounded-xl text-xs outline-none transition-all font-medium ${darkMode ? 'bg-slate-900/50 border-white/10 text-slate-300' : 'bg-white/50 border-white/60 text-blue-900'} file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:transition-colors ${darkMode ? 'file:bg-blue-600 file:text-white hover:file:bg-blue-500' : 'file:bg-blue-600 file:text-white hover:file:bg-blue-700'}`} />{proofFiles.length > 0 && (<div className="mt-2 space-y-1.5">{proofFiles.map((file, idx) => (<div key={idx} className={`flex justify-between items-center px-2.5 py-1.5 rounded-lg border ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`}><span className={`text-[10px] font-bold truncate pr-4 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{file.name}</span><button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-500"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button></div>))}</div>)}</div>{registerRole === "employer" && (<div className="space-y-2 pt-1"><div onClick={() => setHasBusiness(!hasBusiness)} className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${hasBusiness ? (darkMode ? 'border-blue-500 bg-blue-900/20' : 'border-blue-400 bg-blue-50') : (darkMode ? 'border-white/10 bg-slate-800/50' : 'border-white/60 bg-white/60')}`}><div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors ${hasBusiness ? 'bg-blue-600 border-blue-600' : (darkMode ? 'border-slate-600' : 'border-slate-300')}`}>{hasBusiness && <span className="text-white text-[10px] font-bold">✓</span>}</div><span className={`text-[10px] font-black uppercase tracking-widest ${hasBusiness ? (darkMode ? 'text-blue-300' : 'text-blue-800') : (darkMode ? 'text-slate-400' : 'text-slate-500')}`}>I have a registered business</span></div>{hasBusiness && <input name="businessName" required placeholder="Company Name" className={`${inputStyle} py-3 text-xs`} onChange={handleRegisterInputChange} />}</div>)}<div className="pt-2"><button disabled={loading || !registerData.sitio || proofFiles.length === 0} type="submit" className={`w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed flex justify-center items-center gap-3 ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'}`}>{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Complete"}</button></div></form>)}
 
                             <div className={`mt-auto text-center border-t pt-4 ${darkMode ? 'border-white/10' : 'border-white/50'}`}>

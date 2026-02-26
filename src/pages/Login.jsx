@@ -55,6 +55,7 @@ export default function Login() {
   };
 
   const checkUserExists = async (contactValue) => {
+    if (!contactValue) return false;
     const finalIdentifier = method === "phone" ? formatPhone(contactValue) : contactValue;
     const searchField = method === "email" ? "email" : "contact";
     
@@ -67,25 +68,21 @@ export default function Login() {
     return !snapApp.empty || !snapEmp.empty || !snapAdmin.empty;
   };
 
-  // UPDATED: Now accepts the full 'user' object so we can check by email
   const routeUserToDashboard = async (user) => {
     const uid = user.uid;
     const email = user.email;
 
     try {
-        // 1. Check Admins Collection by Email (Fixes the manual Firestore document mismatch)
         if (email) {
             const adminQ = query(collection(db, "admins"), where("email", "==", email));
             const adminSnapByEmail = await getDocs(adminQ);
             if (!adminSnapByEmail.empty) return navigate("/admin-dashboard");
         }
 
-        // Fallback: Check Admin by UID just in case
         const adminRef = doc(db, "admins", uid);
         const adminSnap = await getDoc(adminRef);
         if (adminSnap.exists()) return navigate("/admin-dashboard");
 
-        // 2. Check Applicants
         const appRef = doc(db, "applicants", uid);
         const appSnap = await getDoc(appRef);
         if (appSnap.exists()) {
@@ -98,7 +95,6 @@ export default function Login() {
             return navigate("/applicant-dashboard");
         }
 
-        // 3. Check Employers
         const empRef = doc(db, "employers", uid);
         const empSnap = await getDoc(empRef);
         if (empSnap.exists()) {
@@ -141,7 +137,6 @@ export default function Login() {
         return;
       }
       const userCredential = await signInWithEmailAndPassword(auth, identifier, password);
-      // UPDATED: Pass the full user object
       await routeUserToDashboard(userCredential.user);
     } catch (err) {
       console.error(err);
@@ -179,10 +174,24 @@ export default function Login() {
     setLoading(true);
     try {
       const result = await confirmationResult.confirm(otp);
-      // UPDATED: Pass the full user object
       await routeUserToDashboard(result.user);
     } catch (err) {
       alert("Invalid OTP code. Please try again.");
+    }
+    setLoading(false);
+  };
+
+  const handleResendOtp = async () => {
+    setLoading(true);
+    try {
+      setupRecaptcha();
+      const appVerifier = window.recaptchaVerifier;
+      const confirmation = await signInWithPhoneNumber(auth, formatPhone(identifier), appVerifier);
+      setConfirmationResult(confirmation);
+      alert("OTP resent successfully!");
+    } catch (err) {
+      alert(err.message || "Failed to resend SMS code.");
+      clearRecaptcha();
     }
     setLoading(false);
   };
@@ -372,6 +381,15 @@ export default function Login() {
                               {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Verify & Login"}
                             </button>
                           </div>
+
+                          <div className="flex justify-between items-center mt-3 px-2">
+                              <button type="button" onClick={handleResendOtp} disabled={loading} className={`text-[10px] font-black uppercase tracking-widest transition-all ${darkMode ? 'text-slate-400 hover:text-white' : 'text-blue-600 opacity-60 hover:opacity-100'}`}>
+                                  Resend Code
+                              </button>
+                              <button type="button" onClick={() => { setConfirmationResult(null); clearRecaptcha(); setOtp(""); }} className={`text-[10px] font-black uppercase tracking-widest transition-all ${darkMode ? 'text-slate-400 hover:text-white' : 'text-blue-600 opacity-60 hover:opacity-100'}`}>
+                                  Change Number
+                              </button>
+                          </div>
                         </form>
                       )}
                     </div>
@@ -393,10 +411,6 @@ export default function Login() {
       <footer className={`w-full h-14 shrink-0 border-t flex items-center transition-colors duration-300 
         ${darkMode ? 'border-white/10' : 'border-blue-200/50'}`}>
         <div className="max-w-7xl mx-auto w-full px-6 flex justify-start items-center">
-          <div className="flex flex-col items-start text-left">
-              <p className="text-base font-black tracking-tighter leading-none">LIVELI<span className="text-blue-600 dark:text-blue-500">MATCH</span></p>
-              <p className={`text-[8px] font-bold uppercase tracking-widest mt-1 ${darkMode ? 'opacity-40' : 'opacity-60'}`}>© 2026 Barangay Cawayan Bogtong</p>
-          </div>
         </div>
       </footer>
     </div>

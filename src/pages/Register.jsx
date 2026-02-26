@@ -80,11 +80,17 @@ export default function Register() {
       .join(" ");
   };
 
+  // UPDATED: Now includes admin collection & empty string protection
   const checkDuplicate = async (field, value) => {
+    if (!value) return false; 
+    
     const qApp = query(collection(db, "applicants"), where(field, "==", value));
     const qEmp = query(collection(db, "employers"), where(field, "==", value));
-    const [snapApp, snapEmp] = await Promise.all([getDocs(qApp), getDocs(qEmp)]);
-    return !snapApp.empty || !snapEmp.empty;
+    const qAdmin = query(collection(db, "admins"), where(field, "==", value));
+    
+    const [snapApp, snapEmp, snapAdmin] = await Promise.all([getDocs(qApp), getDocs(qEmp), getDocs(qAdmin)]);
+    
+    return !snapApp.empty || !snapEmp.empty || !snapAdmin.empty;
   };
 
   const checkNameExists = async () => {
@@ -131,6 +137,28 @@ export default function Register() {
 
   const removeFile = (indexToRemove) => {
     setProofFiles(proofFiles.filter((_, index) => index !== indexToRemove));
+  };
+
+  // NEW: Resend OTP Logic
+  const handleResendOtp = async () => {
+    setLoading(true);
+    try {
+      if (window.recaptchaVerifier) {
+          window.recaptchaVerifier.clear();
+      }
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-register', { size: 'invisible' });
+      
+      const confirmation = await linkWithPhoneNumber(auth.currentUser, formatPhone(formData.phoneNumber), window.recaptchaVerifier);
+      setConfirmationResult(confirmation);
+      triggerToast("OTP resent successfully!", "info");
+    } catch (err) {
+      triggerToast("Failed to resend SMS OTP. Please try again.", "error");
+      if (window.recaptchaVerifier) {
+          window.recaptchaVerifier.clear();
+          window.recaptchaVerifier = null;
+      }
+    }
+    setLoading(false);
   };
 
   // --- STEP 3 SUBMIT ---
@@ -197,7 +225,13 @@ export default function Register() {
               setStep(4); 
           } catch (smsErr) {
               console.error("SMS Error:", smsErr);
-              triggerToast("Failed to send SMS OTP. Please check your number.", "error");
+              // UPDATED: Handle duplicate phone number error natively from Firebase
+              if (smsErr.code === 'auth/credential-already-in-use') {
+                  triggerToast("This phone number is already used by another account.", "error");
+              } else {
+                  triggerToast("Failed to send SMS OTP. Please check your number.", "error");
+              }
+              
               if (window.recaptchaVerifier) {
                   window.recaptchaVerifier.clear();
                   window.recaptchaVerifier = null;
@@ -264,7 +298,7 @@ export default function Register() {
             firstName: formattedFirstName,
             middleName: formattedMiddleName, 
             lastName: formattedLastName,
-            suffix: formattedSuffix, // Saved Suffix
+            suffix: formattedSuffix, 
             sitio: formData.sitio,
             proofOfResidencyUrls: uploadedUrls,
             proofOfResidencyUrl: uploadedUrls[0],
@@ -431,7 +465,6 @@ export default function Register() {
                     </div>
                   )}
 
-                  {/* ADDED SUFFIX FIELD TO STEP 2 */}
                   {step === 2 && (
                     <form onSubmit={(e) => { e.preventDefault(); setStep(3); }} className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
                         <div className="grid grid-cols-2 gap-3">
@@ -528,6 +561,13 @@ export default function Register() {
                             ${darkMode ? 'bg-green-600 text-white hover:bg-green-500 shadow-green-500/20' : 'bg-green-600 text-white hover:bg-green-700 shadow-green-600/30'}`}>
                             {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Verify Phone"}
                           </button>
+                        </div>
+                        
+                        {/* ADDED: Resend Code UI */}
+                        <div className="flex justify-center items-center mt-4">
+                            <button type="button" onClick={handleResendOtp} disabled={loading} className={`text-[10px] font-black uppercase tracking-widest transition-all ${darkMode ? 'text-slate-400 hover:text-white' : 'text-blue-600 opacity-60 hover:opacity-100'}`}>
+                                Resend Code
+                            </button>
                         </div>
                     </form>
                   )}
