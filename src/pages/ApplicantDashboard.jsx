@@ -79,7 +79,7 @@ const formatLastSeen = (timestamp) => {
     return { text: "Offline", isOnline: false };
 };
 
-// --- STYLES ---
+// --- RESTORED ORIGINAL NAV STYLES ---
 const glassPanel = (darkMode) => `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
 const glassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out group ${darkMode ? 'text-slate-400 hover:text-blue-400' : 'text-slate-400 hover:text-blue-600'}`;
 const activeGlassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out scale-110 -translate-y-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`;
@@ -182,7 +182,13 @@ export default function ApplicantDashboard() {
   const [selectedEmployerToRate, setSelectedEmployerToRate] = useState(null);
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [activeMenuId, setActiveMenuId] = useState(null);
+  
+  // Modal Views
   const [employerContact, setEmployerContact] = useState(null);
+  const [modalRightView, setModalRightView] = useState("job"); // "job" | "profile" | "reputation"
+  const [employerReviews, setEmployerReviews] = useState([]);
+  const [employerAverageRating, setEmployerAverageRating] = useState(0);
+  const [isFetchingEmployer, setIsFetchingEmployer] = useState(false);
 
   // --- PROFILE ---
   const [profileImage, setProfileImage] = useState(null);
@@ -246,10 +252,16 @@ export default function ApplicantDashboard() {
   const bubbleFileRef = useRef(null); 
   const [isChatOptionsOpen, setIsChatOptionsOpen] = useState(false);
 
+  // RESTORED DARK MODE FUNCTIONALITY
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("theme");
     return saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches);
   });
+
+  useEffect(() => {
+    localStorage.setItem("theme", darkMode ? "dark" : "light");
+    document.documentElement.classList.toggle('dark', darkMode);
+  }, [darkMode]);
 
   // --- COMPUTED ---
   const isVerified = applicantData.verificationStatus === 'verified';
@@ -287,20 +299,44 @@ export default function ApplicantDashboard() {
     return () => { document.body.style.overflow = ""; };
   }, [isBubbleExpanded, selectedJob, viewingApplication, isRatingEmployerModalOpen, lightboxUrl]);
 
+  // Combined fetch for Employer Info + Reviews inside the modals
   useEffect(() => {
       const activeItem = selectedJob || viewingApplication;
       if (activeItem && activeItem.employerId) {
-          const fetchEmployerInfo = async () => {
+          const fetchEmployerInfoAndReviews = async () => {
               try {
                   const snap = await getDoc(doc(db, "employers", activeItem.employerId));
                   if (snap.exists()) {
                       setEmployerContact(snap.data());
                   }
+
+                  const qReviews = query(collection(db, "reviews"), where("targetId", "==", activeItem.employerId));
+                  const revSnap = await getDocs(qReviews);
+                  let revs = revSnap.docs.map(d => ({id: d.id, ...d.data()}));
+                  revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                  setEmployerReviews(revs);
+                  
+                  if(revs.length > 0) {
+                      const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
+                      setEmployerAverageRating((total / revs.length).toFixed(1));
+                  } else {
+                      setEmployerAverageRating(0);
+                  }
+
               } catch (err) {}
           };
-          fetchEmployerInfo();
+          fetchEmployerInfoAndReviews();
       } else {
           setEmployerContact(null);
+          setEmployerReviews([]);
+          setEmployerAverageRating(0);
+      }
+  }, [selectedJob, viewingApplication]);
+
+  // Reset Modal Tabs when closing/opening
+  useEffect(() => {
+      if (selectedJob || viewingApplication) {
+          setModalRightView("job");
       }
   }, [selectedJob, viewingApplication]);
 
@@ -321,11 +357,6 @@ export default function ApplicantDashboard() {
   }, [announcements.length]);
 
   useEffect(() => {
-    localStorage.setItem("theme", darkMode ? "dark" : "light");
-    document.documentElement.classList.toggle('dark', darkMode);
-  }, [darkMode]);
-
-  useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -342,17 +373,11 @@ export default function ApplicantDashboard() {
     }
     if(activeTab === "Ratings") {
         const fetchReviews = () => {
-            // FIX: Removed orderBy() from the Firebase query to bypass the Index requirement
             const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid));
-            
             const unsub = onSnapshot(q, (snap) => {
                 let revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                
-                // FIX: Sort them locally in React instead
                 revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                
                 setReviews(revs);
-                
                 if(revs.length > 0) {
                     const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
                     setAverageRating((total / revs.length).toFixed(1));
@@ -394,6 +419,42 @@ export default function ApplicantDashboard() {
   }, [auth.currentUser]);
 
   // --- HANDLERS ---
+
+  const handleViewEmployerProfile = async (employerId) => {
+      if (!employerId) {
+          alert("We cannot fetch this employer's profile because their ID is missing from this job posting.");
+          return;
+      }
+      setIsFetchingEmployer(true);
+      try {
+          const empSnap = await getDoc(doc(db, "employers", employerId));
+          if (empSnap.exists()) {
+              setViewingEmployerProfile({ id: empSnap.id, ...empSnap.data() });
+              setEmployerProfileTab("details");
+              
+              const qReviews = query(collection(db, "reviews"), where("targetId", "==", employerId));
+              const revSnap = await getDocs(qReviews);
+              let revs = revSnap.docs.map(d => ({id: d.id, ...d.data()}));
+              revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+              setEmployerReviews(revs);
+              
+              if(revs.length > 0) {
+                  const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
+                  setEmployerAverageRating((total / revs.length).toFixed(1));
+              } else {
+                  setEmployerAverageRating(0);
+              }
+          } else {
+              alert("Employer not found in the database. Their account may have been deleted.");
+          }
+      } catch (err) {
+          console.error("Error fetching employer profile:", err);
+          alert("An error occurred while fetching the profile.");
+      } finally {
+          setIsFetchingEmployer(false);
+      }
+  };
+
   const handleToggleSaveJob = async (job) => { 
       const existing = savedJobs.find(s => s.jobId === job.id); 
       const isAppliedActive = myApplications.some(app => app.jobId === job.id && app.status !== 'withdrawn');
@@ -416,7 +477,6 @@ export default function ApplicantDashboard() {
             isViewed: false, isReadByApplicant: true, isRatedByApplicant: false
         });
 
-        // NEW: Increment the job's application counter to keep track of capacity
         await updateDoc(doc(db, "jobs", job.id), { applicationCount: increment(1) });
 
         if (!savedJobs.some(s => s.jobId === job.id)) {
@@ -430,7 +490,6 @@ export default function ApplicantDashboard() {
       if(!window.confirm("Withdraw this application?")) return; 
       setLoading(true); 
       try { 
-          // NEW: Decrement the job's application counter to free up a slot
           const appDoc = await getDoc(doc(db, "applications", appId));
           if (appDoc.exists()) {
               const jobId = appDoc.data().jobId;
@@ -475,7 +534,6 @@ export default function ApplicantDashboard() {
       setIsBubbleVisible(false); setIsBubbleExpanded(false); setIsDesktopInboxVisible(false);
   };
 
- // --- UPDATED: PROFILE SAVING WITH PROPER AVATAR AND RESUME UPLOADS ---
   const handleSaveProfile = async () => { 
     setLoading(true); 
     try { 
@@ -486,7 +544,6 @@ export default function ApplicantDashboard() {
 
         const storage = getStorage(auth.app);
 
-        // FIX 1: Upload Profile Avatar using the actual File object from the HTML input ref
         const avatarFile = fileInputRef.current?.files?.[0];
         if (isEditingImage && avatarFile) {
             const fileExt = avatarFile.name.split('.').pop();
@@ -495,7 +552,6 @@ export default function ApplicantDashboard() {
             newProfilePicUrl = await getDownloadURL(avatarRef);
         }
 
-        // Upload Resume Image if selected
         if (resumeImageFile) {
             const fileExt = resumeImageFile.name.split('.').pop();
             const imgRef = ref(storage, `resumes/${auth.currentUser.uid}_image_${Date.now()}.${fileExt}`);
@@ -503,12 +559,10 @@ export default function ApplicantDashboard() {
             resumeImageUpdate = await getDownloadURL(imgRef);
         }
 
-        // FIX 2: Upload Resume Doc with Content-Disposition metadata so it downloads with the original name
         if (resumeDocFile) {
             const fileExt = resumeDocFile.name.split('.').pop();
             const docRef = ref(storage, `resumes/${auth.currentUser.uid}_doc_${Date.now()}.${fileExt}`);
             
-            // This metadata forces the browser to save it using the original file name!
             const metadata = {
                 contentDisposition: `attachment; filename="${resumeDocFile.name}"`
             };
@@ -527,23 +581,20 @@ export default function ApplicantDashboard() {
             resumeImageUrl: resumeImageUpdate,
             resumeFileUrl: resumeDocUpdate,
             resumeFileName: resumeNameUpdate,
-            profilePic: newProfilePicUrl, // Saves profile picture permanently
+            profilePic: newProfilePicUrl, 
             updatedAt: serverTimestamp() 
         };
 
-        // Save to Firestore
         await setDoc(doc(db, "applicants", auth.currentUser.uid), updatedData, { merge: true }); 
         
-        // Update local state instantly
         setApplicantData(prev => ({ ...prev, ...updatedData }));
         if (newProfilePicUrl) setProfileImage(newProfilePicUrl);
 
         setIsEditingProfile(false); 
-        setIsEditingImage(false); // Reset image edit state
+        setIsEditingImage(false); 
         setResumeImageFile(null);
         setResumeDocFile(null);
         
-        // Clear the HTML file input so it's ready for the next time
         if (fileInputRef.current) fileInputRef.current.value = "";
 
     } catch (err) { 
@@ -642,16 +693,10 @@ export default function ApplicantDashboard() {
              imageUrl = await getDownloadURL(uploadTask.ref);
           }
           
-          // 1. Create the user's message object
           const userMsgObj = { sender: 'user', text: ticketMessage, imageUrl: imageUrl || null, timestamp: new Date() };
-          
-          // 2. Prepare the array of messages to save
           const messagesToSave = [userMsgObj];
-
-          // 3. Check for keywords using the helper
           const botReplyText = getBotAutoReply(ticketMessage, BOT_FAQ);
           
-          // 4. If triggered, append the bot's response
           if (botReplyText) {
               messagesToSave.push({
                   sender: 'admin', 
@@ -703,7 +748,7 @@ export default function ApplicantDashboard() {
   const markConversationAsRead = async (otherUserId) => { if (!auth.currentUser || !otherUserId) return; const chatId = [auth.currentUser.uid, otherUserId].sort().join("_"); try { await updateDoc(doc(db, "conversations", chatId), { [`unread_${auth.currentUser.uid}`]: 0 }); } catch (e) { } };
   const handleFileSelect = (e) => { if (e.target.files[0]) setAttachment(e.target.files[0]); };
 
-    const getModalTheme = (categoryId, isDark) => {
+  const getModalTheme = (categoryId, isDark) => {
       const darkColors = {
           'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500', saveActive: 'bg-blue-400 border-blue-400 text-slate-900', saveIdle: 'hover:bg-blue-400/10 hover:text-blue-400 hover:border-blue-400/50' },
           'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500', saveActive: 'bg-green-400 border-green-400 text-slate-900', saveIdle: 'hover:bg-green-400/10 hover:text-green-400 hover:border-green-400/50' },
@@ -721,33 +766,29 @@ export default function ApplicantDashboard() {
               badge: `${cat.bgLight} ${cat.border} ${cat.text}`,
               saveActive: cat.saveActive,
               saveIdle: `bg-slate-800 border-transparent text-slate-400 ${cat.saveIdle}`,
-              // Added themed disabled button logic
               appliedBtn: `${cat.bgLight} ${cat.text} ${cat.border} opacity-60` 
           };
       } else {
           return {
               solid: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 text-white',
-              badge: 'bg-blue-600/10 border-blue-600/20 text-blue-600',
+              badge: 'bg-blue-50 border-blue-100 text-blue-600',
               saveActive: 'bg-blue-600 border-blue-600 text-white',
-              saveIdle: 'bg-white border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200',
-              // Retained standard green for light mode disabled state
-              appliedBtn: 'bg-green-500/10 text-green-600 border-green-500/20 opacity-80' 
+              saveIdle: 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200',
+              appliedBtn: 'bg-green-50 text-green-600 border-green-200 opacity-80' 
           };
       }
   };
 
   return (
-    <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
+    <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200 text-blue-900'}`}>
       
       <style>{`.hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } .animate-content { animation: content-wipe 0.4s cubic-bezier(0.16, 1, 0.3, 1); } @keyframes content-wipe { 0% { opacity: 0; transform: translateY(10px) scale(0.99); } 100% { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
 
-
-
       {/* Header */}
-      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isFullScreenPage) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified && !isFullScreenPage ? 'top-10' : 'top-0'}`}>
+      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/50 border-blue-200/50'} ${(isFullScreenPage) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified && !isFullScreenPage ? 'top-10' : 'top-0'}`}>
           <div className="flex items-center gap-3">
                 <div className="flex items-center gap-3">
-                <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                <h1 className={`font-black text-xl sm:text-2xl tracking-tighter shrink-0 cursor-pointer ${darkMode ? 'text-white' : 'text-blue-900'}`}>
                     LIVELI<span className={darkMode ? 'text-blue-400' : 'text-blue-600'}>MATCH</span>
                 </h1>
             </div>
@@ -757,7 +798,6 @@ export default function ApplicantDashboard() {
                     <button key={tab} onClick={() => isVerified && setActiveTab(tab)} className={`${activeTab === tab ? activeGlassNavBtn(darkMode) : glassNavBtn(darkMode)} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                         {tab === 'FindJobs' && <BriefcaseIcon className="w-7 h-7 relative z-10" />}
                         {tab === 'Saved' && <BookmarkIcon className="w-7 h-7 relative z-10" />}
-                        {/* Changed bg-amber-500 to bg-red-500 */}
                         {tab === 'Applications' && <div className="relative"><PaperAirplaneIcon className="w-7 h-7 relative z-10" />{hasUnreadUpdates && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse z-20"/>}</div>}
                         {tab === 'Messages' && <div className="relative"><ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" />{unreadMsgCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[9px] flex items-center justify-center rounded-full font-bold">{unreadMsgCount}</span>}</div>}
                     </button>
@@ -765,12 +805,12 @@ export default function ApplicantDashboard() {
            </div>
            <div className="flex items-center gap-4">
                 <div className="relative">
-                    <button onClick={() => isVerified && setIsNotifOpen(!isNotifOpen)} className={`relative p-2 rounded-full transition-all ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-slate-100 text-slate-600'} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                    <button onClick={() => isVerified && setIsNotifOpen(!isNotifOpen)} className={`relative p-2 rounded-full transition-all ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/40 text-blue-900/60'} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                         <BellIcon className="w-6 h-6" />{totalNotifications > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>}
                     </button>
                     {isNotifOpen && isVerified && (
-                        <div className={`fixed top-24 left-1/2 -translate-x-1/2 md:absolute md:top-12 md:left-auto md:right-0 md:translate-x-0 w-[90vw] md:w-80 rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 z-[100] ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'}`}>
-                             <div className="p-3 border-b border-white/5 font-black text-xs uppercase opacity-50">Notifications</div>
+                        <div className={`fixed top-24 left-1/2 -translate-x-1/2 md:absolute md:top-12 md:left-auto md:right-0 md:translate-x-0 w-[90vw] md:w-80 rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 z-[100] ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/90 border-white/60 backdrop-blur-xl'}`}>
+                             <div className={`p-3 border-b font-black text-xs uppercase opacity-50 ${darkMode ? 'border-white/10' : 'border-slate-200 text-slate-500'}`}>Notifications</div>
                              <div className="p-2 space-y-1">
                                 {hasNewAnnouncement && displayAnnouncement && (
                                     <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold text-red-500 bg-red-500/10">
@@ -790,27 +830,27 @@ export default function ApplicantDashboard() {
                         {profileImage ? <img src={profileImage} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">{applicantData.firstName?.charAt(0)}</div>}
                     </div>
                 </div>
-                <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-900 hover:bg-slate-100'}`}><Bars3BottomRightIcon className="w-7 h-7" /></button>
+                <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-600 hover:bg-slate-100'}`}><Bars3BottomRightIcon className="w-7 h-7" /></button>
            </div>
       </header>
 
       {/* Sidebar */}
       <aside className={`fixed top-0 right-0 h-full w-64 z-[100] rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel(darkMode)} ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}>
            <div className="h-24 flex items-center justify-center relative mt-8 cursor-pointer" onClick={() => { setActiveTab("Profile"); setIsSidebarOpen(false); }}>
-               <div className="flex items-center gap-3 p-2 pr-4 rounded-2xl hover:bg-white/10 group">
+               <div className={`flex items-center gap-3 p-2 pr-4 rounded-2xl transition-colors group ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-50'}`}>
                    <div className="w-12 h-12 rounded-2xl overflow-hidden">{profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">A</div>}</div>
-                   <div><h1 className="font-black text-sm tracking-tight">{displayName}</h1><p className="text-[10px] opacity-60 font-bold uppercase group-hover:text-blue-500">View Profile</p></div>
+                   <div><h1 className={`font-black text-sm tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{displayName}</h1><p className={`text-[10px] opacity-60 font-bold uppercase ${darkMode ? 'group-hover:text-blue-400' : 'group-hover:text-blue-600'}`}>View Profile</p></div>
                </div>
-               <button onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }} className="absolute top-0 right-4 p-2 opacity-50 hover:opacity-100"><XMarkIcon className="w-6 h-6" /></button>
+               <button onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }} className={`absolute top-0 right-4 p-2 opacity-50 hover:opacity-100 ${darkMode ? 'text-white' : 'text-slate-600'}`}><XMarkIcon className="w-6 h-6" /></button>
            </div>
            <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
-                <button onClick={() => { isVerified && setActiveTab("Ratings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Ratings' ? 'text-blue-500' : 'text-slate-500 hover:text-blue-600'}`}><StarIconOutline className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Ratings</span></button>
-                <button onClick={() => { setActiveTab("Announcements"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Announcements' ? 'text-blue-500' : 'text-slate-500 hover:text-blue-600'}`}><MegaphoneIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Announcements</span></button>
-                <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? 'text-blue-500' : 'text-slate-500 hover:text-blue-600'}`}><QuestionMarkCircleIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Support</span></button>
+                <button onClick={() => { isVerified && setActiveTab("Ratings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Ratings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><StarIconOutline className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Ratings</span></button>
+                <button onClick={() => { setActiveTab("Announcements"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Announcements' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><MegaphoneIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Announcements</span></button>
+                <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><QuestionMarkCircleIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Support</span></button>
            </nav>
            <div className="p-4 space-y-3">
-               <button onClick={() => setDarkMode(!darkMode)} className="w-full p-3 rounded-2xl flex items-center gap-3 bg-white/5 hover:bg-white/10">{darkMode ? <SunIcon className="w-6 h-6 text-amber-400"/> : <MoonIcon className="w-6 h-6 text-slate-600"/>}<span className="text-xs font-bold">Switch Theme</span></button>
-               <button onClick={async () => { await signOut(auth); navigate("/"); }} className="w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 hover:bg-red-500/10"><ArrowLeftOnRectangleIcon className="w-6 h-6"/><span className="text-xs font-bold">Logout</span></button>
+               <button onClick={() => setDarkMode(!darkMode)} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100 text-slate-700'}`}>{darkMode ? <SunIcon className="w-6 h-6 text-amber-400"/> : <MoonIcon className="w-6 h-6 text-slate-600"/>}<span className="text-xs font-bold">Switch Theme</span></button>
+               <button onClick={async () => { await signOut(auth); navigate("/"); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 transition-colors ${darkMode ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}><ArrowLeftOnRectangleIcon className="w-6 h-6"/><span className="text-xs font-bold">Logout</span></button>
            </div>
       </aside>
 
@@ -818,11 +858,10 @@ export default function ApplicantDashboard() {
       <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${(isFullScreenPage) ? 'p-0 pt-0' : 'p-4 lg:p-8 pt-24 lg:pt-28'}`}>
         
         {/* === TITLE BAR HEADER (SUB-HEADER) === */}
-        {/* === TITLE BAR HEADER (SUB-HEADER) === */}
         {!isFullScreenPage && (
-            <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 md:p-5 rounded-2xl transition-all duration-300 relative overflow-hidden ${darkMode ? 'bg-slate-900 border border-white/10 shadow-sm' : 'bg-white border border-slate-200 shadow-sm'}`}>
+            <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 md:p-5 rounded-[2rem] transition-all duration-300 relative overflow-hidden ${darkMode ? 'bg-slate-900 border border-white/10 shadow-sm' : 'bg-white/60 border border-white/60 shadow-xl backdrop-blur-xl'}`}>
                 <div className="flex items-center gap-4 relative z-10">
-                    <div className={`p-2 rounded-xl hidden md:block ${darkMode ? 'bg-blue-400/10 text-blue-400' : 'bg-blue-600/10 text-blue-600'}`}>
+                    <div className={`p-3 rounded-2xl hidden md:flex items-center justify-center shadow-sm ${darkMode ? 'bg-blue-400/10 text-blue-400 border border-blue-400/20' : 'bg-white border border-slate-200 text-blue-600'}`}>
                         {activeTab === "FindJobs" && <BriefcaseIcon className="w-6 h-6"/>}
                         {activeTab === "Saved" && <BookmarkIcon className="w-6 h-6"/>}
                         {activeTab === "Applications" && <PaperAirplaneIcon className="w-6 h-6"/>}
@@ -833,8 +872,8 @@ export default function ApplicantDashboard() {
                         {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6"/>}
                     </div>
                     <div>
-                        <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeTab === "Support" ? "Help & Support" : activeTab === "FindJobs" ? "Find Jobs" : activeTab}</h2>
-                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">Applicant Workspace</p>
+                        <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{activeTab === "Support" ? "Help & Support" : activeTab === "FindJobs" ? "Find Jobs" : activeTab}</h2>
+                        <p className={`text-[10px] font-bold uppercase tracking-widest opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>Applicant Workspace</p>
                     </div>
                 </div>
             </header>
@@ -899,9 +938,7 @@ export default function ApplicantDashboard() {
                         if (app.isReadByApplicant === false) {
                             try {
                                 await updateDoc(doc(db, "applications", app.id), { isReadByApplicant: true });
-                            } catch (err) {
-                                console.error("Error updating read status:", err);
-                            }
+                            } catch (err) {}
                         }
 
                         try { if (app.jobId) { const snap = await getDoc(doc(db, "jobs", app.jobId)); if(snap.exists()) setModalJobDetails(snap.data()); } } catch(e){} finally { setModalLoading(false); }
@@ -1001,7 +1038,6 @@ export default function ApplicantDashboard() {
                 JOB_CATEGORIES={JOB_CATEGORIES}
                 isProfileCategoryDropdownOpen={isProfileCategoryDropdownOpen}
                 setIsProfileCategoryDropdownOpen={setIsProfileCategoryDropdownOpen}
-                // NEW PROPS FOR RESUME FEATURE
                 resumeImageFile={resumeImageFile}
                 setResumeImageFile={setResumeImageFile}
                 resumeDocFile={resumeDocFile}
@@ -1044,66 +1080,68 @@ export default function ApplicantDashboard() {
             <AnnouncementsTab announcements={announcements} darkMode={darkMode} />
         )}
 
-
       </main>
 
       {/* --- OVERLAYS: MODALS & BUBBLES --- */}
-     {/* 1. JOB DETAILS MODAL */}
+      
+      {/* 1. JOB DETAILS MODAL */}
       {selectedJob && (() => {
-          // --- USE DYNAMIC THEME ---
           const theme = getModalTheme(selectedJob.category, darkMode);
           const typeStyle = getJobStyle(selectedJob.type);
           const isSaved = savedJobs.some(s => s.jobId === selectedJob.id);
 
           return (
-            <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedJob(null)}>
+            <div className={`fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm animate-in fade-in ${darkMode ? 'bg-slate-950/60' : 'bg-slate-900/40'}`} onClick={() => setSelectedJob(null)}>
                 <div 
                    onClick={(e) => e.stopPropagation()}
-                   className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                   className={`relative w-[92vw] sm:w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-[2rem] border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:items-start md:gap-8 overflow-y-auto md:overflow-hidden max-h-[85vh] md:h-[80vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white shadow-2xl' : 'bg-white border-slate-200 text-slate-900 shadow-xl'}`}
                 >
                     <button onClick={() => setSelectedJob(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
                         <XMarkIcon className="w-5 h-5"/>
                     </button>
                     
                    {/* --- LEFT SIDE: Employer Info --- */}
-                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
-                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
-                            {/* PRIORITY TO LIVE EMPLOYER DATA */}
+                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-4 md:mb-0 pt-2">
+                        <div 
+                            className={`w-16 h-16 sm:w-32 sm:h-32 rounded-2xl sm:rounded-[2rem] overflow-hidden mb-3 sm:mb-4 shrink-0 shadow-inner cursor-pointer hover:opacity-80 transition-opacity ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
+                            onClick={() => setModalRightView('profile')}
+                        >
                             {(employerContact?.profilePic || selectedJob.employerLogo) ? (
                                 <img src={employerContact?.profilePic || selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
                             ) : (
-                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
+                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-3xl sm:text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
                             )}
                         </div>
                         
-                        <h2 className="text-2xl font-black mb-4 text-center leading-tight w-full">{selectedJob.employerName}</h2>
-                        
-                        <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
-                            
-                            {/* INLINE: Location & Contact */}
+                        <h2 
+                            onClick={() => setModalRightView('profile')}
+                            className={`text-xl sm:text-2xl font-black mb-3 text-center leading-tight w-full cursor-pointer transition-colors ${darkMode ? 'hover:text-blue-400 text-white' : 'hover:text-blue-500 text-slate-900'}`}
+                            title="View Employer Profile"
+                        >
+                            {selectedJob.employerName}
+                        </h2>
+
+                        <div className={`flex flex-col gap-4 text-xs font-bold w-full items-center text-center cursor-default select-none ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
                                 <div className="flex items-center gap-1.5">
-                                    <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <MapPinIcon className="w-4 h-4 shrink-0" />
                                     <span className={!selectedJob.sitio ? 'opacity-50 italic' : ''}>{selectedJob.sitio || "Location not set"}</span>
                                 </div>
-                                
                                 {(() => {
-                                    // Fetch email first, then phone number
                                     const emailInfo = employerContact?.email || selectedJob.email;
                                     const phoneInfo = employerContact?.contact || selectedJob.contact;
-                                    
                                     return (
                                         <>
                                             {emailInfo && (
                                                 <div className="flex items-center gap-1.5" title="Email">
-                                                    <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                                    <span className="text-slate-500 truncate max-w-[150px]">{emailInfo}</span>
+                                                    <EnvelopeIcon className="w-4 h-4 shrink-0" />
+                                                    <span className="truncate max-w-[150px]">{emailInfo}</span>
                                                 </div>
                                             )}
                                             {phoneInfo && (
                                                 <div className="flex items-center gap-1.5" title="Phone Number">
-                                                    <PhoneIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                                    <span className="text-slate-500 truncate max-w-[150px]">{phoneInfo}</span>
+                                                    <PhoneIcon className="w-4 h-4 shrink-0" />
+                                                    <span className="truncate max-w-[150px]">{phoneInfo}</span>
                                                 </div>
                                             )}
                                         </>
@@ -1111,25 +1149,14 @@ export default function ApplicantDashboard() {
                                 })()}
                             </div>
 
-                            {/* INLINE: Job Type & Category Badges */}
                             <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
-                                {/* Job Type Badge */}
                                 <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
                                     <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
                                     {selectedJob.type}
                                 </span>
-
-                                {/* Category Badge */}
                                 {selectedJob.category && (() => {
                                     const getLocalCatIcon = (id) => {
-                                        const map = {
-                                            'EDUCATION': AcademicCapIcon,
-                                            'AGRICULTURE': SunIcon,
-                                            'AUTOMOTIVE': Cog8ToothIcon,
-                                            'CARPENTRY': WrenchScrewdriverIcon,
-                                            'HOUSEHOLD': HomeIcon,
-                                            'CUSTOMER_SERVICE': UserGroupIcon,
-                                        };
+                                        const map = { 'EDUCATION': AcademicCapIcon, 'AGRICULTURE': SunIcon, 'AUTOMOTIVE': Cog8ToothIcon, 'CARPENTRY': WrenchScrewdriverIcon, 'HOUSEHOLD': HomeIcon, 'CUSTOMER_SERVICE': UserGroupIcon };
                                         return map[id] || TagIcon;
                                     };
                                     const CatIcon = getLocalCatIcon(selectedJob.category);
@@ -1144,35 +1171,111 @@ export default function ApplicantDashboard() {
                         </div>
                     </div>
 
-                    {/* --- RIGHT SIDE: Job Details --- */}
-                    <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
-                        {/* Scrollable Content Area */}
-                        <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
-                            <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Job Title</p>
-                                <h2 className="text-3xl sm:text-4xl font-black mb-1">{selectedJob.title}</h2>
-                            </div>
+                    {/* --- RIGHT SIDE: TABS AND CONTENT --- */}
+                    <div className="w-full md:w-2/3 flex flex-col flex-1 min-h-[40vh] md:min-h-0 md:h-full overflow-visible md:overflow-hidden mt-4 md:mt-0">
+                        
+                        {/* Right Panel Tabs */}
+                        <div className={`flex flex-wrap gap-2 p-1.5 rounded-2xl mb-4 shrink-0 border ${darkMode ? 'bg-slate-800/50 border-white/5' : 'bg-slate-100 border-transparent'}`}>
+                            <button onClick={() => setModalRightView('job')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all ${modalRightView === 'job' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border border-white/10' : 'bg-white text-blue-600 shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
+                                Job Details
+                            </button>
+                            <button onClick={() => setModalRightView('profile')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all ${modalRightView === 'profile' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border border-white/10' : 'bg-white text-blue-600 shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
+                                Employer Profile
+                            </button>
+                            <button onClick={() => setModalRightView('reputation')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all ${modalRightView === 'reputation' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border border-white/10' : 'bg-white text-blue-600 shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
+                                Reputation
+                            </button>
+                        </div>
 
-                            <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xl font-black">₱</span>
-                                        <span className="text-xl font-black">{selectedJob.salary}</span>
+                        {/* Scrollable Content Area */}
+                        <div className="flex-1 overflow-y-auto hide-scrollbar pb-2 pr-2">
+                            
+                            {modalRightView === 'job' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                                    <div className={`p-5 rounded-2xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Job Title</p>
+                                        <h2 className={`text-3xl sm:text-4xl font-black mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{selectedJob.title}</h2>
+                                    </div>
+
+                                    <div className={`p-5 rounded-2xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <div>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Salary</p>
+                                            <div className={`flex items-center gap-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                                                <span className="text-xl font-black">₱</span>
+                                                <span className="text-xl font-black">{selectedJob.salary}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className={`p-5 rounded-2xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Job Description</p>
+                                        <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${darkMode ? 'text-white' : 'text-slate-800'}`}>{selectedJob.description || "No description provided."}</p>
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
-                            <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">
-                                    Job Description
-                                </p>
-                                <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedJob.description || "No description provided."}</p>
-                            </div>
+                            {modalRightView === 'profile' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                                    <div className={`p-5 rounded-2xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>About the Employer</p>
+                                        <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.bio || "No description provided."}</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className={`p-4 rounded-2xl flex items-center gap-3 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                            <EnvelopeIcon className={`w-5 h-5 opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}/>
+                                            <div className="overflow-hidden">
+                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Email</p>
+                                                <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.email || selectedJob.email || "N/A"}</p>
+                                            </div>
+                                        </div>
+                                        <div className={`p-4 rounded-2xl flex items-center gap-3 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                            <PhoneIcon className={`w-5 h-5 opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}/>
+                                            <div className="overflow-hidden">
+                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Contact</p>
+                                                <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.contact || selectedJob.contact || "N/A"}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {modalRightView === 'reputation' && (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                                    <div className={`p-6 rounded-3xl flex flex-col items-center justify-center text-center ${darkMode ? 'bg-blue-900/20 border border-blue-500/20' : 'bg-blue-50 border border-blue-100'}`}>
+                                        <h3 className="text-5xl font-black text-amber-500 mb-2">{employerAverageRating}</h3>
+                                        <div className="flex gap-1 mb-2 text-amber-500">
+                                            {[1,2,3,4,5].map(star => (
+                                                <span key={star}>{star <= Math.round(employerAverageRating) ? <StarIconSolid className="w-6 h-6"/> : <StarIconOutline className="w-6 h-6 opacity-30"/>}</span>
+                                            ))}
+                                        </div>
+                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mt-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Based on {employerReviews.length} Reviews</p>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {employerReviews.length === 0 ? (
+                                            <p className={`text-center text-sm opacity-50 font-bold py-8 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No reviews yet.</p>
+                                        ) : (
+                                            employerReviews.map((review, idx) => (
+                                                <div key={idx} className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white border-slate-200'}`}>
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="flex gap-0.5 text-amber-500">
+                                                            {[1,2,3,4,5].map(star => (
+                                                                <span key={star}>{star <= review.rating ? <StarIconSolid className="w-4 h-4"/> : <StarIconOutline className="w-4 h-4 opacity-30"/>}</span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <p className={`text-sm font-medium leading-relaxed ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>"{review.comment}"</p>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                         </div>
 
                        {/* --- THEMED ACTIONS (Pinned to bottom) --- */}
-                        <div className="w-full flex gap-3 pt-2 shrink-0 mt-2">
+                        <div className={`w-full flex gap-3 pt-4 mt-2 shrink-0 border-t ${darkMode ? 'border-white/10' : 'border-slate-100'}`}>
                             {(() => {
                                 const isAtCapacity = selectedJob.capacity > 0 && (selectedJob.applicationCount || 0) >= selectedJob.capacity;
                                 const hasApplied = myApplications.some(app => app.jobId === selectedJob.id && app.status !== 'withdrawn' && app.status !== 'rejected');
@@ -1185,13 +1288,13 @@ export default function ApplicantDashboard() {
                                     );
                                 } else if (isAtCapacity) {
                                     return (
-                                        <button disabled className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest cursor-not-allowed border bg-slate-500/10 text-slate-500 border-slate-500/20`}>
+                                        <button disabled className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest cursor-not-allowed border ${darkMode ? 'bg-slate-800/50 text-slate-500 border-white/10' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
                                             Capacity Reached
                                         </button>
                                     );
                                 } else {
                                     return (
-                                        <button onClick={() => handleApplyToJob(selectedJob)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg ${theme.solid}`}>
+                                        <button onClick={() => handleApplyToJob(selectedJob)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all ${theme.solid}`}>
                                             Apply Now
                                         </button>
                                     );
@@ -1209,54 +1312,63 @@ export default function ApplicantDashboard() {
       })()}
 
       {/* 2. APPLICATION DETAILS MODAL */}
-      {viewingApplication && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setViewingApplication(null)}>
-            <div className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:items-start md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`} onClick={e => e.stopPropagation()}>
+      {viewingApplication && (() => {
+        const theme = getModalTheme(modalJobDetails?.category, darkMode);
+        return (
+        <div className={`fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm animate-in fade-in ${darkMode ? 'bg-slate-950/60' : 'bg-slate-900/40'}`} onClick={() => setViewingApplication(null)}>
+            <div 
+                className={`relative w-[92vw] sm:w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-[2rem] border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:items-start md:gap-8 overflow-y-auto md:overflow-hidden max-h-[85vh] md:h-[80vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white shadow-2xl' : 'bg-white border-slate-200 text-slate-900 shadow-xl'}`} 
+                onClick={e => e.stopPropagation()}
+            >
                 
-                <button onClick={() => setViewingApplication(null)} className={`absolute top-4 right-4 z-20 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-100 hover:bg-slate-200'}`}><XMarkIcon className="w-5 h-5"/></button>
+                <button onClick={() => setViewingApplication(null)} className={`absolute top-4 right-4 z-20 p-2 rounded-full transition-colors border shadow-sm ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'}`}><XMarkIcon className="w-5 h-5"/></button>
                 
                 {/* --- LEFT SIDE: Employer Info --- */}
-                <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
-                    <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
+                <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-4 md:mb-0 pt-2">
+                    <div 
+                        className={`w-16 h-16 sm:w-32 sm:h-32 rounded-2xl sm:rounded-[2rem] overflow-hidden mb-3 sm:mb-4 shrink-0 shadow-inner cursor-pointer hover:opacity-80 transition-opacity ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
+                        onClick={() => setModalRightView('profile')}
+                    >
                          {/* PRIORITY TO LIVE EMPLOYER DATA */}
                         {(employerContact?.profilePic || viewingApplication.employerLogo) ? (
                             <img src={employerContact?.profilePic || viewingApplication.employerLogo} alt={viewingApplication.employerName} className="w-full h-full object-cover" />
                         ) : (
-                            <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{viewingApplication.employerName?.charAt(0)}</div>
+                            <div className="w-full h-full bg-blue-600 flex items-center justify-center text-3xl sm:text-4xl font-black text-white uppercase">{viewingApplication.employerName?.charAt(0)}</div>
                         )}
                     </div>
                     
-                    <h2 className="text-2xl font-black mb-4 text-center leading-tight w-full">{viewingApplication.employerName}</h2>
+                    <h2 
+                        onClick={() => setModalRightView('profile')}
+                        className={`text-xl sm:text-2xl font-black mb-3 text-center leading-tight w-full cursor-pointer transition-colors ${darkMode ? 'hover:text-blue-400 text-white' : 'hover:text-blue-500 text-slate-900'}`}
+                        title="View Employer Profile"
+                    >
+                        {viewingApplication.employerName}
+                    </h2>
                     
                     {modalLoading ? (
                         <div className="w-full flex justify-center opacity-50 pt-2"><div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div></div>
                     ) : (
-                        <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
-                            
-                            {/* INLINE: Location & Contact */}
+                        <div className={`flex flex-col gap-4 text-xs font-bold w-full items-center text-center cursor-default select-none ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
                                 <div className="flex items-center gap-1.5">
-                                    <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <MapPinIcon className="w-4 h-4 shrink-0" />
                                     <span className={!modalJobDetails?.sitio ? 'opacity-50 italic' : ''}>{modalJobDetails?.sitio || "Location not set"}</span>
                                 </div>
-                                
                                 {(() => {
-                                    // Fetch email first, then phone number
                                     const emailInfo = employerContact?.email || modalJobDetails?.email;
                                     const phoneInfo = employerContact?.contact || modalJobDetails?.contact;
-                                    
                                     return (
                                         <>
                                             {emailInfo && (
                                                 <div className="flex items-center gap-1.5" title="Email">
-                                                    <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                                    <span className="text-slate-500 truncate max-w-[150px]">{emailInfo}</span>
+                                                    <EnvelopeIcon className="w-4 h-4 shrink-0" />
+                                                    <span className="truncate max-w-[150px]">{emailInfo}</span>
                                                 </div>
                                             )}
                                             {phoneInfo && (
                                                 <div className="flex items-center gap-1.5" title="Phone Number">
-                                                    <PhoneIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                                    <span className="text-slate-500 truncate max-w-[150px]">{phoneInfo}</span>
+                                                    <PhoneIcon className="w-4 h-4 shrink-0" />
+                                                    <span className="truncate max-w-[150px]">{phoneInfo}</span>
                                                 </div>
                                             )}
                                         </>
@@ -1264,13 +1376,10 @@ export default function ApplicantDashboard() {
                                 })()}
                             </div>
 
-                           {/* INLINE: Job Type & Category Badges */}
                             {(modalJobDetails?.type || modalJobDetails?.category) && (
                                 <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
-                                    {/* Job Type Badge */}
                                     {modalJobDetails?.type && (() => {
                                         const typeStyle = getJobStyle(modalJobDetails.type);
-                                        const theme = getModalTheme(modalJobDetails.category, darkMode);
                                         return (
                                             <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
                                                 <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
@@ -1278,19 +1387,9 @@ export default function ApplicantDashboard() {
                                             </span>
                                         )
                                     })()}
-
-                                    {/* Category Badge */}
                                     {modalJobDetails?.category && (() => {
-                                        const theme = getModalTheme(modalJobDetails.category, darkMode);
                                         const getLocalCatIcon = (id) => {
-                                            const map = {
-                                                'EDUCATION': AcademicCapIcon,
-                                                'AGRICULTURE': SunIcon,
-                                                'AUTOMOTIVE': Cog8ToothIcon,
-                                                'CARPENTRY': WrenchScrewdriverIcon,
-                                                'HOUSEHOLD': HomeIcon,
-                                                'CUSTOMER_SERVICE': UserGroupIcon,
-                                            };
+                                            const map = { 'EDUCATION': AcademicCapIcon, 'AGRICULTURE': SunIcon, 'AUTOMOTIVE': Cog8ToothIcon, 'CARPENTRY': WrenchScrewdriverIcon, 'HOUSEHOLD': HomeIcon, 'CUSTOMER_SERVICE': UserGroupIcon };
                                             return map[id] || TagIcon;
                                         };
                                         const CatIcon = getLocalCatIcon(modalJobDetails.category);
@@ -1307,57 +1406,129 @@ export default function ApplicantDashboard() {
                     )}
                 </div>
 
-                {/* --- RIGHT SIDE: Job Details --- */}
-                <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
+                {/* --- RIGHT SIDE: TABS AND CONTENT --- */}
+                <div className="w-full md:w-2/3 flex flex-col flex-1 min-h-[40vh] md:min-h-0 md:h-full overflow-visible md:overflow-hidden mt-4 md:mt-0">
+                    
+                    <div className={`flex flex-wrap gap-2 p-1.5 rounded-2xl mb-4 shrink-0 border ${darkMode ? 'bg-slate-800/50 border-white/5' : 'bg-slate-100 border-transparent'}`}>
+                        <button onClick={() => setModalRightView('job')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all border ${modalRightView === 'job' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border-white/10' : 'bg-white text-blue-600 shadow-sm border-slate-200') : (darkMode ? 'border-transparent text-slate-400 hover:bg-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
+                            Application
+                        </button>
+                        <button onClick={() => setModalRightView('profile')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all border ${modalRightView === 'profile' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border-white/10' : 'bg-white text-blue-600 shadow-sm border-slate-200') : (darkMode ? 'border-transparent text-slate-400 hover:bg-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
+                            Employer Profile
+                        </button>
+                        <button onClick={() => setModalRightView('reputation')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all border ${modalRightView === 'reputation' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border-white/10' : 'bg-white text-blue-600 shadow-sm border-slate-200') : (darkMode ? 'border-transparent text-slate-400 hover:bg-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
+                            Reputation
+                        </button>
+                    </div>
+
                     {modalLoading ? (
                         <div className="flex flex-col items-center justify-center h-full gap-4 opacity-50 py-20">
                             <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                            <p className="text-[10px] font-black uppercase tracking-widest">Loading Details...</p>
+                            <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-slate-900'}`}>Loading Details...</p>
                         </div>
                     ) : (
                         <>
-                            {/* Scrollable Content Area */}
-                            <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
-                                <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                    <div className="flex justify-between items-start mb-1">
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Job Title</p>
-                                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${viewingApplication.status === 'accepted' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500/10 text-slate-500 border border-slate-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-blue-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500' : 'bg-amber-500'}`}></span>
-                                            {viewingApplication.status}
+                            <div className="flex-1 md:overflow-y-auto hide-scrollbar pb-2 md:pr-2">
+                                {modalRightView === 'job' && (
+                                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                                        <div className={`p-5 rounded-2xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                            <div className="flex justify-between items-start mb-1">
+                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Job Title</p>
+                                                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${viewingApplication.status === 'accepted' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500/10 text-slate-500 border border-slate-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-blue-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500' : 'bg-amber-500'}`}></span>
+                                                    {viewingApplication.status}
+                                                </div>
+                                            </div>
+                                            <h2 className={`text-3xl sm:text-4xl font-black mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{viewingApplication.jobTitle}</h2>
+                                        </div>
+
+                                        <div className={`p-5 rounded-2xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                            <div>
+                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Salary</p>
+                                                <div className={`flex items-center gap-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                                                    <span className="text-xl font-black">₱</span>
+                                                    <span className="text-xl font-black">{modalJobDetails?.salary || "N/A"}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className={`p-5 rounded-2xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Job Description</p>
+                                            <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{modalJobDetails?.description || "Description not available."}</p>
                                         </div>
                                     </div>
-                                    <h2 className="text-3xl sm:text-4xl font-black mb-1">{viewingApplication.jobTitle}</h2>
-                                </div>
+                                )}
 
-                                <div className={`p-5 rounded-xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                    <div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Salary</p>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xl font-black">₱</span>
-                                            <span className="text-xl font-black">{modalJobDetails?.salary || "N/A"}</span>
+                                {modalRightView === 'profile' && (
+                                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                                        <div className={`p-5 rounded-2xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>About the Employer</p>
+                                            <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{employerContact?.bio || "No description provided."}</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div className={`p-4 rounded-2xl flex items-center gap-3 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                                <EnvelopeIcon className={`w-5 h-5 opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}/>
+                                                <div className="overflow-hidden">
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Email</p>
+                                                    <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.email || modalJobDetails?.email || "N/A"}</p>
+                                                </div>
+                                            </div>
+                                            <div className={`p-4 rounded-2xl flex items-center gap-3 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
+                                                <PhoneIcon className={`w-5 h-5 opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}/>
+                                                <div className="overflow-hidden">
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Contact</p>
+                                                    <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.contact || modalJobDetails?.contact || "N/A"}</p>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                )}
 
-                                <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">
-                                        Job Description
-                                    </p>
-                                    <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalJobDetails?.description || "Description not available."}</p>
-                                </div>
+                                {modalRightView === 'reputation' && (
+                                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                                        <div className={`p-6 rounded-3xl flex flex-col items-center justify-center text-center ${darkMode ? 'bg-blue-900/20 border border-blue-500/20' : 'bg-blue-50 border border-blue-100'}`}>
+                                            <h3 className="text-5xl font-black text-amber-500 mb-2">{employerAverageRating}</h3>
+                                            <div className="flex gap-1 mb-2 text-amber-500">
+                                                {[1,2,3,4,5].map(star => (
+                                                    <span key={star}>{star <= Math.round(employerAverageRating) ? <StarIconSolid className="w-6 h-6"/> : <StarIconOutline className="w-6 h-6 opacity-30"/>}</span>
+                                                ))}
+                                            </div>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mt-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Based on {employerReviews.length} Reviews</p>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            {employerReviews.length === 0 ? (
+                                                <p className={`text-center text-sm opacity-50 font-bold py-8 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No reviews yet.</p>
+                                            ) : (
+                                                employerReviews.map((review, idx) => (
+                                                    <div key={idx} className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`}>
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <div className="flex gap-0.5 text-amber-500">
+                                                                {[1,2,3,4,5].map(star => (
+                                                                    <span key={star}>{star <= review.rating ? <StarIconSolid className="w-4 h-4"/> : <StarIconOutline className="w-4 h-4 opacity-30"/>}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <p className={`text-sm font-medium leading-relaxed ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>"{review.comment}"</p>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Actions (Pinned to bottom) */}
-                            <div className="flex gap-4 pt-2 mt-2 shrink-0">
-                                <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className="flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95 transition-transform">
+                            <div className={`flex gap-4 pt-4 mt-2 shrink-0 border-t ${darkMode ? 'border-white/10' : 'border-slate-100'}`}>
+                                <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className={`flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border active:scale-95 transition-transform ${darkMode ? 'border-red-500/30 text-red-400 hover:bg-red-500/10' : 'border-red-500/30 text-red-600 hover:bg-red-50'}`}>
                                     {viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw Application'}
                                 </button>
                                 {viewingApplication.status === 'accepted' ? (
-                                    <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-blue-600 text-white hover:bg-blue-500 active:scale-95 transition-all">
+                                    <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className={`flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] text-white hover:bg-blue-500 active:scale-95 transition-all ${darkMode ? 'bg-blue-600 shadow-lg shadow-blue-600/20' : 'bg-blue-600 shadow-lg shadow-blue-600/30'}`}>
                                         Message Employer
                                     </button>
                                 ) : (
-                                    <button disabled className="flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] bg-slate-500/10 text-slate-500 cursor-not-allowed opacity-50">
+                                    <button disabled className={`flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] cursor-not-allowed border ${darkMode ? 'bg-slate-800/50 text-slate-500 border-white/10 opacity-60' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
                                         {viewingApplication.status === 'rejected' ? 'Application Rejected' : viewingApplication.status === 'withdrawn' ? 'Application Withdrawn' : 'Pending Review'}
                                     </button>
                                 )}
@@ -1367,7 +1538,8 @@ export default function ApplicantDashboard() {
                 </div>
             </div>
         </div>
-      )}
+        )
+      })()}
 
       <RateEmployerModal 
         isOpen={isRatingEmployerModalOpen}
@@ -1384,55 +1556,55 @@ export default function ApplicantDashboard() {
                 {!isBubbleExpanded && (
                     <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                         <div className="relative">
-                            <button onClick={(e) => { if (!isDragging) { setIsBubbleExpanded(true); if(effectiveActiveChatUser) { openChat(effectiveActiveChatUser); markConversationAsRead(effectiveActiveChatUser.id); } } }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
+                            <button onClick={(e) => { if (!isDragging) { setIsBubbleExpanded(true); if(effectiveActiveChatUser) { openChat(effectiveActiveChatUser); markConversationAsRead(effectiveActiveChatUser.id); } } }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white/80 border border-white/60 backdrop-blur-md'}`}>
                                 {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? ((getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>) : <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} />}
                             </button>
                             {(() => { const activeUnread = activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.[`unread_${auth.currentUser.uid}`] || 0) : conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0); return activeUnread > 0 ? <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-10 animate-in zoom-in border-none">{activeUnread}</span> : null; })()}
                         </div>
                     </div>
                 )}
-                {isDragging && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] w-16 h-16 rounded-full flex items-center justify-center border-4 border-slate-400/30 bg-transparent animate-in zoom-in backdrop-blur-sm"><XMarkIcon className="w-8 h-8 text-slate-400" /></div>}
+                {isDragging && <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] w-16 h-16 rounded-full flex items-center justify-center border-4 animate-in zoom-in backdrop-blur-md ${darkMode ? 'border-slate-500/30 bg-slate-800/40' : 'border-blue-400/30 bg-white/40'}`}><XMarkIcon className={`w-8 h-8 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`} /></div>}
                 {isBubbleExpanded && (
-                    <div className="fixed inset-0 z-[1000] flex flex-col bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className={`fixed inset-0 z-[1000] flex flex-col backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'bg-black/60' : 'bg-slate-900/40'}`}>
                         <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
                             {openBubbles.map((chat) => {
                                 const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
                                 const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
                                 return (
                                     <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
-                                        <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all ${activeBubbleView === chat.id ? 'scale-110 shadow-blue-500/50' : 'opacity-60'}`}>
+                                        <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${darkMode ? 'border-white/10' : 'border-white/60'} ${activeBubbleView === chat.id ? 'scale-110 shadow-blue-500/50' : 'opacity-80'}`}>
                                             {chatPic ? <img src={chatPic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
                                         </button>
                                         {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-sm z-20 border-none">{unread}</span>}
-                                        {activeBubbleView === chat.id && (<button onClick={(e) => { e.stopPropagation(); const newBubbles = openBubbles.filter(b => b.id !== chat.id); setOpenBubbles(newBubbles); if(activeBubbleView === chat.id) { setActiveBubbleView(newBubbles.length ? newBubbles[0].id : 'inbox'); } }} className="absolute -top-1 -right-1 bg-slate-500 text-white rounded-full p-0.5 shadow-md animate-in zoom-in border-none"><XMarkIcon className="w-3 h-3"/></button>)}
+                                        {activeBubbleView === chat.id && (<button onClick={(e) => { e.stopPropagation(); const newBubbles = openBubbles.filter(b => b.id !== chat.id); setOpenBubbles(newBubbles); if(activeBubbleView === chat.id) { setActiveBubbleView(newBubbles.length ? newBubbles[0].id : 'inbox'); } }} className={`absolute -top-1 -right-1 text-white rounded-full p-0.5 shadow-md animate-in zoom-in border-none ${darkMode ? 'bg-slate-500' : 'bg-slate-600'}`}><XMarkIcon className="w-3 h-3"/></button>)}
                                     </div>
                                 );
                             })}
                             <div className="flex flex-col items-center gap-1 shrink-0">
-                                <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all border-2 ${activeBubbleView === 'inbox' ? 'border-blue-500 scale-110' : 'border-white dark:border-slate-700 opacity-60'} ${darkMode ? 'bg-slate-800' : 'bg-white'}`}><ChatBubbleOvalLeftEllipsisIcon className="w-7 h-7 text-blue-500" /></button>
+                                <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all backdrop-blur-md border ${darkMode ? 'bg-slate-800/80 border-white/10' : 'bg-white/60 border-white/60'} ${activeBubbleView === 'inbox' ? 'scale-110 shadow-blue-500/30' : 'opacity-80'}`}><ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} /></button>
                             </div>
                         </div>
                         <div className="flex-1 flex flex-col justify-end relative" onClick={() => setIsBubbleExpanded(false)}>
-                            <div className={`w-full h-[80vh] rounded-t-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`} onClick={(e) => e.stopPropagation()}>
+                            <div className={`w-full h-[80vh] rounded-t-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10 text-white' : 'bg-white/80 border-white/60 text-blue-900'}`} onClick={(e) => e.stopPropagation()}>
                                 {activeBubbleView === 'inbox' ? (
                                     <div className="flex flex-col h-full">
-                                        <div className={`p-5 flex justify-between items-center ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                                            <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
-                                            <button onClick={() => setIsBubbleExpanded(false)} className="p-2 bg-slate-100 dark:bg-white/10 rounded-full"><ChevronDownIcon className="w-5 h-5 opacity-50"/></button> 
+                                        <div className={`p-5 flex justify-between items-center border-b ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+                                            <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-blue-900'}`}>Chats</h3>
+                                            <button onClick={() => setIsBubbleExpanded(false)} className={`p-2 shadow-sm rounded-full ${darkMode ? 'bg-white/10 text-white' : 'bg-white/60 text-blue-600'}`}><ChevronDownIcon className="w-5 h-5"/></button> 
                                         </div>
-                                        <div className="px-5 pb-2"><div className={`flex items-center p-2 rounded-xl border ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}><MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" /><input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold" /></div></div>
-                                        <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
+                                        <div className={`px-5 py-3 border-b ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/30 border-white/60'}`}><div className={`flex items-center p-2 rounded-xl border shadow-inner ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}><MagnifyingGlassIcon className={`w-4 h-4 ml-2 ${darkMode ? 'text-slate-400' : 'text-blue-400'}`} /><input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold ${darkMode ? 'text-white placeholder-slate-500' : 'text-blue-900 placeholder-blue-300'}`} /></div></div>
+                                        <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
                                             {bubbleFilteredChats.map(c => {
                                                 const otherId = c.participants.find(p => p !== auth.currentUser.uid);
                                                 const name = c.names?.[otherId] || "User";
                                                 const otherPic = c.profilePics?.[otherId];
                                                 const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                                 return (
-                                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="other-pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/10 text-slate-200' : 'hover:bg-white/50 text-blue-900'}`}>
+                                                        <div className={`w-11 h-11 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="other-pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                                         <div className="flex-1 text-left overflow-hidden">
-                                                            <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div>
-                                                            <div className="flex justify-between items-center"><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
+                                                            <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className={`text-[9px] font-bold opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`}>{formatTime(c.lastTimestamp)}</span></div>
+                                                            <div className="flex justify-between items-center"><p className="text-[11px] truncate font-medium opacity-70">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
                                                         </div>
                                                     </button>
                                                 )
@@ -1442,12 +1614,12 @@ export default function ApplicantDashboard() {
                                 ) : (
                                     effectiveActiveChatUser && (
                                         <>
-                                            <div className={`p-4 flex justify-between items-center shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                            <div className={`p-4 flex justify-between items-center shrink-0 border-b ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200">{(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="header-pfp" /> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}</div>
+                                                    <div className={`w-10 h-10 rounded-full overflow-hidden shadow-inner ${darkMode ? 'bg-slate-800 text-blue-400' : 'bg-white/60 text-blue-600'}`}>{(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="header-pfp" /> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}</div>
                                                     <div>
-                                                        <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{effectiveActiveChatUser.name}</h3>
-                                                        <p className="text-[10px] font-bold opacity-60 uppercase flex items-center gap-1 mt-0.5">
+                                                        <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-blue-900'}`}>{effectiveActiveChatUser.name}</h3>
+                                                        <p className={`text-[10px] font-bold opacity-70 uppercase flex items-center gap-1 mt-0.5 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`}>
                                                             {(() => {
                                                                 const status = formatLastSeen(conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.lastTimestamp);
                                                                 return <><span className={`w-2 h-2 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
@@ -1455,10 +1627,10 @@ export default function ApplicantDashboard() {
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <div className="flex gap-4 text-blue-500"><button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button></div>
+                                                <div className={`flex gap-4 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}><button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button></div>
                                             </div>
                                             
-                                            <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50/50'}`} onClick={() => setActiveMenuId(null)}>
+                                            <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`} onClick={() => setActiveMenuId(null)}>
                                                 {messages.map((msg, index) => {
                                                     const isMe = msg.senderId === auth.currentUser.uid;
                                                     const myPic = profileImage || applicantData?.profilePic || null;
@@ -1477,43 +1649,43 @@ export default function ApplicantDashboard() {
                                                         else statusText = "Sent";
                                                     }
 
-                                                    if(msg.type === 'system') return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
+                                                    if(msg.type === 'system') return <div key={msg.id} className={`text-center text-[10px] font-bold uppercase tracking-widest opacity-40 my-4 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>{msg.text}</div>;
                                                     
                                                     return (
                                                         <SwipeableMessage key={msg.id} isMe={isMe} isMobile={true} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} onLongPress={() => setActiveMenuId(msg.id)}>
                                                             <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group relative`}>
-                                                                {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
+                                                                {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-800 border border-blue-600/20 dark:text-blue-300' : 'bg-white/60 text-blue-800 border border-white/60 dark:bg-slate-800 dark:border-white/10 dark:text-slate-300'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
                                                                 <div className={`flex items-end gap-3 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                                    <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
+                                                                    <div className={`w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center text-[8px] font-black uppercase ${darkMode ? 'border-white/10 bg-slate-800 text-slate-300' : 'border-white/60 bg-white/60 text-blue-600'}`}> 
                                                                         {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : effectiveActiveChatUser.name.charAt(0))} 
                                                                     </div>
                                                                     <div className="relative group/bubble flex flex-col gap-1">
-                                                                        {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-500 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
+                                                                        {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-600 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
                                                                         {msg.isUnsent ? (
-                                                                            <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
+                                                                            <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-500 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-500 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
                                                                         ) : (
                                                                             <>
-                                                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                                                {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent shadow-md' : (isMe ? 'bg-blue-600 shadow-md' : 'shadow-sm border ' + (darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-white/60'))}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className={`p-3 text-[11px] font-bold underline truncate flex items-center gap-2 ${isMe ? 'text-white' : (darkMode ? 'text-blue-400' : 'text-blue-600')}`}><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                                                {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[13px] font-medium leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-md' : (darkMode ? 'bg-slate-800 text-white rounded-bl-none border border-white/10 shadow-sm' : 'bg-white text-blue-900 rounded-bl-none border border-white/60 shadow-sm')}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
                                                                             </>
                                                                         )}
                                                                     </div>
                                                                     
                                                                     {/* Mobile Context Menu */}
                                                                     {activeMenuId === msg.id && (
-                                                                        <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
-                                                                            <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
-                                                                            <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-500' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
+                                                                        <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 backdrop-blur-xl ${darkMode ? 'border-white/10 bg-slate-900/90 text-white' : 'border-white/60 bg-white/90 text-blue-900'}`}>
+                                                                            <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b ${darkMode ? 'border-white/10 hover:bg-white/10' : 'border-white/60 hover:bg-white/60'}`}>Reply to</button>
+                                                                            <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b ${darkMode ? 'border-white/10 hover:bg-white/10' : 'border-white/60 hover:bg-white/60'} ${msg.isPinned ? 'text-yellow-600' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
                                                                             {isMe && !msg.isUnsent && (
-                                                                                <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 transition-colors ${darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'}`}>Unsend</button>
+                                                                                <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 text-red-500 ${darkMode ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}>Unsend</button>
                                                                             )}
                                                                         </div>
                                                                     )}
                                                                 </div>
-                                                                <p className={`text-[8px] font-black mt-1.5 opacity-40 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
+                                                                <p className={`text-[8px] font-black mt-1.5 opacity-50 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
                                                                     <span>{formatTime(msg.createdAt)}</span>
                                                                     {isMe && !msg.isUnsent && (
-                                                                        <><span>•</span><span className={statusText === 'Seen' ? 'text-blue-500' : ''}>{statusText}</span></>
+                                                                        <><span>•</span><span className={statusText === 'Seen' ? (darkMode ? 'text-blue-400' : 'text-blue-600') : ''}>{statusText}</span></>
                                                                     )}
                                                                 </p>
                                                             </div>
@@ -1523,22 +1695,22 @@ export default function ApplicantDashboard() {
                                                 <div ref={scrollRef}/>
                                             </div>
                                             
-                                            <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`} onClick={() => setActiveMenuId(null)}>
-                                                {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : effectiveActiveChatUser.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
+                                            <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
+                                                {replyingTo && <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-blue-900/20' : 'bg-blue-500/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : effectiveActiveChatUser.name}</span><span className={`truncate max-w-[200px] opacity-70 ${darkMode ? 'text-slate-300' : 'text-blue-900'}`}>{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
                                                 {attachment && (
                                                     <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
-                                                        <div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">
+                                                        <div className={`p-2 pr-8 shadow-sm rounded-xl flex items-center gap-3 border ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/60 border-white/60'}`}>
                                                             {attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}
-                                                            <span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span>
+                                                            <span className={`text-xs font-bold truncate max-w-[200px] ${darkMode ? 'text-white' : 'text-blue-900'}`}>{attachment.name}</span>
                                                         </div>
                                                         <button onClick={() => {setAttachment(null); bubbleFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
                                                     </div>
                                                 )}
-                                                <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
+                                                <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
                                                     <input type="file" ref={bubbleFileRef} onChange={handleFileSelect} className="hidden" />
-                                                    <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
-                                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2 text-sm outline-none rounded-full ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-900'}`} />
-                                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-blue-600 disabled:opacity-30 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
+                                                    <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2.5 text-sm outline-none rounded-full shadow-inner font-medium border ${darkMode ? 'bg-slate-900/50 border-white/10 text-white placeholder-slate-500' : 'bg-white/60 border-white/60 text-blue-900 placeholder-blue-900/40'}`} />
+                                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-white bg-blue-600 rounded-full shadow-md disabled:opacity-50 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5" />}</button>
                                                 </form>
                                             </div>
                                         </>
@@ -1554,7 +1726,7 @@ export default function ApplicantDashboard() {
             // --- DESKTOP VIEW BUBBLES ---
             <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
                 <div className="pointer-events-auto relative">
-                    <button onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }} className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden ${darkMode ? 'bg-blue-600' : 'bg-blue-600'}`}>
+                    <button onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }} className="group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden bg-blue-600 border-2 border-white">
                         <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
                     </button>
                     {conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-20 animate-bounce border-none">{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0)}</span>}
@@ -1564,42 +1736,41 @@ export default function ApplicantDashboard() {
                     const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
                     return (
                     <div key={chat.id} className="pointer-events-auto relative group flex items-center gap-3">
-                        <span className="absolute right-full mr-3 px-3 py-1.5 rounded-xl bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">{chat.name}</span>
+                        <span className={`absolute right-full mr-3 px-3 py-1.5 rounded-xl backdrop-blur-md border text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/60 text-blue-900'}`}>{chat.name}</span>
                         <div className="relative">
-                            <button onClick={() => { openChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); markConversationAsRead(chat.id); }} className="w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl overflow-hidden transition-all hover:scale-110 active:scale-95">
-                                {chatPic ? (<img src={chatPic} alt="pfp" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
+                            <button onClick={() => { openChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); markConversationAsRead(chat.id); }} className={`w-12 h-12 md:w-14 md:h-14 rounded-full shadow-xl border-2 overflow-hidden transition-all hover:scale-110 active:scale-95 ${darkMode ? 'border-white/10 bg-slate-800' : 'border-white/60 bg-white/60'}`}>
+                                {chatPic ? (<img src={chatPic} alt="pfp" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
                             </button>
                             {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm z-20 animate-bounce border-none">{unread}</span>}
-                            <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className="absolute -top-1 -left-1 w-5 h-5 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border-none"><XMarkIcon className="w-3 h-3 text-slate-600 dark:text-slate-300" /></button>
+                            <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className={`absolute -top-1 -left-1 w-5 h-5 backdrop-blur-md border rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/60 text-slate-500'}`}><XMarkIcon className="w-3 h-3" /></button>
                         </div>
                     </div>
                 )})}
                 {isDesktopInboxVisible && !activeChat && (
                     <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
-                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                            <div className={`p-5 flex justify-between items-center ${darkMode ? 'bg-slate-900 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
-                                <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
-                                <button onClick={() => setIsDesktopInboxVisible(false)} className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg"><XMarkIcon className="w-5 h-5 opacity-50"/></button>
+                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10' : 'bg-white/80 border-white/60'}`}>
+                            <div className={`p-5 flex justify-between items-center border-b ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+                                <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-blue-900'}`}>Chats</h3>
+                                <button onClick={() => setIsDesktopInboxVisible(false)} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><XMarkIcon className="w-5 h-5"/></button>
                             </div>
-                            <div className="p-3 pb-0">
-                                <div className={`flex items-center p-1.5 rounded-xl border ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
-                                    <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
-                                    <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold" />
+                            <div className={`p-3 pb-0 ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
+                                <div className={`flex items-center p-1.5 rounded-xl border shadow-inner ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                    <MagnifyingGlassIcon className={`w-4 h-4 ml-2 ${darkMode ? 'text-slate-400' : 'text-blue-400'}`} />
+                                    <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold ${darkMode ? 'text-white placeholder-slate-500' : 'text-blue-900 placeholder-blue-300'}`} />
                                 </div>
                             </div>
-                            <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
+                            <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
                                 {filteredChats.map(c => {
                                     const otherId = c.participants.find(p => p !== auth.currentUser.uid);
                                     const name = c.names?.[otherId] || "User";
                                     const otherPic = c.profilePics?.[otherId];
                                     const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                     return (
-                                        // FIX: Removed the automatic adding to setOpenBubbles when clicking an inbox item!
-                                        <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                            <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                        <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-900'}`}>
+                                            <div className={`w-11 h-11 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                             <div className="flex-1 text-left overflow-hidden">
-                                                <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div>
-                                                <div className="flex justify-between items-center"><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
+                                                <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className={`text-[9px] font-bold opacity-60 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{formatTime(c.lastTimestamp)}</span></div>
+                                                <div className="flex justify-between items-center"><p className="text-[11px] truncate font-medium opacity-70">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
                                             </div>
                                         </button>
                                     )
@@ -1610,27 +1781,27 @@ export default function ApplicantDashboard() {
                 )}
                 {!isChatMinimized && activeChat && activeTab !== "Support" && (
                     <div className="fixed z-[210] pointer-events-auto bottom-6 right-24">
-                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10' : 'bg-white/80 border-white/60'}`}>
                             
                             {/* Desktop Chat Header */}
-                            <div className={`p-4 flex justify-between items-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0`}>
+                            <div className={`p-4 flex justify-between items-center border-b shrink-0 shadow-sm ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
                                 <div className="flex items-center gap-3">
-                                    <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover" alt="pfp"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
+                                    <div className={`w-9 h-9 rounded-full shadow-inner overflow-hidden border ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover" alt="pfp"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
                                     <div>
-                                        <span className="font-black text-xs uppercase block">{activeChat.name}</span>
-                                        <span className="text-[9px] opacity-90 font-bold flex items-center gap-1 mt-0.5">
+                                        <span className={`font-black text-xs uppercase block ${darkMode ? 'text-white' : 'text-blue-900'}`}>{activeChat.name}</span>
+                                        <span className={`text-[9px] opacity-80 font-bold flex items-center gap-1 mt-0.5 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                             {(() => {
                                                 const status = formatLastSeen(conversations.find(c => c.chatId.includes(activeChat.id))?.lastTimestamp);
-                                                return <><span className={`w-1.5 h-1.5 rounded-full ${status.isOnline ? 'bg-green-400' : 'bg-slate-300'}`}></span> {status.text}</>;
+                                                return <><span className={`w-1.5 h-1.5 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
                                             })()}
                                         </span>
                                     </div>
                                 </div>
-                                <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className="p-1.5 hover:bg-white/20 rounded-lg"><ChevronDownIcon className="w-4 h-4"/></button><button onClick={closeChat} className="p-1.5 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-4 h-4"/></button></div>
+                                <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><ChevronDownIcon className="w-4 h-4"/></button><button onClick={closeChat} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><XMarkIcon className="w-4 h-4"/></button></div>
                             </div>
                             
                             {/* Desktop Chat Messages */}
-                            <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`} onClick={() => setActiveMenuId(null)}>
+                            <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`} onClick={() => setActiveMenuId(null)}>
                                 {messages.map((msg, index) => {
                                     const isMe = msg.senderId === auth.currentUser.uid;
                                     const myPic = profileImage || applicantData?.profilePic || null;
@@ -1649,50 +1820,50 @@ export default function ApplicantDashboard() {
                                         else statusText = "Sent";
                                     }
 
-                                    if(msg.type === 'system') return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
+                                    if(msg.type === 'system') return <div key={msg.id} className={`text-center text-[9px] font-black uppercase tracking-widest opacity-50 my-2 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>{msg.text}</div>;
                                     
                                     return (
                                         <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
+                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-800 border border-blue-600/20 dark:text-blue-300' : 'bg-white/60 border border-white/60 text-blue-800 dark:bg-slate-800 dark:border-white/10 dark:text-slate-300'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
                                             <div className={`flex items-end gap-2 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
+                                                <div className={`w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center text-[8px] font-black uppercase ${darkMode ? 'bg-slate-800 border-white/10 text-slate-300' : 'bg-white/60 border-white/60 text-blue-600'}`}> 
                                                     {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : activeChat.name.charAt(0))} 
                                                 </div>
                                                 <div className="relative group/bubble flex flex-col gap-1">
-                                                    {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-500 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
+                                                    {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-600 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
                                                     {msg.isUnsent ? (
-                                                        <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
+                                                        <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-500 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-500 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
                                                     ) : (
                                                         <>
-                                                            {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                            {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
+                                                            {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent shadow-md' : (isMe ? 'bg-blue-600 shadow-md' : 'shadow-sm border ' + (darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-white/60'))}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className={`p-3 text-[11px] font-bold underline truncate flex items-center gap-2 ${isMe ? 'text-white' : (darkMode ? 'text-blue-400' : 'text-blue-600')}`}><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
+                                                            {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[13px] font-medium leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-md' : (darkMode ? 'bg-slate-800 text-white rounded-bl-none border border-white/10 shadow-sm' : 'bg-white text-blue-900 rounded-bl-none border border-white/60 shadow-sm')}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
                                                         </>
                                                     )}
                                                 </div>
 
                                                 {/* Desktop 3-Dots Hover Menu */}
                                                 <div className={`hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity gap-1 mb-2 items-center`}>
-                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-blue-400 bg-slate-800 hover:bg-slate-700' : 'text-blue-500 bg-white hover:bg-slate-100'}`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
+                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`p-1.5 rounded-full shadow-sm transition-colors border ${darkMode ? 'text-blue-400 bg-slate-800 hover:bg-slate-700 border-white/10' : 'text-blue-600 bg-white/80 hover:bg-white border-white/60'}`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
                                                     <div className="relative">
-                                                        <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700' : 'text-slate-500 bg-white hover:bg-slate-100'}`}><EllipsisVerticalIcon className="w-3.5 h-3.5"/></button>
+                                                        <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className={`p-1.5 rounded-full shadow-sm transition-colors border ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700 border-white/10' : 'text-blue-600 bg-white/80 hover:bg-white border-white/60'}`}><EllipsisVerticalIcon className="w-3.5 h-3.5"/></button>
                                                     </div>
                                                 </div>
 
                                                 {/* Context Menu for Desktop */}
                                                 {activeMenuId === msg.id && (
-                                                    <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
-                                                        <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
-                                                        <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-500' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
+                                                    <div className={`absolute z-50 bottom-full mb-2 right-8 w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 backdrop-blur-xl ${darkMode ? 'border-white/10 bg-slate-900/90 text-white' : 'border-white/60 bg-white/90 text-blue-900'}`}>
+                                                        <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b ${darkMode ? 'border-white/10 hover:bg-white/10' : 'border-white/60 hover:bg-white/60'}`}>Reply to</button>
+                                                        <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b ${darkMode ? 'border-white/10 hover:bg-white/10' : 'border-white/60 hover:bg-white/60'} ${msg.isPinned ? 'text-yellow-600' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
                                                         {isMe && !msg.isUnsent && (
-                                                            <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 transition-colors ${darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'}`}>Unsend</button>
+                                                            <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 text-red-500 transition-colors ${darkMode ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}>Unsend</button>
                                                         )}
                                                     </div>
                                                 )}
                                             </div>
-                                            <p className={`text-[8px] font-black mt-1.5 opacity-40 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
+                                            <p className={`text-[8px] font-black mt-1.5 opacity-50 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
                                                 <span>{formatTime(msg.createdAt)}</span>
                                                 {isMe && !msg.isUnsent && (
-                                                    <><span>•</span><span className={statusText === 'Seen' ? 'text-blue-500' : ''}>{statusText}</span></>
+                                                    <><span>•</span><span className={statusText === 'Seen' ? (darkMode ? 'text-blue-400' : 'text-blue-600') : ''}>{statusText}</span></>
                                                 )}
                                             </p>
                                         </div>
@@ -1702,22 +1873,22 @@ export default function ApplicantDashboard() {
                             </div>
                             
                             {/* Desktop Chat Input */}
-                            <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`} onClick={() => setActiveMenuId(null)}>
-                                {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
+                            <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
+                                {replyingTo && <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-blue-900/20' : 'bg-blue-500/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className={`truncate max-w-[200px] opacity-70 ${darkMode ? 'text-slate-300' : 'text-blue-900'}`}>{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
                                 {attachment && (
                                     <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
-                                        <div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">
-                                            {attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}
-                                            <span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span>
+                                        <div className={`p-2 pr-8 shadow-sm rounded-xl flex items-center gap-3 border ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                            {attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-600"/> : <DocumentIcon className="w-5 h-5 text-blue-600"/>}
+                                            <span className={`text-xs font-bold truncate max-w-[200px] ${darkMode ? 'text-white' : 'text-blue-900'}`}>{attachment.name}</span>
                                         </div>
                                         <button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
                                     </div>
                                 )}
-                                <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
+                                <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
                                     <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
-                                    <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
-                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2 text-sm outline-none rounded-full ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-900'}`} />
-                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-blue-600 disabled:opacity-30 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
+                                    <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2.5 text-sm outline-none rounded-full shadow-inner font-medium border ${darkMode ? 'bg-slate-900/50 border-white/10 text-white placeholder-slate-500' : 'bg-white/60 border-white/60 text-blue-900 placeholder-blue-900/40'}`} />
+                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-white bg-blue-600 rounded-full shadow-md disabled:opacity-50 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5" />}</button>
                                 </form>
                             </div>
                         </div>
@@ -1727,20 +1898,20 @@ export default function ApplicantDashboard() {
         ))}
 
       {/* --- MOBILE NAV --- */}
-      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] backdrop-blur-xl ${isFullScreenPage ? 'hidden' : ''} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
+      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] backdrop-blur-xl ${isFullScreenPage ? 'hidden' : ''} ${darkMode ? 'bg-slate-900/80 border-white/10' : 'bg-white/60 border-white/60'}`}>
          {/* ... (Nav buttons) ... */}
-         <button onClick={() => setActiveTab("FindJobs")}><SparklesIcon className={`w-6 h-6 ${activeTab === 'FindJobs' ? 'text-blue-500' : 'text-slate-500'}`}/></button>
-         <button onClick={() => setActiveTab("Saved")}><BookmarkIcon className={`w-6 h-6 ${activeTab === 'Saved' ? 'text-blue-500' : 'text-slate-500'}`}/></button>
+         <button onClick={() => setActiveTab("FindJobs")}><SparklesIcon className={`w-6 h-6 ${activeTab === 'FindJobs' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`}/></button>
+         <button onClick={() => setActiveTab("Saved")}><BookmarkIcon className={`w-6 h-6 ${activeTab === 'Saved' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`}/></button>
          {/* Changed bg-amber-500 to bg-red-500 */}
          <button onClick={() => setActiveTab("Applications")}>
              <div className="relative">
-                 <PaperAirplaneIcon className={`w-6 h-6 ${activeTab === 'Applications' ? 'text-blue-500' : 'text-slate-500'}`}/>
+                 <PaperAirplaneIcon className={`w-6 h-6 ${activeTab === 'Applications' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`}/>
                  {hasUnreadUpdates && (
                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>
                  )}
              </div>
          </button>
-         <button onClick={() => setActiveTab("Messages")}><div className="relative"><ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-500' : 'text-slate-500'}`}/>{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 min-w-[16px] h-[16px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-none">{unreadMsgCount}</span>}</div></button>
+         <button onClick={() => setActiveTab("Messages")}><div className="relative"><ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`}/>{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 min-w-[16px] h-[16px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-none">{unreadMsgCount}</span>}</div></button>
       </nav>
 
         {/* 5. IMAGE LIGHTBOX OVERLAY */}

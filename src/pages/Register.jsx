@@ -80,7 +80,6 @@ export default function Register() {
       .join(" ");
   };
 
-  // UPDATED: Now includes admin collection & empty string protection
   const checkDuplicate = async (field, value) => {
     if (!value) return false; 
     
@@ -139,24 +138,36 @@ export default function Register() {
     setProofFiles(proofFiles.filter((_, index) => index !== indexToRemove));
   };
 
-  // NEW: Resend OTP Logic
+  // --- RECAPTCHA SETUP & CLEANUP HELPERS ---
+  const clearRecaptcha = () => {
+    if (window.recaptchaVerifier) {
+      window.recaptchaVerifier.clear();
+      window.recaptchaVerifier = null;
+    }
+    const container = document.getElementById("recaptcha-register");
+    if (container) container.innerHTML = "";
+  };
+
+  const setupRecaptcha = () => {
+    clearRecaptcha();
+    window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-register", {
+      size: "invisible",
+      callback: () => console.log("Recaptcha verified"),
+      "expired-callback": () => { triggerToast("Recaptcha expired. Please try again.", "error"); setLoading(false); }
+    });
+  };
+
+  // --- RESEND OTP ---
   const handleResendOtp = async () => {
     setLoading(true);
     try {
-      if (window.recaptchaVerifier) {
-          window.recaptchaVerifier.clear();
-      }
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-register', { size: 'invisible' });
-      
+      setupRecaptcha(); // Safely initialize
       const confirmation = await linkWithPhoneNumber(auth.currentUser, formatPhone(formData.phoneNumber), window.recaptchaVerifier);
       setConfirmationResult(confirmation);
       triggerToast("OTP resent successfully!", "info");
     } catch (err) {
       triggerToast("Failed to resend SMS OTP. Please try again.", "error");
-      if (window.recaptchaVerifier) {
-          window.recaptchaVerifier.clear();
-          window.recaptchaVerifier = null;
-      }
+      clearRecaptcha(); // Clean up on fail
     }
     setLoading(false);
   };
@@ -189,10 +200,13 @@ export default function Register() {
       }
 
       let userObj = auth.currentUser;
+      let isNewAccount = false; // Track if we just created this account
+
       if (!userObj || userObj.email !== formData.email) {
           try {
               const res = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
               userObj = res.user;
+              isNewAccount = true; 
           } catch (err) {
               if (err.code === "auth/email-already-in-use") {
                   try {
@@ -215,29 +229,26 @@ export default function Register() {
               setLoading(false); return;
           }
 
-          // FIX: Always clear and recreate the verifier here
-          if (window.recaptchaVerifier) {
-              window.recaptchaVerifier.clear();
-              window.recaptchaVerifier = null;
-          }
-          window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-register', { size: 'invisible' });
-
           try {
+              setupRecaptcha(); // Safely initialize
               const confirmation = await linkWithPhoneNumber(userObj, finalPhone, window.recaptchaVerifier);
               setConfirmationResult(confirmation);
               setStep(4); 
           } catch (smsErr) {
               console.error("SMS Error:", smsErr);
+              
+              // ROLLBACK: Delete the broken account if phone link fails natively in Firebase
+              if (isNewAccount && userObj) {
+                  await userObj.delete().catch(()=>console.log("Cleanup failed"));
+                  await signOut(auth);
+              }
+
               if (smsErr.code === 'auth/credential-already-in-use') {
                   triggerToast("This phone number is already used by another account.", "error");
               } else {
                   triggerToast("Failed to send SMS OTP. Please check your number.", "error");
               }
-              
-              if (window.recaptchaVerifier) {
-                  window.recaptchaVerifier.clear();
-                  window.recaptchaVerifier = null;
-              }
+              clearRecaptcha(); // Clean up on fail
           }
       } else {
           setStep(5);
@@ -312,25 +323,41 @@ export default function Register() {
         await addDoc(collection(db, "mail"), {
             to: formData.email,
             message: {
-                subject: "Registration Received - Livelimatch Verification",
+                subject: "Registration Received - Livelimatch Verification Pending",
                 html: `
-                    <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
-                        <h2 style="color: #1e3a8a;">Hello ${formattedFirstName},</h2>
-                        <p>We received your registration for the Brgy. Cawayan Bogtong Livelimatch portal.</p>
-                        <p>Your account is currently <strong style="color: #ea580c;">PENDING</strong>. Our admin will verify your proof of residency within 1 to 3 working days.</p>
-                        <p>We will send you another email as soon as your account is approved.</p>
-                        <br>
-                        <p>Thank you,<br><strong>Livelimatch Admin Team</strong></p>
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f8fafc; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+                    <div style="background-color: #2563eb; padding: 24px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 1px;">LIVELI<span style="color: #93c5fd;">MATCH</span></h1>
                     </div>
+                    <div style="padding: 32px; background-color: #ffffff; color: #334155; line-height: 1.6;">
+                        <h2 style="color: #1e293b; font-size: 20px; margin-top: 0;">Hello ${formattedFirstName},</h2>
+                        <p>Thank you for registering with <strong>Livelimatch</strong>, the official job-matching portal for Barangay Cawayan Bogtong.</p>
+                        
+                        <div style="background-color: #fff7ed; border-left: 4px solid #ea580c; padding: 16px; margin: 24px 0; border-radius: 0 8px 8px 0;">
+                            <p style="margin: 0; color: #9a3412;"><strong>Account Status: <span style="color: #ea580c;">PENDING VERIFICATION</span></strong></p>
+                            <p style="margin: 8px 0 0 0; font-size: 14px; color: #c2410c;">Our admin team is currently reviewing your proof of residency. This ensures a secure community for everyone.</p>
+                        </div>
+
+                        <p><strong>What happens next?</strong></p>
+                        <ul style="padding-left: 20px; color: #475569;">
+                            <li style="margin-bottom: 8px;">The review process typically takes 1 to 3 working days.</li>
+                            <li style="margin-bottom: 8px;">We will send you another email the moment your account is approved.</li>
+                            <li>Once approved, you will have full access to view and apply for local opportunities.</li>
+                        </ul>
+                        
+                        <p style="margin-top: 24px;">If you have any questions, simply reply to this email.</p>
+                        <p style="margin-bottom: 0;">Warm regards,<br><strong style="color: #2563eb;">The Livelimatch Admin Team</strong></p>
+                    </div>
+                    <div style="background-color: #f1f5f9; padding: 16px; text-align: center; color: #64748b; font-size: 12px;">
+                        <p style="margin: 0;">© ${new Date().getFullYear()} Barangay Cawayan Bogtong Livelihood Portal. All rights reserved.</p>
+                    </div>
+                </div>
                 `
             }
         });
 
         await signOut(auth);
-        if (window.recaptchaVerifier) {
-            window.recaptchaVerifier.clear();
-            window.recaptchaVerifier = null;
-        }
+        clearRecaptcha(); // Use the helper here as well
 
         triggerToast("Registration successful! Your account is pending admin verification.", "info");
         setTimeout(() => {
@@ -444,7 +471,7 @@ export default function Register() {
 
               <div className="flex-1 flex flex-col justify-start">
                   
-                  {/* FIX: Moved Recaptcha to always be in the DOM */}
+                  {/* FIX: Recaptcha always mounted and controlled securely */}
                   <div id="recaptcha-register"></div>
 
                   {step === 1 && (

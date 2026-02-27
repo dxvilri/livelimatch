@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, cloneElement } from "react";
 import { useNavigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
-import { auth, db } from "../firebase/config"; 
+import { auth, db, storage } from "../firebase/config"; 
 import { 
   collection, query, onSnapshot, 
   doc, updateDoc, deleteDoc, orderBy, 
   addDoc, serverTimestamp, arrayUnion 
 } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage"; 
 
 import { 
   HomeIcon, UsersIcon, BriefcaseIcon, 
@@ -18,10 +19,12 @@ import {
   SunIcon, MoonIcon, FunnelIcon,
   BellIcon, MegaphoneIcon, PaperAirplaneIcon,
   Bars3Icon, ChatBubbleLeftRightIcon, UserCircleIcon,
-  ArrowPathIcon, PhoneIcon, EnvelopeIcon, IdentificationIcon
+  ArrowPathIcon, PhoneIcon, EnvelopeIcon, DocumentIcon,
+  TagIcon, AcademicCapIcon, Cog8ToothIcon, WrenchScrewdriverIcon, 
+  ClockIcon, CalendarDaysIcon, BoltIcon, UserGroupIcon 
 } from "@heroicons/react/24/outline";
 
-// --- STATIC DATA ---
+// --- STATIC DATA & THEME CONSTANTS ---
 const PUROK_LIST = [
   "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary"
 ];
@@ -34,6 +37,67 @@ const PUROK_STYLES = {
   "Centro 3": "bg-pink-500/10 text-pink-600 border-pink-500/20 dark:text-pink-300",
   "Bypass Road": "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-300",
   "Boundary": "bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-300",
+};
+
+const JOB_CATEGORIES = [
+    { id: "EDUCATION", label: "Education" },
+    { id: "AGRICULTURE", label: "Agriculture" },
+    { id: "AUTOMOTIVE", label: "Automotive" },
+    { id: "CARPENTRY", label: "Carpentry" },
+    { id: "HOUSEHOLD", label: "Household Service" },
+    { id: "CUSTOMER_SERVICE", label: "Customer Service" }
+];
+
+const getJobStyle = (type) => {
+    const types = {
+        "Full-time": { icon: <BriefcaseIcon className="w-5 h-5"/>, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20" },
+        "Part-time": { icon: <ClockIcon className="w-5 h-5"/>, color: "text-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/20" },
+        "Contract": { icon: <CalendarDaysIcon className="w-5 h-5"/>, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
+        "One-time": { icon: <BoltIcon className="w-5 h-5"/>, color: "text-green-500", bg: "bg-green-500/10", border: "border-green-500/20" }
+    };
+    return types[type] || types["Full-time"];
+};
+
+const getCatStyles = (id) => {
+    const iconMap = {
+        'EDUCATION': AcademicCapIcon,
+        'AGRICULTURE': SunIcon,
+        'AUTOMOTIVE': Cog8ToothIcon,
+        'CARPENTRY': WrenchScrewdriverIcon,
+        'HOUSEHOLD': HomeIcon,
+        'CUSTOMER_SERVICE': UserGroupIcon,
+    };
+    return { icon: iconMap[id] || TagIcon };
+};
+
+const getCardTheme = (categoryId, isDark) => {
+    const darkColors = {
+        'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', cardBg: 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border border-blue-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(96,165,250,0.25)]' },
+        'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', cardBg: 'bg-gradient-to-br from-green-500/20 to-green-500/5 border border-green-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(74,222,128,0.25)]' },
+        'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', cardBg: 'bg-gradient-to-br from-slate-500/20 to-slate-500/5 border border-slate-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(148,163,184,0.25)]' },
+        'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', cardBg: 'bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border border-yellow-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(250,204,21,0.25)]' },
+        'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', cardBg: 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border border-pink-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(244,114,182,0.25)]' },
+        'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', cardBg: 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(192,132,252,0.25)]' },
+    };
+    const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', cardBg: 'bg-gradient-to-br from-slate-500/20 to-slate-500/5 border border-slate-500/20 backdrop-blur-xl shadow-sm', hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(148,163,184,0.25)]' };
+
+    if (isDark) {
+        const cat = darkColors[categoryId] || fallbackDark;
+        return {
+            title: cat.text, location: cat.text, salaryLabel: cat.text, salaryValue: cat.text, currency: `${cat.text} opacity-70`,
+            badge: `${cat.bgLight} ${cat.text} ${cat.border}`, saveIdle: `${cat.text} opacity-50 hover:opacity-100 hover:bg-white/10`,
+            borderColor: cat.border, bgIcon: cat.text, cardBg: cat.cardBg, hoverShadow: cat.hoverShadow, descText: 'text-slate-300'
+        };
+    } else {
+        return {
+            title: 'text-white drop-shadow-md', location: 'text-blue-100', salaryLabel: 'text-blue-200', salaryValue: 'text-white', currency: 'text-blue-200',
+            badge: 'bg-white/20 text-white border border-white/30 backdrop-blur-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]', 
+            saveIdle: 'text-white/70 hover:bg-white/20 hover:text-white transition-colors',
+            borderColor: 'border-white/20', bgIcon: 'text-white', 
+            cardBg: 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 shadow-[0_10px_20px_-5px_rgba(37,99,235,0.4)] ring-1 ring-inset ring-white/40',
+            hoverShadow: 'hover:shadow-[0_15px_30px_-5px_rgba(37,99,235,0.5)]', descText: 'text-blue-50 drop-shadow-sm'
+        };
+    }
 };
 
 export default function AdminDashboard() {
@@ -68,6 +132,8 @@ export default function AdminDashboard() {
   // Announcement Form
   const [announceTitle, setAnnounceTitle] = useState("");
   const [announceBody, setAnnounceBody] = useState("");
+  const [announceFiles, setAnnounceFiles] = useState([]);
+  const [isPostingAnn, setIsPostingAnn] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -75,24 +141,19 @@ export default function AdminDashboard() {
 
   // --- DATA FETCHING ---
   useEffect(() => {
-    // 1. Applicants
     const unsubApplicants = onSnapshot(collection(db, "applicants"), (snap) => 
     setApplicants(snap.docs.map(d => ({ id: d.id, type: 'applicant', ...d.data() }))));
     
-    // 2. Employers
     const unsubEmployers = onSnapshot(collection(db, "employers"), (snap) => 
       setEmployers(snap.docs.map(d => ({ id: d.id, type: 'employer', ...d.data() }))));
     
-    // 3. Jobs
     const unsubJobs = onSnapshot(query(collection(db, "jobs"), orderBy("createdAt", "desc")), (snap) => 
       setJobs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-    // 4. Support Tickets (Real-time)
     const unsubTickets = onSnapshot(query(collection(db, "support_tickets"), orderBy("lastUpdated", "desc")), (snap) => {
         setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // 5. Announcements (Real-time)
     const unsubAnnouncements = onSnapshot(query(collection(db, "announcements"), orderBy("createdAt", "desc")), (snap) => {
         setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
@@ -103,18 +164,12 @@ export default function AdminDashboard() {
   // --- DERIVED STATE ---
   useEffect(() => {
     const allUsers = [...applicants, ...employers];
-    
-    // Pending (Checks both 'status' and old 'verificationStatus' for backward compatibility)
     const pending = allUsers.filter(u => u.status === 'pending' || u.verificationStatus === 'pending' || (!u.status && !u.verificationStatus));
     setPendingVerifications(pending);
-
-    // Rejected
     const rejected = allUsers.filter(u => u.status === 'rejected' || u.verificationStatus === 'rejected');
     setRejectedUsers(rejected);
-
   }, [applicants, employers]);
 
-  // Scroll to bottom of chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [selectedTicket]);
@@ -125,7 +180,7 @@ export default function AdminDashboard() {
     }
   }, [activeTab]);
 
-  // --- ACTIONS (COHESIVE UPDATE HERE) ---
+  // --- ACTIONS ---
   const handleVerifyUser = async (user, actionType) => {
     const collectionName = user.type === 'employer' ? 'employers' : 'applicants';
     const isApprove = actionType === 'verified';
@@ -137,29 +192,48 @@ export default function AdminDashboard() {
 
     if(confirm(confirmMsg)) {
       try {
-        // 1. Update Firestore status
         await updateDoc(doc(db, collectionName, user.id), { 
-          status: actionType, // Updated to use the new "status" field from Register
-          verificationStatus: actionType, // Kept for backwards compatibility 
+          status: actionType, 
+          verificationStatus: actionType, 
           verificationDate: new Date().toISOString(),
           isVerified: isApprove 
         });
 
-        // 2. Trigger Custom Firebase Email if Approved
         if (isApprove && user.email) {
           await addDoc(collection(db, "mail"), {
             to: user.email,
             message: {
               subject: "Account Verified - Welcome to Livelimatch!",
               html: `
-                <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
-                  <h2 style="color: #1e3a8a;">Congratulations ${user.firstName}!</h2>
-                  <p>Your residency in Brgy. Cawayan Bogtong has been successfully verified.</p>
-                  <p>You can now log in to your Livelimatch account and start exploring opportunities.</p>
-                  <br>
-                  <a href="https://livelimatch-portal.web.app/login" style="background-color: #1e3a8a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Log In Now</a>
-                  <br><br>
-                  <p>Welcome aboard,<br><strong>Livelimatch Admin Team</strong></p>
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f8fafc; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+                    <div style="background-color: #2563eb; padding: 24px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 1px;">LIVELI<span style="color: #93c5fd;">MATCH</span></h1>
+                    </div>
+                    <div style="padding: 32px; background-color: #ffffff; color: #334155; line-height: 1.6;">
+                        <h2 style="color: #1e293b; font-size: 20px; margin-top: 0;">Congratulations ${user.firstName}!</h2>
+                        <p>Your residency in Brgy. Cawayan Bogtong has been successfully verified.</p>
+                        
+                        <div style="background-color: #f0fdf4; border-left: 4px solid #16a34a; padding: 16px; margin: 24px 0; border-radius: 0 8px 8px 0;">
+                            <p style="margin: 0; color: #166534;"><strong>Account Status: <span style="color: #16a34a;">VERIFIED & ACTIVE</span></strong></p>
+                            <p style="margin: 8px 0 0 0; font-size: 14px; color: #15803d;">You now have full access to explore opportunities and connect with the community.</p>
+                        </div>
+
+                        <p><strong>Next Steps:</strong></p>
+                        <ul style="padding-left: 20px; color: #475569;">
+                            <li style="margin-bottom: 8px;">Log in to your account using your registered credentials.</li>
+                            <li style="margin-bottom: 8px;">Complete your profile to stand out.</li>
+                            <li>Start exploring localized jobs or posting opportunities.</li>
+                        </ul>
+                        
+                        <div style="text-align: center; margin: 32px 0;">
+                            <a href="https://livelimatch-portal.web.app/login" style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; text-transform: uppercase; font-size: 14px; letter-spacing: 1px;">Access Dashboard</a>
+                        </div>
+
+                        <p style="margin-bottom: 0;">Welcome aboard,<br><strong style="color: #2563eb;">The Livelimatch Admin Team</strong></p>
+                    </div>
+                    <div style="background-color: #f1f5f9; padding: 16px; text-align: center; color: #64748b; font-size: 12px;">
+                        <p style="margin: 0;">© ${new Date().getFullYear()} Barangay Cawayan Bogtong Livelihood Portal. All rights reserved.</p>
+                    </div>
                 </div>
               `
             }
@@ -200,22 +274,53 @@ export default function AdminDashboard() {
     }
   };
 
+  // --- ANNOUNCEMENT MEDIA LOGIC ---
+  const handleAnnounceFileChange = (e) => {
+    const selected = Array.from(e.target.files);
+    if (announceFiles.length + selected.length > 3) {
+      alert("You can only upload a maximum of 3 files.");
+      return;
+    }
+    setAnnounceFiles([...announceFiles, ...selected]);
+  };
+
+  const removeAnnounceFile = (index) => {
+    setAnnounceFiles(announceFiles.filter((_, i) => i !== index));
+  };
+
   const handlePostAnnouncement = async (e) => {
     e.preventDefault();
+    setIsPostingAnn(true);
     try {
+        const uploadedUrls = [];
+        
+        for (let i = 0; i < announceFiles.length; i++) {
+            const file = announceFiles[i];
+            const fileExtension = file.name.split('.').pop();
+            const uniqueName = `announcements/${Date.now()}_${i}.${fileExtension}`;
+            const fileRef = ref(storage, uniqueName);
+            await uploadBytes(fileRef, file);
+            const url = await getDownloadURL(fileRef);
+            uploadedUrls.push({ url, type: file.type, name: file.name });
+        }
+
         await addDoc(collection(db, "announcements"), {
             title: announceTitle,
             body: announceBody,
+            media: uploadedUrls,
             date: new Date().toLocaleDateString(),
             createdAt: serverTimestamp(),
             author: "Admin"
         });
+        
         setAnnounceTitle("");
         setAnnounceBody("");
+        setAnnounceFiles([]);
         alert("Announcement Posted!");
     } catch (err) {
         alert("Error posting announcement: " + err.message);
     }
+    setIsPostingAnn(false);
   };
 
   const handleSendReply = async (e) => {
@@ -259,18 +364,16 @@ export default function AdminDashboard() {
     cawayanResidents: "3,176"
   };
 
-  // --- CHART CALCULATIONS ---
   const vApps = Number(stats.verifiedApplicants || 0);
   const vEmps = Number(stats.verifiedEmployers || 0);
   const maxChartVal = Math.max(vApps, vEmps, 1);
-
   const applicantHeight = (vApps / maxChartVal) * 100;
   const employerHeight = (vEmps / maxChartVal) * 100;
 
   // --- STYLES ---
   const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
-    ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' 
-    : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
+    ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)]' 
+    : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]'}`;
   
   const glassCard = `backdrop-blur-md border rounded-2xl transition-all duration-300 group hover:-translate-y-1 ${darkMode
     ? 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60 hover:border-blue-500/30'
@@ -315,7 +418,7 @@ export default function AdminDashboard() {
                     <ShieldCheckIcon className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                    <h1 className="font-black text-lg tracking-tight leading-none">LIVELI<br/><span className="text-blue-500">MATCH</span></h1>
+                    <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-800'}`}>LIVELI<br/><span className="text-blue-500">MATCH</span></h1>
                 </div>
             </div>
             <div className={`hidden lg:block absolute transition-all duration-300 ${isSidebarOpen ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}>
@@ -361,7 +464,7 @@ export default function AdminDashboard() {
             
             <div className={`h-px mx-4 my-2 ${darkMode ? 'bg-white/10' : 'bg-slate-900/10'}`}></div>
             
-            <p className={`px-4 text-[10px] font-black uppercase tracking-widest opacity-50 mb-2 transition-all ${!isSidebarOpen && 'lg:hidden'}`}>Database</p>
+            <p className={`px-4 text-[10px] font-black uppercase tracking-widest opacity-50 mb-2 transition-all ${!isSidebarOpen && 'lg:hidden'} ${darkMode ? 'text-white' : 'text-slate-800'}`}>Database</p>
             
             <NavBtn 
                 active={activeTab==="Applicants"} 
@@ -396,7 +499,7 @@ export default function AdminDashboard() {
         <div className="p-4 space-y-3">
              <button 
                 onClick={() => setDarkMode(!darkMode)}
-                className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-all duration-300 ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-black/5 hover:bg-black/10'} ${!isSidebarOpen && 'lg:justify-center'}`}
+                className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-all duration-300 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-black/5 hover:bg-black/10 text-slate-800'} ${!isSidebarOpen && 'lg:justify-center'}`}
             >
                 {darkMode ? <SunIcon className="w-6 h-6 text-amber-400"/> : <MoonIcon className="w-6 h-6 text-slate-600"/>}
                 {isSidebarOpen && <span className="text-xs font-bold">Switch Theme</span>}
@@ -405,7 +508,7 @@ export default function AdminDashboard() {
              <button 
                 onClick={async () => {
                     await signOut(auth);
-                    navigate("/"); // This redirects to the Landing Page
+                    navigate("/"); 
                 }}
                 className={`w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 transition-all duration-300 hover:bg-red-500/10 ${!isSidebarOpen && 'lg:justify-center'}`}
             >
@@ -438,7 +541,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                     <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeTab}</h2>
-                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">Admin Workspace</p>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest opacity-50 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Admin Workspace</p>
                 </div>
             </div>
             
@@ -470,25 +573,23 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Analytics Bar Chart */}
                     <div className={`lg:col-span-2 p-6 lg:p-8 rounded-3xl ${glassPanel} flex flex-col justify-between`}>
                         <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                             <div className="flex items-center gap-3">
                                 <ChartBarIcon className="w-6 h-6 text-purple-500"/>
                                 <div>
-                                    <h3 className="font-bold text-lg">Platform Engagement</h3>
-                                    <p className="text-[10px] opacity-50 uppercase font-bold">
+                                    <h3 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>Platform Engagement</h3>
+                                    <p className={`text-[10px] opacity-50 uppercase font-bold ${darkMode ? 'text-white' : 'text-slate-800'}`}>
                                     {vApps} Applicants • {vEmps} Employers
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex gap-4 text-xs font-bold">
+                            <div className={`flex gap-4 text-xs font-bold ${darkMode ? 'text-white' : 'text-slate-800'}`}>
                                 <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500"></div> Applicants</div>
                                 <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-500"></div> Employers</div>
                             </div>
                         </div>
 
-                        {/* CSS Chart Container */}
                         <div className="flex h-40 lg:h-48 items-end gap-8 lg:gap-12 px-4 border-b border-gray-500/10 pb-2">
                             <div className="flex-1 flex flex-col justify-end group h-full">
                                 <div className="flex flex-col justify-end h-full">
@@ -508,7 +609,7 @@ export default function AdminDashboard() {
                     <div className={`p-6 lg:p-8 rounded-3xl ${glassPanel} overflow-y-auto no-scrollbar max-h-[400px]`}>
                         <div className="flex items-center gap-3 mb-6">
                             <UsersIcon className="w-6 h-6 text-blue-500"/>
-                            <h3 className="font-bold text-lg">Purok Breakdown</h3>
+                            <h3 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>Purok Breakdown</h3>
                         </div>
                         <div className="space-y-5">
                              {PUROK_LIST.map(purok => {
@@ -517,7 +618,7 @@ export default function AdminDashboard() {
                                 const percent = (count / total) * 100;
                                 return (
                                     <div key={purok}>
-                                        <div className="flex justify-between text-xs font-bold mb-2 opacity-80">
+                                        <div className={`flex justify-between text-xs font-bold mb-2 opacity-80 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
                                             <span>{purok}</span>
                                             <span>{count}</span>
                                         </div>
@@ -539,11 +640,11 @@ export default function AdminDashboard() {
                 {/* TICKET LIST */}
                 <div className={`lg:col-span-1 rounded-3xl overflow-hidden flex flex-col ${glassPanel}`}>
                     <div className="p-6 border-b border-gray-500/10">
-                        <h3 className="font-bold text-lg">Support Inbox</h3>
-                        <p className="text-xs opacity-50 font-bold uppercase mt-1">{tickets.length} total tickets</p>
+                        <h3 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>Support Inbox</h3>
+                        <p className={`text-xs opacity-50 font-bold uppercase mt-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>{tickets.length} total tickets</p>
                     </div>
                     {tickets.length === 0 ? (
-                        <div className="flex-1 flex flex-col items-center justify-center opacity-40">
+                        <div className={`flex-1 flex flex-col items-center justify-center opacity-40 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
                              <ChatBubbleLeftRightIcon className="w-12 h-12 mb-2"/>
                              <p className="text-sm font-bold">No active tickets</p>
                         </div>
@@ -559,12 +660,11 @@ export default function AdminDashboard() {
                                         <h4 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-slate-800'}`}>{t.user || "User"}</h4>
                                         <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${t.status === 'open' || t.status === 'new' ? 'bg-orange-500/20 text-orange-500' : 'bg-emerald-500/20 text-emerald-500'}`}>{t.status || 'open'}</span>
                                     </div>
-                                    <p className="text-xs font-bold opacity-60 mb-2">{t.type || "Support"}</p>
-                                    <p className="text-xs opacity-50 truncate">
+                                    <p className={`text-xs font-bold opacity-60 mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>{t.type || "Support"}</p>
+                                    <p className={`text-xs opacity-50 truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>
                                         {t.messages && t.messages.length > 0 ? t.messages[t.messages.length - 1].text : 'No messages'}
                                     </p>
                                     
-                                    {/* DELETE TICKET BUTTON (LIST ITEM) */}
                                     <button 
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -592,11 +692,10 @@ export default function AdminDashboard() {
                                     </div>
                                     <div>
                                         <h4 className={`font-bold ${darkMode ? 'text-white' : 'text-slate-800'}`}>{selectedTicket.user}</h4>
-                                        <p className="text-xs opacity-50 font-bold uppercase">{selectedTicket.type}</p>
+                                        <p className={`text-xs opacity-50 font-bold uppercase ${darkMode ? 'text-white' : 'text-slate-800'}`}>{selectedTicket.type}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    {/* === DELETE TICKET BUTTON (HEADER) === */}
                                     <button 
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -608,7 +707,7 @@ export default function AdminDashboard() {
                                         <TrashIcon className="w-5 h-5"/>
                                     </button>
 
-                                    <button onClick={()=>setSelectedTicket(null)} className="lg:hidden p-2"><XMarkIcon className="w-6 h-6"/></button>
+                                    <button onClick={()=>setSelectedTicket(null)} className={`lg:hidden p-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}><XMarkIcon className="w-6 h-6"/></button>
                                 </div>
                             </div>
 
@@ -617,7 +716,7 @@ export default function AdminDashboard() {
                                     <div key={idx} className={`flex ${msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
                                         <div className={`max-w-[75%] p-4 rounded-2xl text-sm font-medium leading-relaxed ${msg.sender === 'admin' 
                                             ? 'bg-blue-600 text-white rounded-tr-sm shadow-blue-500/20 shadow-lg' 
-                                            : `rounded-tl-sm ${darkMode ? 'bg-white/10 text-white' : 'bg-white text-slate-800 shadow-sm'}`}`}>
+                                            : `rounded-tl-sm ${darkMode ? 'bg-white/10 text-white' : 'bg-white/60 text-slate-800 shadow-sm border border-black/5'}`}`}>
                                             {msg.text}
                                         </div>
                                     </div>
@@ -641,7 +740,7 @@ export default function AdminDashboard() {
                             </div>
                         </>
                     ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center opacity-30">
+                        <div className={`flex-1 flex flex-col items-center justify-center opacity-30 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
                             <ChatBubbleLeftRightIcon className="w-24 h-24 mb-4"/>
                             <p className="font-bold text-lg">Select a ticket to respond</p>
                         </div>
@@ -660,7 +759,7 @@ export default function AdminDashboard() {
                     </div>
                     <form onSubmit={handlePostAnnouncement} className="space-y-4">
                         <div>
-                            <label className="text-xs font-bold uppercase opacity-50 ml-1">Title</label>
+                            <label className={`text-xs font-bold uppercase opacity-50 ml-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Title</label>
                             <input 
                                 value={announceTitle}
                                 onChange={(e)=>setAnnounceTitle(e.target.value)}
@@ -670,7 +769,7 @@ export default function AdminDashboard() {
                             />
                         </div>
                         <div>
-                            <label className="text-xs font-bold uppercase opacity-50 ml-1">Details</label>
+                            <label className={`text-xs font-bold uppercase opacity-50 ml-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Details</label>
                             <textarea 
                                 value={announceBody}
                                 onChange={(e)=>setAnnounceBody(e.target.value)}
@@ -680,8 +779,37 @@ export default function AdminDashboard() {
                                 placeholder="Type your announcement here..."
                             ></textarea>
                         </div>
-                        <button type="submit" className="w-full py-3 rounded-xl bg-pink-500 text-white font-black uppercase tracking-widest shadow-lg shadow-pink-500/30 hover:bg-pink-600 transition-all flex items-center justify-center gap-2">
-                            <PaperAirplaneIcon className="w-5 h-5"/> Post
+                        
+                        {/* MULTIPLE MEDIA UPLOAD */}
+                        <div className={`p-3 rounded-xl border ${darkMode ? 'border-white/10 bg-slate-800/50' : 'border-black/5 bg-white/50'}`}>
+                            <label className={`flex justify-between items-center text-xs font-bold uppercase opacity-60 mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
+                                <span>Attach Media (Optional)</span>
+                                <span>{announceFiles.length}/3</span>
+                            </label>
+                            <input 
+                                type="file" 
+                                accept="image/*,video/*,application/pdf"
+                                multiple
+                                onChange={handleAnnounceFileChange}
+                                className={`w-full text-xs outline-none transition-all font-medium 
+                                ${darkMode ? 'text-slate-300' : 'text-slate-700'}
+                                file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-black file:uppercase file:tracking-widest file:transition-colors file:cursor-pointer
+                                ${darkMode ? 'file:bg-pink-500/20 file:text-pink-400 hover:file:bg-pink-500/30' : 'file:bg-pink-100 file:text-pink-600 hover:file:bg-pink-200'}`} 
+                            />
+                            {announceFiles.length > 0 && (
+                                <div className="mt-2 space-y-1.5">
+                                    {announceFiles.map((f, i) => (
+                                        <div key={i} className={`flex justify-between items-center px-3 py-2 rounded-lg border ${darkMode ? 'border-white/10 bg-black/20 text-slate-300' : 'border-black/5 bg-white text-slate-600'}`}>
+                                            <span className="text-[10px] font-bold truncate pr-4">{f.name}</span>
+                                            <button type="button" onClick={()=>removeAnnounceFile(i)} className="text-red-400 hover:text-red-600"><XMarkIcon className="w-4 h-4"/></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <button disabled={isPostingAnn} type="submit" className="w-full py-3 rounded-xl bg-pink-500 text-white font-black uppercase tracking-widest shadow-lg shadow-pink-500/30 hover:bg-pink-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                            {isPostingAnn ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><PaperAirplaneIcon className="w-5 h-5"/> Post</>}
                         </button>
                     </form>
                 </div>
@@ -703,9 +831,7 @@ export default function AdminDashboard() {
                                     </div>
                                     
                                     <div className="flex items-center gap-3">
-                                        <span className="text-[10px] font-bold opacity-40 uppercase bg-black/5 dark:bg-white/5 px-2 py-1 rounded">{ann.date}</span>
-                                        
-                                        {/* === DELETE ANNOUNCEMENT BUTTON === */}
+                                        <span className={`text-[10px] font-bold opacity-40 uppercase px-2 py-1 rounded ${darkMode ? 'bg-white/5 text-white' : 'bg-black/5 text-slate-800'}`}>{ann.date}</span>
                                         <button 
                                             onClick={() => handleDeleteAnnouncement(ann.id)}
                                             className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all shadow-sm"
@@ -715,7 +841,37 @@ export default function AdminDashboard() {
                                         </button>
                                     </div>
                                 </div>
-                                <p className="text-sm opacity-70 pl-2 leading-relaxed whitespace-pre-wrap">{ann.body}</p>
+                                <p className={`text-sm opacity-70 pl-2 leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-white' : 'text-slate-800'}`}>{ann.body}</p>
+                                
+                                {/* ATTACHMENTS VIEW */}
+                                {ann.media && ann.media.length > 0 && (
+                                    <div className="mt-4 pl-2 flex gap-3 overflow-x-auto no-scrollbar pb-2">
+                                        {ann.media.map((file, i) => (
+                                            <div 
+                                                key={i} 
+                                                onClick={() => setSelectedProof([file.url])} 
+                                                className={`shrink-0 w-24 h-24 rounded-xl overflow-hidden cursor-pointer relative group border ${darkMode ? 'border-white/10 bg-slate-800' : 'border-black/5 bg-slate-100'}`}
+                                            >
+                                                {file.type.startsWith('image/') ? (
+                                                    <img src={file.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                                                ) : file.type.startsWith('video/') ? (
+                                                    <div className="w-full h-full flex flex-col items-center justify-center text-blue-500 bg-blue-500/10">
+                                                        <span className="text-2xl">▶</span>
+                                                        <span className="text-[8px] font-black uppercase mt-1">Video</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-full h-full flex flex-col items-center justify-center text-rose-500 bg-rose-500/10 p-2 text-center">
+                                                        <DocumentIcon className="w-6 h-6 mb-1"/>
+                                                        <span className="text-[8px] font-black uppercase line-clamp-2">PDF/Doc</span>
+                                                    </div>
+                                                )}
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                    <EyeIcon className="w-6 h-6 text-white"/>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         ))
                     )}
@@ -726,9 +882,9 @@ export default function AdminDashboard() {
         {/* TAB CONTENT: VERIFICATIONS */}
         {activeTab === "Verifications" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className="flex gap-4 mb-6 border-b border-gray-500/10 pb-2">
-                    <button onClick={()=>setVerificationSubTab("pending")} className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "pending" ? 'text-blue-500 border-b-2 border-blue-500' : 'opacity-40 hover:opacity-100'}`}>Pending Requests ({pendingVerifications.length})</button>
-                    <button onClick={()=>setVerificationSubTab("rejected")} className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "rejected" ? 'text-red-500 border-b-2 border-red-500' : 'opacity-40 hover:opacity-100'}`}>Rejected History ({rejectedUsers.length})</button>
+                <div className={`flex gap-4 mb-6 border-b pb-2 ${darkMode ? 'border-white/10' : 'border-black/10'}`}>
+                    <button onClick={()=>setVerificationSubTab("pending")} className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "pending" ? 'text-blue-500 border-b-2 border-blue-500' : `opacity-40 hover:opacity-100 ${darkMode ? 'text-white' : 'text-slate-800'}`}`}>Pending Requests ({pendingVerifications.length})</button>
+                    <button onClick={()=>setVerificationSubTab("rejected")} className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "rejected" ? 'text-red-500 border-b-2 border-red-500' : `opacity-40 hover:opacity-100 ${darkMode ? 'text-white' : 'text-slate-800'}`}`}>Rejected History ({rejectedUsers.length})</button>
                 </div>
 
                 {verificationSubTab === "pending" ? (
@@ -736,14 +892,14 @@ export default function AdminDashboard() {
                         {pendingVerifications.length === 0 && (
                             <div className={`col-span-full py-20 flex flex-col items-center justify-center rounded-3xl ${glassPanel} border-dashed`}>
                                 <ShieldCheckIcon className="w-16 h-16 text-emerald-500 mb-4 opacity-50"/>
-                                <p className="font-bold opacity-50">All Clear! No pending requests.</p>
+                                <p className={`font-bold opacity-50 ${darkMode ? 'text-white' : 'text-slate-800'}`}>All Clear! No pending requests.</p>
                             </div>
                         )}
                         {pendingVerifications.map(user => (
                             <div key={user.id} className={`p-6 ${glassCard} relative overflow-hidden`}>
                                 <div className="flex flex-col sm:flex-row gap-5 relative z-10">
-                                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 overflow-hidden shrink-0 shadow-inner">
-                                        {user.profilePic ? <img src={user.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center font-black opacity-30 text-2xl">?</div>}
+                                    <div className={`w-20 h-20 rounded-2xl overflow-hidden shrink-0 shadow-inner ${darkMode ? 'bg-slate-800' : 'bg-slate-200'}`}>
+                                        {user.profilePic ? <img src={user.profilePic} className="w-full h-full object-cover"/> : <div className={`w-full h-full flex items-center justify-center font-black opacity-30 text-2xl ${darkMode ? 'text-white' : 'text-slate-800'}`}>?</div>}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex justify-between items-start">
@@ -751,11 +907,18 @@ export default function AdminDashboard() {
                                             <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${user.type === 'employer' ? 'bg-purple-500/20 text-purple-500' : 'bg-blue-500/20 text-blue-500'}`}>{user.type}</span>
                                         </div>
                                         <p className="text-[11px] font-bold opacity-60 mt-1 flex items-center gap-1 text-blue-600 dark:text-blue-400"><EnvelopeIcon className="w-3 h-3"/> {user.email || "No Email"}</p>
-                                        <p className="text-[11px] font-bold opacity-50 mt-1 flex items-center gap-1"><MapPinIcon className="w-3 h-3"/> {user.sitio || "No address"}</p>
+                                        <p className={`text-[11px] font-bold opacity-50 mt-1 flex items-center gap-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}><MapPinIcon className="w-3 h-3"/> {user.sitio || "No address"}</p>
                                         
-                                        {/* COHESIVE UPDATE: Updated to check proofOfResidencyUrl from new Register method */}
-                                        <button onClick={() => setSelectedProof(user.proofOfResidencyUrl || user.residencyProofUrl || user.businessPermitUrl)} className={`mt-4 w-full py-2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold border transition-all ${darkMode ? 'border-white/10 hover:bg-white/5' : 'border-black/5 hover:bg-black/5'}`}>
-                                            <EyeIcon className="w-4 h-4"/> View ID / Proof
+                                        <button 
+                                            onClick={() => {
+                                                const files = user.proofOfResidencyUrls?.length 
+                                                    ? user.proofOfResidencyUrls 
+                                                    : (user.proofOfResidencyUrl || user.residencyProofUrl || user.businessPermitUrl ? [user.proofOfResidencyUrl || user.residencyProofUrl || user.businessPermitUrl] : []);
+                                                setSelectedProof(files);
+                                            }} 
+                                            className={`mt-4 w-full py-2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold border transition-all ${darkMode ? 'border-white/10 hover:bg-white/5 text-white' : 'border-black/10 hover:bg-black/5 text-slate-800'}`}
+                                        >
+                                            <EyeIcon className="w-4 h-4"/> View Files Attached
                                         </button>
                                     </div>
                                 </div>
@@ -771,7 +934,7 @@ export default function AdminDashboard() {
                         {rejectedUsers.length === 0 && (
                              <div className={`col-span-full py-20 flex flex-col items-center justify-center rounded-3xl ${glassPanel} border-dashed`}>
                                 <TrashIcon className="w-16 h-16 text-slate-400 mb-4 opacity-30"/>
-                                <p className="font-bold opacity-50">Trash is empty.</p>
+                                <p className={`font-bold opacity-50 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Trash is empty.</p>
                             </div>
                         )}
                         {rejectedUsers.map(user => (
@@ -795,15 +958,15 @@ export default function AdminDashboard() {
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 <div className={`p-2 rounded-2xl flex flex-col md:flex-row items-center justify-between ${glassPanel} gap-4 md:gap-0`}>
                     <div className="flex items-center gap-3 px-4 flex-1 w-full md:w-auto">
-                        <MagnifyingGlassIcon className="w-5 h-5 opacity-50"/>
+                        <MagnifyingGlassIcon className={`w-5 h-5 opacity-50 ${darkMode ? 'text-white' : 'text-slate-800'}`}/>
                         <input type="text" placeholder={`Search in ${activeTab}...`} className={glassInput} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
                     {activeTab !== "Jobs" && (
-                        <div className={`flex items-center gap-2 px-4 w-full md:w-auto border-t md:border-t-0 md:border-l pt-2 md:pt-0 ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
+                        <div className={`flex items-center gap-2 px-4 w-full md:w-auto border-t md:border-t-0 md:border-l pt-2 md:pt-0 ${darkMode ? 'border-white/10 text-white' : 'border-black/5 text-slate-800'}`}>
                             <FunnelIcon className="w-4 h-4 opacity-50"/>
                             <select className={`bg-transparent border-none outline-none text-xs font-bold cursor-pointer uppercase tracking-wide w-full md:w-auto ${darkMode ? 'text-white' : 'text-slate-800'}`} onChange={(e) => setSitioFilter(e.target.value)}>
                                 <option value="">All Sitios</option>
-                                {PUROK_LIST.map(p => <option key={p} value={p}>{p}</option>)}
+                                {PUROK_LIST.map(p => <option key={p} value={p} className={darkMode ? "bg-slate-900" : ""}>{p}</option>)}
                             </select>
                         </div>
                     )}
@@ -815,37 +978,87 @@ export default function AdminDashboard() {
                             if(activeTab === "Jobs") return item.title.toLowerCase().includes(searchTerm.toLowerCase());
                             return (item.status === 'verified' || item.verificationStatus === 'verified') && (!sitioFilter || item.sitio === sitioFilter);
                         })
-                        .map(item => (
-                            <div key={item.id} onClick={() => { if(activeTab !== "Jobs") setSelectedUserDetail(item) }} className={`p-6 ${glassCard} ${activeTab !== "Jobs" ? 'cursor-pointer' : ''}`}>
-                                {activeTab === "Jobs" ? (
-                                    <>
-                                        <div className="flex justify-between items-start mb-4">
-                                            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500"><BriefcaseIcon className="w-6 h-6"/></div>
-                                            <button onClick={() => handleDeleteJob(item.id)} className="text-slate-400 hover:text-red-500 transition-colors"><TrashIcon className="w-5 h-5"/></button>
+                        .map(item => {
+                            if (activeTab === "Jobs") {
+                                const catStyle = getCatStyles(item.category);
+                                const CatIcon = catStyle.icon;
+                                const theme = getCardTheme(item.category, darkMode);
+                                const typeStyle = getJobStyle(item.type);
+                                const applicantCount = item.applicationCount || 0;
+                                
+                                return (
+                                    <div key={item.id} className={`relative p-5 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 ${theme.hoverShadow} flex flex-col justify-between min-h-[260px] ${theme.cardBg} w-full`}>
+                                        
+                                        <div className={`absolute -right-4 bottom-0 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${theme.bgIcon}`}>
+                                            <CatIcon className="w-40 h-40 md:w-48 md:h-48" />
                                         </div>
-                                        <h4 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>{item.title}</h4>
-                                        <p className="text-xs font-bold opacity-50 mb-4">{item.employerName} • {item.salary}</p>
-                                        <div className="flex gap-2">
-                                            <span className="px-2 py-1 rounded-md text-[10px] font-black uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">{item.type}</span>
-                                            <span className="px-2 py-1 rounded-md text-[10px] font-black uppercase bg-slate-500/10 text-slate-500 border border-slate-500/20">{item.sitio}</span>
+
+                                        <div className="relative z-10 flex flex-col h-full">
+                                            <div className="flex justify-between items-start gap-4 mb-2">
+                                                <h3 className={`font-black text-xl leading-tight line-clamp-2 pt-1 ${theme.title}`}>{item.title}</h3>
+                                                <button onClick={() => handleDeleteJob(item.id)} className={`p-2 rounded-full transition-colors shrink-0 -mt-1 -mr-1 ${theme.saveIdle} hover:text-red-500 hover:bg-red-500/20 dark:hover:bg-red-500/20`} title="Delete Job">
+                                                    <TrashIcon className="w-5 h-5"/>
+                                                </button>
+                                            </div>
+                                            
+                                            <div className={`flex items-center gap-1.5 mb-3 ${theme.location}`}>
+                                                <MapPinIcon className="w-4 h-4 shrink-0" />
+                                                <p className="text-[11px] font-bold uppercase tracking-wide opacity-80 truncate">{item.employerName} • {item.sitio || "No Location"}</p>
+                                            </div>
+
+                                            <p className={`text-xs mb-4 line-clamp-3 leading-relaxed ${theme.descText}`}>
+                                                {item.description || "No description provided for this job."}
+                                            </p>
+
+                                            <div className="flex flex-wrap items-center gap-2 mb-6">
+                                                {item.category && (
+                                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 shadow-sm ${theme.badge}`}>
+                                                        <CatIcon className="w-3 h-3" />
+                                                        {JOB_CATEGORIES.find(c => c.id === item.category)?.label || item.category}
+                                                    </span>
+                                                )}
+                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 shadow-sm ${theme.badge}`}>
+                                                    {cloneElement(typeStyle.icon, { className: "w-3 h-3 scale-75" })}
+                                                    {item.type}
+                                                </span>
+                                            </div>
+
+                                            <div className={`mt-auto pt-4 border-t flex flex-wrap items-end justify-between gap-3 ${theme.borderColor}`}>
+                                                <div className="mb-1">
+                                                    <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${theme.salaryLabel}`}>Salary</p>
+                                                    <div className="flex items-center gap-1">
+                                                        <span className={`text-sm font-black ${theme.currency}`}>₱</span>
+                                                        <span className={`text-lg font-black leading-none ${theme.salaryValue}`}>{item.salary}</span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className={`flex items-center gap-1.5 mr-1 ${theme.salaryLabel}`} title={`${applicantCount} Applicants`}>
+                                                    <UsersIcon className="w-4 h-4" />
+                                                    <span className="text-[10px] font-black uppercase tracking-widest">{applicantCount} {item.capacity > 0 ? `/ ${item.capacity}` : ''} Applicants</span>
+                                                </div>
+                                            </div>
                                         </div>
-                                    </>
-                                ) : (
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-14 h-14 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden border-2 border-white/20 shadow-md">
-                                            {item.profilePic ? <img src={item.profilePic} className="w-full h-full object-cover"/> : null}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <h4 className={`font-bold text-sm truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>{item.firstName} {item.lastName}</h4>
-                                            <div className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold border truncate ${PUROK_STYLES[item.sitio] || 'bg-slate-100 text-slate-500'}`}>{item.sitio}</div>
-                                        </div>
-                                        <button onClick={(e) => { e.stopPropagation(); handleVerifyUser(item, 'rejected'); }} className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all">
-                                            <XMarkIcon className="w-5 h-5"/>
-                                        </button>
                                     </div>
-                                )}
-                            </div>
-                        ))
+                                );
+                            } else {
+                                return (
+                                    <div key={item.id} onClick={() => setSelectedUserDetail(item)} className={`p-6 ${glassCard} cursor-pointer`}>
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-white/20 shadow-md ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                                                {item.profilePic ? <img src={item.profilePic} className="w-full h-full object-cover"/> : null}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <h4 className={`font-bold text-sm truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>{item.firstName} {item.lastName}</h4>
+                                                <div className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold border truncate ${PUROK_STYLES[item.sitio] || 'bg-slate-100 text-slate-500'}`}>{item.sitio}</div>
+                                            </div>
+                                            <button onClick={(e) => { e.stopPropagation(); handleVerifyUser(item, 'rejected'); }} className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all">
+                                                <XMarkIcon className="w-5 h-5"/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            }
+                        })
                     }
                 </div>
             </div>
@@ -853,15 +1066,46 @@ export default function AdminDashboard() {
 
       </main>
 
-      {/* --- PROOF MODAL --- */}
-      {selectedProof && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedProof(null)}>
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
-            <div className="relative max-w-5xl max-h-[90vh] flex flex-col items-center animate-in zoom-in-95 duration-300">
-                <img src={selectedProof} className="max-w-full max-h-[80vh] rounded-2xl shadow-2xl border border-white/20 mb-6" />
-                <button className="px-8 py-3 rounded-full bg-white text-slate-900 font-black text-xs uppercase tracking-widest hover:scale-105 transition-transform flex items-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.3)]">
-                    <XMarkIcon className="w-4 h-4"/> Close Viewer
-                </button>
+      {/* --- MULTIPLE MEDIA / PROOF VIEWER MODAL (VERTICAL SCROLL) --- */}
+      {selectedProof && selectedProof.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md" onClick={() => setSelectedProof(null)}>
+            <div className="relative max-w-5xl w-full max-h-[95vh] flex flex-col items-center animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
+                
+                {/* Modal Header */}
+                <div className="w-full flex justify-between items-center mb-4 px-4">
+                    <h3 className="text-white font-black text-xl tracking-widest uppercase shadow-sm">File Viewer ({selectedProof.length})</h3>
+                    <button onClick={() => setSelectedProof(null)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/20">
+                        <XMarkIcon className="w-6 h-6"/>
+                    </button>
+                </div>
+                
+                {/* VERTICAL SCROLL CONTAINER */}
+                <div className="w-full overflow-y-auto flex flex-col gap-10 p-4 pb-8 scroll-smooth [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-black/20 [&::-webkit-scrollbar-thumb]:bg-white/40 [&::-webkit-scrollbar-thumb]:rounded-full">
+                    {selectedProof.map((url, i) => {
+                        const isPdf = url.toLowerCase().includes('.pdf');
+                        const isVideo = url.toLowerCase().match(/\.(mp4|mov|webm|ogg)$/i) || url.includes('video%2F');
+                        
+                        return (
+                            <div key={i} className="flex flex-col items-center relative group w-full">
+                                <span className="absolute top-4 left-4 md:left-auto md:right-4 bg-black/60 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full z-10 backdrop-blur-md">
+                                    File {i + 1} of {selectedProof.length}
+                                </span>
+                                
+                                {isPdf ? (
+                                    <iframe src={url} className="w-full md:w-[800px] h-[75vh] rounded-2xl bg-white shadow-2xl border-4 border-white/20" />
+                                ) : isVideo ? (
+                                    <video src={url} controls className="w-full md:max-w-[800px] max-h-[75vh] object-contain rounded-2xl shadow-2xl border-4 border-white/20 bg-black" />
+                                ) : (
+                                    <img src={url} className="w-auto max-w-full md:max-w-[800px] max-h-[85vh] object-contain rounded-2xl shadow-2xl border-4 border-white/20 bg-black/20" alt={`Attached File ${i+1}`} />
+                                )}
+                                
+                                <a href={url} target="_blank" rel="noreferrer" className="mt-4 px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-full text-xs font-black uppercase tracking-widest shadow-xl shadow-blue-500/20 transition-all flex items-center gap-2">
+                                    <EyeIcon className="w-4 h-4"/> Open in New Tab
+                                </a>
+                            </div>
+                        )
+                    })}
+                </div>
             </div>
         </div>
       )}
@@ -871,7 +1115,7 @@ export default function AdminDashboard() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedUserDetail(null)}>
              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
              <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}>
-                <div className="w-24 h-24 rounded-3xl bg-slate-200 overflow-hidden shadow-lg mb-6">
+                <div className={`w-24 h-24 rounded-3xl overflow-hidden shadow-lg mb-6 ${darkMode ? 'bg-slate-800' : 'bg-slate-200'}`}>
                     {selectedUserDetail.profilePic ? <img src={selectedUserDetail.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20">?</div>}
                 </div>
                 <h2 className="text-2xl font-black mb-1">{selectedUserDetail.firstName} {selectedUserDetail.lastName}</h2>
@@ -925,7 +1169,7 @@ function NavBtn({ active, onClick, icon, label, open, dark, badge, badgeColor })
                 {label}
             </span>
             {(badge > 0 && open) && <span className={`absolute right-3 ${badgeColor || 'bg-red-500'} text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10`}>{badge}</span>}
-            {(badge > 0 && !open) && <span className={`hidden lg:block absolute top-2 right-2 w-2.5 h-2.5 ${badgeColor || 'bg-red-500'} rounded-full border-2 border-white dark:border-slate-900 animate-pulse z-10`}></span>}
+            {(badge > 0 && !open) && <span className={`hidden lg:block absolute top-2 right-2 w-2 h-2 ${badgeColor || 'bg-red-500'} rounded-full animate-pulse z-10 shadow-sm`}></span>}
             {(badge > 0 && !open) && <span className={`lg:hidden absolute right-3 ${badgeColor || 'bg-red-500'} text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10`}>{badge}</span>}
         </button>
     )
