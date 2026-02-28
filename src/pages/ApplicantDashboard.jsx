@@ -42,6 +42,7 @@ import RatingsTab from "../components/dashboard/applicant/RatingsTab";
 import SupportTab from "../components/dashboard/applicant/SupportTab";
 import AnnouncementsTab from "../components/dashboard/applicant/AnnouncementsTab";
 import RateEmployerModal from "../components/dashboard/applicant/RateEmployerModal";
+import MessageBubble from "../components/MessageBubble";
 import { BOT_FAQ, getBotAutoReply } from "../utils/applicantConstants";
 
 // --- CONSTANTS ---
@@ -79,65 +80,9 @@ const formatLastSeen = (timestamp) => {
     return { text: "Offline", isOnline: false };
 };
 
-// --- RESTORED ORIGINAL NAV STYLES ---
 const glassPanel = (darkMode) => `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
 const glassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out group ${darkMode ? 'text-slate-400 hover:text-blue-400' : 'text-slate-400 hover:text-blue-600'}`;
 const activeGlassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out scale-110 -translate-y-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`;
-
-// --- MOBILE SWIPE HELPER ---
-const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) => {
-    const [touchStartPos, setTouchStartPos] = useState(null);
-    const [offset, setOffset] = useState(0);
-    const pressTimer = useRef(null);
-    const isSwiping = useRef(false);
-
-    if (!isMobile) return <div className="relative w-full group">{children}</div>;
-
-    const onTouchStart = (e) => {
-        const touch = e.targetTouches[0];
-        setTouchStartPos({ x: touch.clientX, y: touch.clientY });
-        isSwiping.current = false;
-        pressTimer.current = setTimeout(() => { if (!isSwiping.current) onLongPress(); }, 400);
-    };
-
-    const onTouchMove = (e) => {
-        if (!touchStartPos) return;
-        const touch = e.targetTouches[0];
-        const diffX = touch.clientX - touchStartPos.x;
-        const diffY = touch.clientY - touchStartPos.y;
-
-        if (Math.abs(diffX) > 10 || Math.abs(diffY) > 10) {
-            isSwiping.current = true;
-            clearTimeout(pressTimer.current);
-        }
-        if (Math.abs(diffX) > Math.abs(diffY)) {
-            if (!isMe && diffX > 0) setOffset(Math.min(diffX, 60)); 
-            if (isMe && diffX < 0) setOffset(Math.max(diffX, -60)); 
-        }
-    };
-
-    const onTouchEnd = () => {
-        clearTimeout(pressTimer.current);
-        if (Math.abs(offset) > 40) onReply();
-        setOffset(0);
-        setTouchStartPos(null);
-    };
-
-    return (
-        <div 
-            onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
-            style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.3s ease-out' : 'none' }}
-            className="relative touch-pan-y w-full group"
-        >
-             {offset !== 0 && (
-                <div className={`absolute top-1/2 -translate-y-1/2 ${isMe ? 'right-full mr-4' : 'left-full ml-4'} opacity-50`}>
-                    <ArrowUturnLeftIcon className="w-5 h-5 text-slate-400"/>
-                </div>
-            )}
-            {children}
-        </div>
-    );
-};
 
 export default function ApplicantDashboard() {
   const navigate = useNavigate();
@@ -169,7 +114,6 @@ export default function ApplicantDashboard() {
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [applicationSearch, setApplicationSearch] = useState("");
 
-
   // --- UI STATES ---
   const [lastReadAnnouncementId, setLastReadAnnouncementId] = useState(localStorage.getItem("lastReadAnnounceApp"));
   const [currentAnnounceIndex, setCurrentAnnounceIndex] = useState(0);
@@ -182,6 +126,7 @@ export default function ApplicantDashboard() {
   const [selectedEmployerToRate, setSelectedEmployerToRate] = useState(null);
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [menuPosition, setMenuPosition] = useState('top');
   
   // Modal Views
   const [employerContact, setEmployerContact] = useState(null);
@@ -419,41 +364,6 @@ export default function ApplicantDashboard() {
   }, [auth.currentUser]);
 
   // --- HANDLERS ---
-
-  const handleViewEmployerProfile = async (employerId) => {
-      if (!employerId) {
-          alert("We cannot fetch this employer's profile because their ID is missing from this job posting.");
-          return;
-      }
-      setIsFetchingEmployer(true);
-      try {
-          const empSnap = await getDoc(doc(db, "employers", employerId));
-          if (empSnap.exists()) {
-              setViewingEmployerProfile({ id: empSnap.id, ...empSnap.data() });
-              setEmployerProfileTab("details");
-              
-              const qReviews = query(collection(db, "reviews"), where("targetId", "==", employerId));
-              const revSnap = await getDocs(qReviews);
-              let revs = revSnap.docs.map(d => ({id: d.id, ...d.data()}));
-              revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-              setEmployerReviews(revs);
-              
-              if(revs.length > 0) {
-                  const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
-                  setEmployerAverageRating((total / revs.length).toFixed(1));
-              } else {
-                  setEmployerAverageRating(0);
-              }
-          } else {
-              alert("Employer not found in the database. Their account may have been deleted.");
-          }
-      } catch (err) {
-          console.error("Error fetching employer profile:", err);
-          alert("An error occurred while fetching the profile.");
-      } finally {
-          setIsFetchingEmployer(false);
-      }
-  };
 
   const handleToggleSaveJob = async (job) => { 
       const existing = savedJobs.find(s => s.jobId === job.id); 
@@ -934,7 +844,6 @@ export default function ApplicantDashboard() {
                     const fetchJob = async () => {
                         setModalLoading(true); setViewingApplication(app); setModalJobDetails(null);
                         
-                        // NEW: Clears the notification dot by marking the app as read in Firestore
                         if (app.isReadByApplicant === false) {
                             try {
                                 await updateDoc(doc(db, "applications", app.id), { isReadByApplicant: true });
@@ -1636,7 +1545,6 @@ export default function ApplicantDashboard() {
                                                     const myPic = profileImage || applicantData?.profilePic || null;
                                                     const otherPic = effectiveActiveChatUser?.profilePic || getAvatarUrl(effectiveActiveChatUser) || null;
                                                     
-                                                    // Seen/Delivered Status logic
                                                     const currentConv = conversations.find(c => c.participants?.includes(auth.currentUser.uid) && c.participants?.includes(effectiveActiveChatUser.id));
                                                     const unreadByOther = currentConv ? (currentConv[`unread_${effectiveActiveChatUser.id}`] || 0) : 0;
                                                     const isUnseen = (messages.length - 1 - index) < unreadByOther;
@@ -1649,63 +1557,44 @@ export default function ApplicantDashboard() {
                                                         else statusText = "Sent";
                                                     }
 
-                                                    if(msg.type === 'system') return <div key={msg.id} className={`text-center text-[10px] font-bold uppercase tracking-widest opacity-40 my-4 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>{msg.text}</div>;
-                                                    
                                                     return (
-                                                        <SwipeableMessage key={msg.id} isMe={isMe} isMobile={true} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} onLongPress={() => setActiveMenuId(msg.id)}>
-                                                            <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group relative`}>
-                                                                {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-800 border border-blue-600/20 dark:text-blue-300' : 'bg-white/60 text-blue-800 border border-white/60 dark:bg-slate-800 dark:border-white/10 dark:text-slate-300'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
-                                                                <div className={`flex items-end gap-3 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                                    <div className={`w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center text-[8px] font-black uppercase ${darkMode ? 'border-white/10 bg-slate-800 text-slate-300' : 'border-white/60 bg-white/60 text-blue-600'}`}> 
-                                                                        {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : effectiveActiveChatUser.name.charAt(0))} 
-                                                                    </div>
-                                                                    <div className="relative group/bubble flex flex-col gap-1">
-                                                                        {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-600 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
-                                                                        {msg.isUnsent ? (
-                                                                            <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-500 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-500 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
-                                                                        ) : (
-                                                                            <>
-                                                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent shadow-md' : (isMe ? 'bg-blue-600 shadow-md' : 'shadow-sm border ' + (darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-white/60'))}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className={`p-3 text-[11px] font-bold underline truncate flex items-center gap-2 ${isMe ? 'text-white' : (darkMode ? 'text-blue-400' : 'text-blue-600')}`}><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                                                {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[13px] font-medium leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-md' : (darkMode ? 'bg-slate-800 text-white rounded-bl-none border border-white/10 shadow-sm' : 'bg-white text-blue-900 rounded-bl-none border border-white/60 shadow-sm')}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                                                            </>
-                                                                        )}
-                                                                    </div>
-                                                                    
-                                                                    {/* Mobile Context Menu */}
-                                                                    {activeMenuId === msg.id && (
-                                                                        <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 backdrop-blur-xl ${darkMode ? 'border-white/10 bg-slate-900/90 text-white' : 'border-white/60 bg-white/90 text-blue-900'}`}>
-                                                                            <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b ${darkMode ? 'border-white/10 hover:bg-white/10' : 'border-white/60 hover:bg-white/60'}`}>Reply to</button>
-                                                                            <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b ${darkMode ? 'border-white/10 hover:bg-white/10' : 'border-white/60 hover:bg-white/60'} ${msg.isPinned ? 'text-yellow-600' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
-                                                                            {isMe && !msg.isUnsent && (
-                                                                                <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 text-red-500 ${darkMode ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}>Unsend</button>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <p className={`text-[8px] font-black mt-1.5 opacity-50 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
-                                                                    <span>{formatTime(msg.createdAt)}</span>
-                                                                    {isMe && !msg.isUnsent && (
-                                                                        <><span>•</span><span className={statusText === 'Seen' ? (darkMode ? 'text-blue-400' : 'text-blue-600') : ''}>{statusText}</span></>
-                                                                    )}
-                                                                </p>
-                                                            </div>
-                                                        </SwipeableMessage>
-                                                    )
+                                                        <MessageBubble
+                                                            key={msg.id}
+                                                            msg={msg}
+                                                            isMe={isMe}
+                                                            isMobile={true}
+                                                            darkMode={darkMode}
+                                                            myPic={myPic}
+                                                            otherPic={otherPic}
+                                                            senderName={effectiveActiveChatUser?.name}
+                                                            statusText={statusText}
+                                                            formatTime={formatTime}
+                                                            setLightboxUrl={setLightboxUrl}
+                                                            setReplyingTo={setReplyingTo}
+                                                            togglePinMessage={togglePinMessage}
+                                                            unsendMessage={unsendMessage}
+                                                            activeMenuId={activeMenuId}
+                                                            setActiveMenuId={setActiveMenuId}
+                                                            menuPosition={menuPosition}
+                                                            setMenuPosition={setMenuPosition}
+                                                        />
+                                                    );
                                                 })}
                                                 <div ref={scrollRef}/>
                                             </div>
                                             
                                             <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
-                                                {replyingTo && <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-blue-900/20' : 'bg-blue-500/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : effectiveActiveChatUser.name}</span><span className={`truncate max-w-[200px] opacity-70 ${darkMode ? 'text-slate-300' : 'text-blue-900'}`}>{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                                                {attachment && (
-                                                    <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
-                                                        <div className={`p-2 pr-8 shadow-sm rounded-xl flex items-center gap-3 border ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/60 border-white/60'}`}>
-                                                            {attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}
-                                                            <span className={`text-xs font-bold truncate max-w-[200px] ${darkMode ? 'text-white' : 'text-blue-900'}`}>{attachment.name}</span>
-                                                        </div>
-                                                        <button onClick={() => {setAttachment(null); bubbleFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
-                                                    </div>
-                                                )}
+                                               {replyingTo && (
+    <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+        <div className="flex flex-col">
+            <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
+            <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+                {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
+            </span>
+        </div>
+        <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
+    </div>
+)}
                                                 <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
                                                     <input type="file" ref={bubbleFileRef} onChange={handleFileSelect} className="hidden" />
                                                     <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
@@ -1807,7 +1696,6 @@ export default function ApplicantDashboard() {
                                     const myPic = profileImage || applicantData?.profilePic || null;
                                     const otherPic = activeChat?.profilePic || getAvatarUrl(activeChat) || null;
 
-                                    // Seen/Delivered Status logic
                                     const currentConv = conversations.find(c => c.participants?.includes(auth.currentUser.uid) && c.participants?.includes(activeChat.id));
                                     const unreadByOther = currentConv ? (currentConv[`unread_${activeChat.id}`] || 0) : 0;
                                     const isUnseen = (messages.length - 1 - index) < unreadByOther;
@@ -1820,70 +1708,45 @@ export default function ApplicantDashboard() {
                                         else statusText = "Sent";
                                     }
 
-                                    if(msg.type === 'system') return <div key={msg.id} className={`text-center text-[9px] font-black uppercase tracking-widest opacity-50 my-2 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>{msg.text}</div>;
-                                    
                                     return (
-                                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-800 border border-blue-600/20 dark:text-blue-300' : 'bg-white/60 border border-white/60 text-blue-800 dark:bg-slate-800 dark:border-white/10 dark:text-slate-300'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
-                                            <div className={`flex items-end gap-2 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                <div className={`w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center text-[8px] font-black uppercase ${darkMode ? 'bg-slate-800 border-white/10 text-slate-300' : 'bg-white/60 border-white/60 text-blue-600'}`}> 
-                                                    {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : activeChat.name.charAt(0))} 
-                                                </div>
-                                                <div className="relative group/bubble flex flex-col gap-1">
-                                                    {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-600 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
-                                                    {msg.isUnsent ? (
-                                                        <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-500 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-500 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
-                                                    ) : (
-                                                        <>
-                                                            {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent shadow-md' : (isMe ? 'bg-blue-600 shadow-md' : 'shadow-sm border ' + (darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-white/60'))}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className={`p-3 text-[11px] font-bold underline truncate flex items-center gap-2 ${isMe ? 'text-white' : (darkMode ? 'text-blue-400' : 'text-blue-600')}`}><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                            {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[13px] font-medium leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-md' : (darkMode ? 'bg-slate-800 text-white rounded-bl-none border border-white/10 shadow-sm' : 'bg-white text-blue-900 rounded-bl-none border border-white/60 shadow-sm')}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                                        </>
-                                                    )}
-                                                </div>
-
-                                                {/* Desktop 3-Dots Hover Menu */}
-                                                <div className={`hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity gap-1 mb-2 items-center`}>
-                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`p-1.5 rounded-full shadow-sm transition-colors border ${darkMode ? 'text-blue-400 bg-slate-800 hover:bg-slate-700 border-white/10' : 'text-blue-600 bg-white/80 hover:bg-white border-white/60'}`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
-                                                    <div className="relative">
-                                                        <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className={`p-1.5 rounded-full shadow-sm transition-colors border ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700 border-white/10' : 'text-blue-600 bg-white/80 hover:bg-white border-white/60'}`}><EllipsisVerticalIcon className="w-3.5 h-3.5"/></button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Context Menu for Desktop */}
-                                                {activeMenuId === msg.id && (
-                                                    <div className={`absolute z-50 bottom-full mb-2 right-8 w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 backdrop-blur-xl ${darkMode ? 'border-white/10 bg-slate-900/90 text-white' : 'border-white/60 bg-white/90 text-blue-900'}`}>
-                                                        <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b ${darkMode ? 'border-white/10 hover:bg-white/10' : 'border-white/60 hover:bg-white/60'}`}>Reply to</button>
-                                                        <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b ${darkMode ? 'border-white/10 hover:bg-white/10' : 'border-white/60 hover:bg-white/60'} ${msg.isPinned ? 'text-yellow-600' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
-                                                        {isMe && !msg.isUnsent && (
-                                                            <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 text-red-500 transition-colors ${darkMode ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}>Unsend</button>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <p className={`text-[8px] font-black mt-1.5 opacity-50 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
-                                                <span>{formatTime(msg.createdAt)}</span>
-                                                {isMe && !msg.isUnsent && (
-                                                    <><span>•</span><span className={statusText === 'Seen' ? (darkMode ? 'text-blue-400' : 'text-blue-600') : ''}>{statusText}</span></>
-                                                )}
-                                            </p>
-                                        </div>
-                                    )
+                                        <MessageBubble
+                                            key={msg.id}
+                                            msg={msg}
+                                            isMe={isMe}
+                                            isMobile={false}
+                                            darkMode={darkMode}
+                                            myPic={myPic}
+                                            otherPic={otherPic}
+                                            senderName={activeChat?.name}
+                                            statusText={statusText}
+                                            formatTime={formatTime}
+                                            setLightboxUrl={setLightboxUrl}
+                                            setReplyingTo={setReplyingTo}
+                                            togglePinMessage={togglePinMessage}
+                                            unsendMessage={unsendMessage}
+                                            activeMenuId={activeMenuId}
+                                            setActiveMenuId={setActiveMenuId}
+                                            menuPosition={menuPosition}
+                                            setMenuPosition={setMenuPosition}
+                                        />
+                                    );
                                 })}
                                 <div ref={scrollRef}/>
                             </div>
                             
                             {/* Desktop Chat Input */}
                             <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
-                                {replyingTo && <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-blue-900/20' : 'bg-blue-500/10'}`}><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className={`truncate max-w-[200px] opacity-70 ${darkMode ? 'text-slate-300' : 'text-blue-900'}`}>{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                                {attachment && (
-                                    <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
-                                        <div className={`p-2 pr-8 shadow-sm rounded-xl flex items-center gap-3 border ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/60 border-white/60'}`}>
-                                            {attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-600"/> : <DocumentIcon className="w-5 h-5 text-blue-600"/>}
-                                            <span className={`text-xs font-bold truncate max-w-[200px] ${darkMode ? 'text-white' : 'text-blue-900'}`}>{attachment.name}</span>
-                                        </div>
-                                        <button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
-                                    </div>
-                                )}
+                                {replyingTo && (
+    <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+        <div className="flex flex-col">
+            <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
+            <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+                {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
+            </span>
+        </div>
+        <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
+    </div>
+)}
                                 <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
                                     <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
                                     <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>

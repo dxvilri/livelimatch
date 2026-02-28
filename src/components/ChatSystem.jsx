@@ -28,9 +28,24 @@ const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) =>
 
     const onTouchStart = (e) => {
         const touch = e.targetTouches[0];
-        setTouchStartPos({ x: touch.clientX, y: touch.clientY });
+        const clientY = touch.clientY;
+        const target = e.currentTarget;
+        setTouchStartPos({ x: touch.clientX, y: clientY });
         isSwiping.current = false;
-        pressTimer.current = setTimeout(() => { if (!isSwiping.current) onLongPress(); }, 400);
+        pressTimer.current = setTimeout(() => { 
+            if (!isSwiping.current) {
+                // Determine if we are near the top of the scrollable chat container
+                const container = target.closest('.overflow-y-auto');
+                let pos = 'top';
+                if (container) {
+                    const containerRect = container.getBoundingClientRect();
+                    pos = (clientY - containerRect.top) < 180 ? 'bottom' : 'top';
+                } else {
+                    pos = clientY < window.innerHeight / 2 ? 'bottom' : 'top';
+                }
+                onLongPress(pos);
+            }
+        }, 400);
     };
 
     const onTouchMove = (e) => {
@@ -92,6 +107,7 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
   const [isUploading, setIsUploading] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [menuPosition, setMenuPosition] = useState('top');
   const [lightboxUrl, setLightboxUrl] = useState(null);
   
   const chatFileRef = useRef(null);
@@ -145,9 +161,6 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
 
   return (
     <>
-      {/* =========================================================
-          MOBILE VIEW LOGIC
-          ========================================================= */}
       {isBubbleVisible && isMobile && (
         <>
             {!isBubbleExpanded && (
@@ -192,7 +205,7 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
                                     <div className="px-5 pb-2">
                                         <div className={`flex items-center p-2 rounded-xl ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
                                             <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
-                                            <input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold" />
+                                            <input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold ${darkMode ? 'text-white' : 'text-slate-800'}`} />
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto p-2 no-scrollbar">
@@ -232,11 +245,14 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
                                                 if(msg.type === 'system') return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
 
                                                 return (
-                                                    <SwipeableMessage key={msg.id} isMe={isMe} isMobile={true} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} onLongPress={() => setActiveMenuId(msg.id)}>
+                                                    <SwipeableMessage key={msg.id} isMe={isMe} isMobile={true} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} onLongPress={(pos) => { setMenuPosition(pos); setActiveMenuId(msg.id); }}>
                                                         <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} relative w-full`}>
                                                             {msg.replyTo && (
-                                                                <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-75 flex items-center gap-1.5 max-w-[75%] ${isMe ? 'bg-blue-600/20 text-blue-600 dark:text-blue-300' : (darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600')}`}>
-                                                                    <ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.isUnsent ? "Message unsent" : (msg.replyTo.fileType ? `[${msg.replyTo.fileType}]` : msg.replyTo.text)}</span>
+                                                                <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] flex items-center gap-1.5 max-w-[75%] ${isMe ? 'bg-blue-50 dark:bg-slate-700' : 'bg-gray-100 dark:bg-slate-800'}`}>
+                                                                    <ArrowUturnLeftIcon className={`w-3 h-3 shrink-0 ${isMe ? 'text-blue-500 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}`}/>
+                                                                    <span className={`truncate font-bold ${isMe ? 'text-blue-600 dark:text-blue-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                                                                        {msg.replyTo.isUnsent ? "Message unsent" : (msg.replyTo.fileType ? `[${msg.replyTo.fileType}]` : msg.replyTo.text)}
+                                                                    </span>
                                                                 </div>
                                                             )}
                                                             <div className={`flex items-end gap-2 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -267,9 +283,8 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
                                                                     )}
                                                                 </div>
 
-                                                                {/* Context Menu (Mobile Hold) matched perfectly to MessagesTab */}
                                                                 {activeMenuId === msg.id && (
-                                                                    <div className={`absolute z-50 bottom-full mb-1 ${isMe ? 'right-12' : 'left-12'} w-40 bg-white dark:bg-slate-800 shadow-xl rounded-xl border ${darkMode ? 'border-white/10' : 'border-slate-200'} overflow-hidden text-xs font-bold animate-in zoom-in-95`}>
+                                                                    <div className={`absolute z-50 ${menuPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-1'} ${isMe ? 'right-12' : 'left-12'} w-40 bg-white dark:bg-slate-800 shadow-xl rounded-xl border ${darkMode ? 'border-white/10' : 'border-slate-200'} overflow-hidden text-xs font-bold animate-in zoom-in-95`}>
                                                                         <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent }); setActiveMenuId(null)}} className="w-full text-left px-4 py-3 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 border-b border-black/5 dark:border-white/5">Reply to</button>
                                                                         <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 border-b border-black/5 dark:border-white/5 ${msg.isPinned ? 'text-yellow-600 dark:text-yellow-400' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin a message"}</button>
                                                                         {isMe && !msg.isUnsent && (
@@ -290,7 +305,7 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
                                                 <div className={`mb-3 flex justify-between items-center p-3 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-blue-900/20' : 'bg-blue-50'}`}>
                                                     <div className="flex flex-col">
                                                         <span className="text-blue-500 uppercase tracking-widest mb-0.5">Replying to {replyingTo.senderId === currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || 'User')}</span>
-                                                        <span className={`truncate max-w-[200px] ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}</span>
+                                                        <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>{replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}</span>
                                                     </div>
                                                     <button onClick={() => setReplyingTo(null)} className={`p-1.5 rounded-full transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}><XMarkIcon className="w-4 h-4 text-blue-500"/></button>
                                                 </div>
@@ -325,9 +340,6 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
         </>
       )}
 
-      {/* =========================================================
-          DESKTOP VIEW LOGIC (Always present bottom-right stack)
-          ========================================================= */}
       {!isMobile && (
           <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
               
@@ -363,7 +375,7 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
                           <div className="p-3 pb-0">
                               <div className={`flex items-center p-2 rounded-xl ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
                                   <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
-                                  <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search chats..." className="bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold" />
+                                  <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search chats..." className={`bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold ${darkMode ? 'text-white' : 'text-slate-800'}`} />
                               </div>
                           </div>
                           <div className="flex-1 overflow-y-auto p-2 no-scrollbar">
@@ -421,8 +433,11 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
                                       <SwipeableMessage key={msg.id} isMe={isMe} isMobile={false} onReply={() => {}} onLongPress={() => {}}>
                                           <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} relative w-full`}>
                                               {msg.replyTo && (
-                                                  <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-75 flex items-center gap-1.5 max-w-[75%] ${isMe ? 'bg-blue-600/20 text-blue-600 dark:text-blue-300' : (darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600')}`}>
-                                                      <ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.isUnsent ? "Message unsent" : (msg.replyTo.fileType ? `[${msg.replyTo.fileType}]` : msg.replyTo.text)}</span>
+                                                  <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] flex items-center gap-1.5 max-w-[75%] ${isMe ? 'bg-blue-50 dark:bg-slate-700' : 'bg-gray-100 dark:bg-slate-800'}`}>
+                                                      <ArrowUturnLeftIcon className={`w-3 h-3 shrink-0 ${isMe ? 'text-blue-500 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}`}/>
+                                                      <span className={`truncate font-bold ${isMe ? 'text-blue-600 dark:text-blue-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                                                          {msg.replyTo.isUnsent ? "Message unsent" : (msg.replyTo.fileType ? `[${msg.replyTo.fileType}]` : msg.replyTo.text)}
+                                                      </span>
                                                   </div>
                                               )}
                                               <div className={`flex items-end gap-2 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -453,21 +468,30 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
                                                       )}
                                                   </div>
 
-                                                  {/* Desktop Hover Actions perfectly matched to MessagesTab */}
                                                   <div className="hidden md:flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity mb-2">
                                                       <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} className="p-1.5 bg-slate-100 dark:bg-slate-700/50 rounded-full text-blue-500 hover:scale-110 transition-transform shadow-sm" title="Reply">
                                                           <ArrowUturnLeftIcon className="w-3.5 h-3.5"/>
                                                       </button>
                                                       <div className="relative">
-                                                          <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className="p-1.5 bg-slate-100 dark:bg-slate-700/50 rounded-full text-slate-500 hover:scale-110 transition-transform shadow-sm" title="More">
+                                                          <button onClick={(e) => {
+                                                              e.stopPropagation(); 
+                                                              const container = e.currentTarget.closest('.overflow-y-auto');
+                                                              if (container) {
+                                                                  const containerRect = container.getBoundingClientRect();
+                                                                  const rect = e.currentTarget.getBoundingClientRect();
+                                                                  setMenuPosition((rect.top - containerRect.top) < 180 ? 'bottom' : 'top');
+                                                              } else {
+                                                                  setMenuPosition(e.clientY < window.innerHeight / 2 ? 'bottom' : 'top');
+                                                              }
+                                                              setActiveMenuId(activeMenuId === msg.id ? null : msg.id);
+                                                          }} className="p-1.5 bg-slate-100 dark:bg-slate-700/50 rounded-full text-slate-500 hover:scale-110 transition-transform shadow-sm" title="More">
                                                               <EllipsisVerticalIcon className="w-3.5 h-3.5"/>
                                                           </button>
                                                       </div>
                                                   </div>
 
-                                                  {/* Desktop Context Menu matched perfectly to MessagesTab */}
                                                   {activeMenuId === msg.id && (
-                                                      <div className={`absolute z-50 bottom-full mb-1 ${isMe ? 'right-12' : 'left-12'} w-40 bg-white dark:bg-slate-800 shadow-xl rounded-xl border ${darkMode ? 'border-white/10' : 'border-slate-200'} overflow-hidden text-xs font-bold animate-in zoom-in-95`}>
+                                                      <div className={`absolute z-50 ${menuPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-1'} ${isMe ? 'right-12' : 'left-12'} w-40 bg-white dark:bg-slate-800 shadow-xl rounded-xl border ${darkMode ? 'border-white/10' : 'border-slate-200'} overflow-hidden text-xs font-bold animate-in zoom-in-95`}>
                                                           <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent }); setActiveMenuId(null)}} className="w-full text-left px-4 py-3 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 border-b border-black/5 dark:border-white/5">Reply to</button>
                                                           <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 border-b border-black/5 dark:border-white/5 ${msg.isPinned ? 'text-yellow-600 dark:text-yellow-400' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin a message"}</button>
                                                           {isMe && !msg.isUnsent && (
@@ -489,7 +513,7 @@ export default function ChatSystem({ chat, currentUser, profileImage, darkMode }
                                   <div className={`mb-3 flex justify-between items-center p-3 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-blue-900/20' : 'bg-blue-50'}`}>
                                       <div className="flex flex-col">
                                           <span className="text-blue-500 uppercase tracking-widest mb-0.5">Replying to {replyingTo.senderId === currentUser.uid ? 'You' : (activeChat?.name || 'User')}</span>
-                                          <span className={`truncate max-w-[200px] ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}</span>
+                                          <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>{replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}</span>
                                       </div>
                                       <button onClick={() => setReplyingTo(null)} className={`p-1.5 rounded-full transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}><XMarkIcon className="w-4 h-4 text-blue-500"/></button>
                                   </div>
