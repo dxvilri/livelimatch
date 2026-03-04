@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, cloneElement } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext"; 
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config";
 import { createPortal } from "react-dom";
 import {
   collection, query, where, onSnapshot, orderBy,
   addDoc, serverTimestamp, setDoc, doc, updateDoc, increment, deleteDoc, 
-  getDoc, getDocs, writeBatch, arrayUnion
+  getDoc, getDocs, arrayUnion
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -19,16 +20,15 @@ import {
   BriefcaseIcon, ArrowLeftOnRectangleIcon, XMarkIcon,
   Bars3BottomRightIcon, MapPinIcon, SunIcon, MoonIcon,
   ChevronLeftIcon, ChatBubbleLeftRightIcon,
-  MagnifyingGlassIcon, PaperAirplaneIcon, EyeIcon,
-  TrashIcon, CheckCircleIcon, CameraIcon, PencilSquareIcon,
-  PlusIcon, UsersIcon, ClockIcon, UserIcon, AcademicCapIcon,
+  MagnifyingGlassIcon, PaperAirplaneIcon,
+  CheckCircleIcon, PlusIcon, UsersIcon, ClockIcon, UserIcon, AcademicCapIcon,
   CalendarDaysIcon, BoltIcon,
   EllipsisHorizontalIcon, PaperClipIcon, ArrowUturnLeftIcon,
   PhotoIcon, DocumentIcon, UserCircleIcon,
   SparklesIcon, EnvelopeIcon, PhoneIcon, 
-  MegaphoneIcon, CpuChipIcon, TagIcon, StarIcon as StarIconOutline,
-  QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, IdentificationIcon, LockClosedIcon, BookmarkIcon,
-  EllipsisVerticalIcon, Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon
+  MegaphoneIcon, TagIcon, StarIcon as StarIconOutline,
+  QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, LockClosedIcon, BookmarkIcon,
+  Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon, ArrowDownTrayIcon, TrashIcon
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
@@ -66,7 +66,6 @@ const JOB_TYPES = [
 
 const getAvatarUrl = (user) => user?.profilePic || user?.photoURL || user?.avatar || user?.image || null;
 const formatTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
-const formatDateTime = (ts) => { if (!ts) return "Just now"; const date = ts?.toDate ? ts.toDate() : new Date(); return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
 
 const formatLastSeen = (timestamp) => {
     if (!timestamp) return { text: "Offline", isOnline: false };
@@ -87,17 +86,23 @@ const activeGlassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all 
 export default function ApplicantDashboard() {
   const navigate = useNavigate();
   const { userData } = useAuth();
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState("FindJobs");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  // --- CUSTOM CONFIRMATION MODAL STATE ---
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: "", message: "", onConfirm: null, isDestructive: false, confirmText: "Confirm" });
+  
+  const requestConfirm = (title, message, onConfirm, isDestructive = false, confirmText = "Confirm") => {
+      setConfirmDialog({ isOpen: true, title, message, onConfirm, isDestructive, confirmText });
+  };
+  const closeConfirm = () => setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+
   const togglePinMessage = async (msgId, currentPinnedStatus) => {
-      try {
-          await updateDoc(doc(db, "messages", msgId), { isPinned: !currentPinnedStatus });
-      } catch (err) {
-          console.error("Failed to pin message", err);
-      }
+      try { await updateDoc(doc(db, "messages", msgId), { isPinned: !currentPinnedStatus }); } 
+      catch (err) { console.error("Failed to pin message", err); }
   };
 
   // --- DATA ---
@@ -130,10 +135,9 @@ export default function ApplicantDashboard() {
   
   // Modal Views
   const [employerContact, setEmployerContact] = useState(null);
-  const [modalRightView, setModalRightView] = useState("job"); // "job" | "profile" | "reputation"
+  const [modalRightView, setModalRightView] = useState("job"); 
   const [employerReviews, setEmployerReviews] = useState([]);
   const [employerAverageRating, setEmployerAverageRating] = useState(0);
-  const [isFetchingEmployer, setIsFetchingEmployer] = useState(false);
 
   // --- PROFILE ---
   const [profileImage, setProfileImage] = useState(null);
@@ -223,28 +227,31 @@ export default function ApplicantDashboard() {
   });
 
   const displayAnnouncement = announcements[currentAnnounceIndex];
-  const unreadMsgCount = conversations.reduce((acc, curr) => { const otherId = curr.participants?.find(p => p !== auth.currentUser?.uid); if (adminUser && otherId === adminUser.id) return acc; return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0); }, 0);
+  const unreadMsgCount = conversations.reduce((acc, curr) => { 
+      const otherId = curr.participants?.find(p => p !== auth.currentUser?.uid); 
+      if (!otherId || (adminUser && otherId === adminUser.id)) return acc; 
+      return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0); 
+  }, 0);
   const latestAnnouncement = announcements.length > 0 ? announcements[0] : null;
   const hasNewAnnouncement = latestAnnouncement && String(latestAnnouncement.id) !== lastReadAnnouncementId;
   const hasUnreadUpdates = myApplications.some(app => app.isReadByApplicant === false && app.status !== 'pending');
   const totalNotifications = (hasUnreadUpdates ? 1 : 0) + (hasNewAnnouncement ? 1 : 0);
   
-  const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
-  const bubbleFilteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(bubbleSearch.toLowerCase()); });
+  const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (!otherId || (adminUser && otherId === adminUser.id)) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
+  const bubbleFilteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (!otherId || (adminUser && otherId === adminUser.id)) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(bubbleSearch.toLowerCase()); });
 
   const isFullScreenPage = isMobile && ((activeTab === "Messages" && activeChat) || (activeTab === "Support" && isSupportOpen));
 
   // --- EFFECTS ---
   useEffect(() => {
-    if (isBubbleExpanded || selectedJob || viewingApplication || isRatingEmployerModalOpen || lightboxUrl) {
+    if (isBubbleExpanded || selectedJob || viewingApplication || isRatingEmployerModalOpen || lightboxUrl || confirmDialog.isOpen) {
         document.body.style.overflow = "hidden";
     } else {
         document.body.style.overflow = "";
     }
     return () => { document.body.style.overflow = ""; };
-  }, [isBubbleExpanded, selectedJob, viewingApplication, isRatingEmployerModalOpen, lightboxUrl]);
+  }, [isBubbleExpanded, selectedJob, viewingApplication, isRatingEmployerModalOpen, lightboxUrl, confirmDialog.isOpen]);
 
-  // Combined fetch for Employer Info + Reviews inside the modals
   useEffect(() => {
       const activeItem = selectedJob || viewingApplication;
       if (activeItem && activeItem.employerId) {
@@ -278,7 +285,6 @@ export default function ApplicantDashboard() {
       }
   }, [selectedJob, viewingApplication]);
 
-  // Reset Modal Tabs when closing/opening
   useEffect(() => {
       if (selectedJob || viewingApplication) {
           setModalRightView("job");
@@ -339,7 +345,13 @@ export default function ApplicantDashboard() {
 
   useEffect(() => {
     if (!auth.currentUser) return;
-    const unsubProfile = onSnapshot(doc(db, "applicants", auth.currentUser.uid), (docSnap) => {
+    
+    // --- Set Online Status ---
+    const userRef = doc(db, "applicants", auth.currentUser.uid);
+    const setOnline = async () => { try { await setDoc(userRef, { isOnline: true }, { merge: true }); } catch(e) {} };
+    setOnline();
+
+    const unsubProfile = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.profilePic) setProfileImage(data.profilePic);
@@ -347,12 +359,16 @@ export default function ApplicantDashboard() {
         setApplicantData(prev => ({ ...prev, ...data }));
       }
     });
+    
     const qApps = query(collection(db, "applications"), where("applicantId", "==", auth.currentUser.uid));
     const unsubApps = onSnapshot(qApps, (snap) => setMyApplications(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.appliedAt?.seconds || 0) - (a.appliedAt?.seconds || 0))));
+    
     const qSaved = query(collection(db, "saved_jobs"), where("userId", "==", auth.currentUser.uid));
     const unsubSaved = onSnapshot(qSaved, (snap) => setSavedJobs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    
     const qAnnouncements = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const unsubAnnouncements = onSnapshot(qAnnouncements, (snap) => setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    
     const ticketsQuery = query(collection(db, "support_tickets"), where("userId", "==", auth.currentUser.uid));
     const unsubTickets = onSnapshot(ticketsQuery, (snapshot) => {
         const tickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -360,7 +376,16 @@ export default function ApplicantDashboard() {
         setSupportTickets(tickets);
         setActiveSupportTicket(curr => { if (!curr) return null; const updated = tickets.find(t => t.id === curr.id); return updated || curr; });
     });
-    return () => { unsubProfile(); unsubApps(); unsubSaved(); unsubAnnouncements(); unsubTickets(); };
+    
+    return () => { 
+        unsubProfile(); 
+        unsubApps(); 
+        unsubSaved(); 
+        unsubAnnouncements(); 
+        unsubTickets(); 
+        // --- Set Offline Status on cleanup ---
+        setDoc(userRef, { isOnline: false, lastSeen: serverTimestamp() }, { merge: true }).catch(console.error);
+    };
   }, [auth.currentUser]);
 
   // --- HANDLERS ---
@@ -368,53 +393,69 @@ export default function ApplicantDashboard() {
   const handleToggleSaveJob = async (job) => { 
       const existing = savedJobs.find(s => s.jobId === job.id); 
       const isAppliedActive = myApplications.some(app => app.jobId === job.id && app.status !== 'withdrawn');
-      if(isAppliedActive && existing) return alert("You cannot unsave a job you have an active application for.");
+      if(isAppliedActive && existing) return showToast("You cannot unsave a job you have an active application for.", "error");
       try { 
-          if(existing) await deleteDoc(doc(db, "saved_jobs", existing.id)); 
-          else await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() }); 
+          if(existing) {
+              await deleteDoc(doc(db, "saved_jobs", existing.id)); 
+              showToast("Job removed from saved list.", "success");
+          } else {
+              await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() }); 
+              showToast("Job saved successfully.", "success");
+          }
       } catch(err) { } 
   };
 
- const handleApplyToJob = async (job) => {
-    if(!window.confirm(`Apply to ${job.title}?`)) return;
-    setLoading(true);
-    try {
-        await addDoc(collection(db, "applications"), {
-            jobId: job.id, jobTitle: job.title, employerId: job.employerId, employerName: job.employerName,
-            employerLogo: job.employerLogo || "", applicantId: auth.currentUser.uid,
-            applicantName: `${applicantData.firstName} ${applicantData.lastName}`,
-            applicantProfilePic: profileImage || "", status: 'pending', appliedAt: serverTimestamp(),
-            isViewed: false, isReadByApplicant: true, isRatedByApplicant: false
-        });
+  const handleApplyToJob = async (job) => {
+      requestConfirm("Apply for Job", `Are you sure you want to apply to ${job.title}?`, async () => {
+          setLoading(true);
+          try {
+              await addDoc(collection(db, "applications"), {
+                  jobId: job.id, jobTitle: job.title, employerId: job.employerId, employerName: job.employerName,
+                  employerLogo: job.employerLogo || "", applicantId: auth.currentUser.uid,
+                  applicantName: `${applicantData.firstName} ${applicantData.lastName}`,
+                  applicantProfilePic: profileImage || "", status: 'pending', appliedAt: serverTimestamp(),
+                  isViewed: false, isReadByApplicant: true, isRatedByApplicant: false
+              });
 
-        await updateDoc(doc(db, "jobs", job.id), { applicationCount: increment(1) });
+              await updateDoc(doc(db, "jobs", job.id), { applicationCount: increment(1) });
 
-        if (!savedJobs.some(s => s.jobId === job.id)) {
-             await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() });
-        }
-        alert("Application Sent!"); setSelectedJob(null);
-    } catch(err) { alert("Error applying: " + err.message); } finally { setLoading(false); }
+              if (!savedJobs.some(s => s.jobId === job.id)) {
+                   await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() });
+              }
+              showToast("Application Sent Successfully!", "success"); 
+              setSelectedJob(null);
+          } catch(err) { showToast("Error applying: " + err.message, "error"); } 
+          finally { setLoading(false); }
+      }, false, "Apply");
   };
 
   const handleWithdrawApplication = async (appId) => { 
-      if(!window.confirm("Withdraw this application?")) return; 
-      setLoading(true); 
-      try { 
-          const appDoc = await getDoc(doc(db, "applications", appId));
-          if (appDoc.exists()) {
-              const jobId = appDoc.data().jobId;
-              if (jobId) await updateDoc(doc(db, "jobs", jobId), { applicationCount: increment(-1) });
-          }
+      requestConfirm("Withdraw Application", "Are you sure you want to withdraw this application?", async () => {
+          setLoading(true); 
+          try { 
+              const appDoc = await getDoc(doc(db, "applications", appId));
+              if (appDoc.exists()) {
+                  const jobId = appDoc.data().jobId;
+                  if (jobId) await updateDoc(doc(db, "jobs", jobId), { applicationCount: increment(-1) });
+              }
 
-          await updateDoc(doc(db, "applications", appId), { status: 'withdrawn' }); 
-          setViewingApplication(null); 
-      } catch (err) { alert("Error: " + err.message); } finally { setLoading(false); } 
+              await updateDoc(doc(db, "applications", appId), { status: 'withdrawn' }); 
+              showToast("Application Withdrawn.", "success");
+              setViewingApplication(null); 
+          } catch (err) { showToast("Error: " + err.message, "error"); } 
+          finally { setLoading(false); } 
+      }, true, "Withdraw");
   };
 
   const handleDeleteApplication = async (appId) => {
-      if(!window.confirm("Delete permanently?")) return;
-      setLoading(true);
-      try { await deleteDoc(doc(db, "applications", appId)); } catch (err) { alert("Error: " + err.message); } finally { setLoading(false); }
+      requestConfirm("Delete Application", "Are you sure you want to permanently delete this application record?", async () => {
+          setLoading(true);
+          try { 
+              await deleteDoc(doc(db, "applications", appId)); 
+              showToast("Application Record Deleted.", "success");
+          } catch (err) { showToast("Error: " + err.message, "error"); } 
+          finally { setLoading(false); }
+      }, true, "Delete");
   };
 
   const handleViewAnnouncement = (annId) => { setActiveTab("Announcements"); setIsNotifOpen(false); setLastReadAnnouncementId(String(annId)); localStorage.setItem("lastReadAnnounceApp", String(annId)); };
@@ -434,12 +475,12 @@ export default function ApplicantDashboard() {
             rating: ratingData.rating, comment: ratingData.comment, type: 'employer_review', createdAt: serverTimestamp()
         });
         await updateDoc(doc(db, "applications", selectedEmployerToRate.id), { isRatedByApplicant: true });
-        alert("Employer rated!"); setIsRatingEmployerModalOpen(false);
-    } catch (error) { alert("Failed to rate."); } finally { setLoading(false); }
+        showToast("Employer rated successfully!", "success"); setIsRatingEmployerModalOpen(false);
+    } catch (error) { showToast("Failed to submit rating.", "error"); } finally { setLoading(false); }
   };
 
   const handleStartChatFromExternal = (userObj) => {
-      if (!isVerified) return alert("Verify account to message.");
+      if (!isVerified) return showToast("Verify account to message.", "error");
       openChat(userObj); setIsChatMinimized(false); setActiveTab("Messages");
       setIsBubbleVisible(false); setIsBubbleExpanded(false); setIsDesktopInboxVisible(false);
   };
@@ -454,8 +495,8 @@ export default function ApplicantDashboard() {
 
         const storage = getStorage(auth.app);
 
-        const avatarFile = fileInputRef.current?.files?.[0];
-        if (isEditingImage && avatarFile) {
+        if (isEditingImage && fileInputRef.current?.files?.[0]) {
+            const avatarFile = fileInputRef.current.files[0];
             const fileExt = avatarFile.name.split('.').pop();
             const avatarRef = ref(storage, `profilePics/${auth.currentUser.uid}_${Date.now()}.${fileExt}`);
             await uploadBytes(avatarRef, avatarFile);
@@ -506,15 +547,16 @@ export default function ApplicantDashboard() {
         setResumeDocFile(null);
         
         if (fileInputRef.current) fileInputRef.current.value = "";
+        
+        showToast("Profile successfully updated!", "success");
 
     } catch (err) { 
-        alert("Error saving profile: " + err.message); 
+        showToast("Error saving profile: " + err.message, "error"); 
     } finally { 
         setLoading(false); 
     } 
   };
 
-  // Chat & Support
   const handleSendMessageWrapper = async (e) => {
     e.preventDefault();
     const targetChat = activeChat || (isBubbleVisible && activeBubbleView !== 'inbox' ? openBubbles.find(b => b.id === activeBubbleView) : null);
@@ -564,7 +606,7 @@ export default function ApplicantDashboard() {
             setNewMessage(""); setAttachment(null); setReplyingTo(null); 
             if (chatFileRef.current) chatFileRef.current.value = ""; 
             if (bubbleFileRef.current) bubbleFileRef.current.value = ""; 
-        } catch (err) { alert("Failed to send file."); } finally { setIsUploading(false); }
+        } catch (err) { showToast("Failed to send file.", "error"); } finally { setIsUploading(false); }
     }
   };
 
@@ -574,7 +616,7 @@ export default function ApplicantDashboard() {
       const botMsg = { sender: 'admin', text: `🤖 ${faq.answer}`, timestamp: new Date() };
       try {
           if (activeSupportTicket) {
-               if(activeSupportTicket.status === 'closed') { alert("Ticket closed."); return; }
+               if(activeSupportTicket.status === 'closed') { return showToast("Ticket closed.", "error"); }
                await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), { messages: arrayUnion(userMsg, botMsg), lastUpdated: serverTimestamp(), status: 'open' });
           } else {
               const ticketIdString = Math.floor(1000 + Math.random() * 9000).toString();
@@ -591,7 +633,7 @@ export default function ApplicantDashboard() {
       if (!ticketMessage.trim() && !supportAttachment) return;
       const now = Date.now();
       
-      if (!activeSupportTicket && (now - lastTicketCreatedAt < 5 * 60 * 1000)) return alert(`Please wait before opening a new ticket.`);
+      if (!activeSupportTicket && (now - lastTicketCreatedAt < 5 * 60 * 1000)) return showToast(`Please wait before opening a new ticket.`, "error");
       
       setIsSupportUploading(true);
       try {
@@ -648,10 +690,22 @@ export default function ApplicantDashboard() {
       }
   };
   
-  const handleCloseSupportTicket = async (id) => { if(!confirm("Close ticket?")) return; await updateDoc(doc(db, "support_tickets", id), { status: 'closed', lastUpdated: serverTimestamp() }); setActiveSupportTicket(null); setIsSupportOpen(false); };
-  const handleDeleteTicket = async (id) => { if(confirm("Delete permanently?")) { await deleteDoc(doc(db, "support_tickets", id)); if(activeSupportTicket?.id === id) { setActiveSupportTicket(null); setIsSupportOpen(false); } } };
+  const handleCloseSupportTicket = async (id) => { 
+      requestConfirm("Close Ticket", "Are you sure you want to close this support request?", async () => {
+          await updateDoc(doc(db, "support_tickets", id), { status: 'closed', lastUpdated: serverTimestamp() }); 
+          setActiveSupportTicket(null); 
+          setIsSupportOpen(false);
+          showToast("Ticket closed successfully.", "success");
+      }, false, "Close Ticket");
+  };
+  const handleDeleteTicket = async (id) => { 
+      requestConfirm("Delete Ticket", "Delete this conversation permanently?", async () => {
+          await deleteDoc(doc(db, "support_tickets", id)); 
+          if(activeSupportTicket?.id === id) { setActiveSupportTicket(null); setIsSupportOpen(false); } 
+          showToast("Ticket deleted.", "success");
+      }, true, "Delete");
+  };
 
-  // --- TOUCH HANDLERS FOR BUBBLE ---
   const handleTouchStart = (e) => { setIsDragging(true); const touch = e.touches[0]; dragOffset.current = { x: touch.clientX - bubblePos.x, y: touch.clientY - bubblePos.y }; };
   const handleTouchMove = (e) => { if (!isDragging) return; const touch = e.touches[0]; const bubbleSize = 56; let newX = touch.clientX - dragOffset.current.x; let newY = touch.clientY - dragOffset.current.y; newY = Math.max(0, Math.min(newY, window.innerHeight - 80)); newX = Math.max(0, Math.min(newX, window.innerWidth - bubbleSize)); setBubblePos({ x: newX, y: newY }); };
   const handleTouchEnd = () => { setIsDragging(false); const trashX = window.innerWidth / 2; const trashY = window.innerHeight - 80; const dist = Math.hypot((bubblePos.x + 28) - trashX, (bubblePos.y + 28) - trashY); if (dist < 60) { setIsBubbleVisible(false); setOpenBubbles([]); return; } if (bubblePos.x < window.innerWidth / 2) setBubblePos(prev => ({ ...prev, x: 0 })); else setBubblePos(prev => ({ ...prev, x: window.innerWidth - 56 })); };
@@ -660,33 +714,58 @@ export default function ApplicantDashboard() {
 
   const getModalTheme = (categoryId, isDark) => {
       const darkColors = {
-          'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500', saveActive: 'bg-blue-400 border-blue-400 text-slate-900', saveIdle: 'hover:bg-blue-400/10 hover:text-blue-400 hover:border-blue-400/50' },
-          'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500', saveActive: 'bg-green-400 border-green-400 text-slate-900', saveIdle: 'hover:bg-green-400/10 hover:text-green-400 hover:border-green-400/50' },
-          'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', saveActive: 'bg-slate-400 border-slate-400 text-slate-900', saveIdle: 'hover:bg-slate-400/10 hover:text-slate-400 hover:border-slate-400/50' },
-          'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', btn: 'bg-yellow-400 text-slate-900 hover:bg-yellow-500', saveActive: 'bg-yellow-400 border-yellow-400 text-slate-900', saveIdle: 'hover:bg-yellow-400/10 hover:text-yellow-400 hover:border-yellow-400/50' },
-          'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', btn: 'bg-pink-400 text-slate-900 hover:bg-pink-500', saveActive: 'bg-pink-400 border-pink-400 text-slate-900', saveIdle: 'hover:bg-pink-400/10 hover:text-pink-400 hover:border-pink-400/50' },
-          'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', btn: 'bg-purple-400 text-slate-900 hover:bg-purple-500', saveActive: 'bg-purple-400 border-purple-400 text-slate-900', saveIdle: 'hover:bg-purple-400/10 hover:text-purple-400 hover:border-purple-400/50' },
+          'EDUCATION': { text: 'text-blue-400', cardBg: 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border border-blue-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-blue-500/10', tabActive: 'bg-blue-500 text-white shadow-md shadow-blue-500/20', tabIdle: 'text-slate-400 hover:text-blue-300 hover:bg-blue-500/10', solid: 'bg-blue-500 text-white hover:bg-blue-600', badge: 'bg-blue-500/10 border border-blue-500/30 text-blue-400', saveActive: 'bg-blue-500 border-blue-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-blue-500/10 hover:text-blue-400', appliedBtn: 'bg-blue-500/10 text-blue-400 border-blue-500/30 opacity-60' },
+          'AGRICULTURE': { text: 'text-green-400', cardBg: 'bg-gradient-to-br from-green-500/20 to-green-500/5 border border-green-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-green-500/10', tabActive: 'bg-green-500 text-white shadow-md shadow-green-500/20', tabIdle: 'text-slate-400 hover:text-green-300 hover:bg-green-500/10', solid: 'bg-green-500 text-white hover:bg-green-600', badge: 'bg-green-500/10 border border-green-500/30 text-green-400', saveActive: 'bg-green-500 border-green-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-green-500/10 hover:text-green-400', appliedBtn: 'bg-green-500/10 text-green-400 border-green-500/30 opacity-60' },
+          'AUTOMOTIVE': { text: 'text-slate-300', cardBg: 'bg-gradient-to-br from-slate-500/20 to-slate-500/5 border border-slate-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-slate-500/10', tabActive: 'bg-slate-500 text-white shadow-md shadow-slate-500/20', tabIdle: 'text-slate-400 hover:text-slate-300 hover:bg-slate-500/10', solid: 'bg-slate-500 text-white hover:bg-slate-600', badge: 'bg-slate-500/10 border border-slate-500/30 text-slate-300', saveActive: 'bg-slate-500 border-slate-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-slate-500/10 hover:text-slate-300', appliedBtn: 'bg-slate-500/10 text-slate-300 border-slate-500/30 opacity-60' },
+          'CARPENTRY': { text: 'text-yellow-400', cardBg: 'bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border border-yellow-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-yellow-500/10', tabActive: 'bg-yellow-500 text-slate-900 shadow-md shadow-yellow-500/20', tabIdle: 'text-slate-400 hover:text-yellow-300 hover:bg-yellow-500/10', solid: 'bg-yellow-500 text-slate-900 hover:bg-yellow-600', badge: 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400', saveActive: 'bg-yellow-500 border-yellow-500 text-slate-900', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-yellow-500/10 hover:text-yellow-400', appliedBtn: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 opacity-60' },
+          'HOUSEHOLD': { text: 'text-pink-400', cardBg: 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border border-pink-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-pink-500/10', tabActive: 'bg-pink-500 text-white shadow-md shadow-pink-500/20', tabIdle: 'text-slate-400 hover:text-pink-300 hover:bg-pink-500/10', solid: 'bg-pink-500 text-white hover:bg-pink-600', badge: 'bg-pink-500/10 border border-pink-500/30 text-pink-400', saveActive: 'bg-pink-500 border-pink-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-pink-500/10 hover:text-pink-400', appliedBtn: 'bg-pink-500/10 text-pink-400 border-pink-500/30 opacity-60' },
+          'CUSTOMER_SERVICE': { text: 'text-purple-400', cardBg: 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-purple-500/10', tabActive: 'bg-purple-500 text-white shadow-md shadow-purple-500/20', tabIdle: 'text-slate-400 hover:text-purple-300 hover:bg-purple-500/10', solid: 'bg-purple-500 text-white hover:bg-purple-600', badge: 'bg-purple-500/10 border border-purple-500/30 text-purple-400', saveActive: 'bg-purple-500 border-purple-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-purple-500/10 hover:text-purple-400', appliedBtn: 'bg-purple-500/10 text-purple-400 border-purple-500/30 opacity-60' },
       };
-      const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', saveActive: 'bg-slate-400 border-slate-400 text-slate-900', saveIdle: 'hover:bg-slate-400/10 hover:text-slate-400 hover:border-slate-400/50' };
+      const fallbackDark = darkColors['AUTOMOTIVE'];
 
       if (isDark) {
           const cat = darkColors[categoryId] || fallbackDark;
           return {
-              solid: cat.btn,
-              badge: `${cat.bgLight} ${cat.border} ${cat.text}`,
+              modalBg: cat.cardBg,
+              textPrimary: 'text-white',
+              textSecondary: 'text-slate-400',
+              innerPanel: cat.innerPanel,
+              tabContainer: 'bg-slate-900/50 p-1.5 rounded-2xl border border-white/10',
+              tabActive: cat.tabActive,
+              tabIdle: `relative overflow-hidden hover:-translate-y-0.5 hover:shadow-sm ${cat.tabIdle}`,
+              solid: cat.solid,
+              badge: cat.badge,
               saveActive: cat.saveActive,
-              saveIdle: `bg-slate-800 border-transparent text-slate-400 ${cat.saveIdle}`,
-              appliedBtn: `${cat.bgLight} ${cat.text} ${cat.border} opacity-60` 
+              saveIdle: cat.saveIdle,
+              appliedBtn: cat.appliedBtn,
+              closeBtn: 'bg-white/5 hover:bg-red-500/20 text-white hover:text-red-400 border border-white/10',
+              iconColor: cat.text,
+              divider: 'border-white/10'
           };
       } else {
           return {
-              solid: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 text-white',
-              badge: 'bg-blue-50 border-blue-100 text-blue-600',
-              saveActive: 'bg-blue-600 border-blue-600 text-white',
-              saveIdle: 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200',
-              appliedBtn: 'bg-green-50 text-green-600 border-green-200 opacity-80' 
+              modalBg: 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 shadow-[0_10px_20px_-5px_rgba(37,99,235,0.4)] ring-1 ring-inset ring-white/40',
+              textPrimary: 'text-white drop-shadow-sm',
+              textSecondary: 'text-blue-100',
+              innerPanel: 'bg-white/10 border border-white/20 shadow-inner',
+              tabContainer: 'bg-black/20 p-1.5 rounded-2xl shadow-inner border border-white/10',
+              tabActive: 'bg-white text-blue-700 shadow-md',
+              tabIdle: 'text-blue-100 hover:text-white hover:bg-white/10 relative overflow-hidden hover:-translate-y-0.5 hover:shadow-lg',
+              solid: 'bg-white text-blue-700 hover:bg-blue-50 shadow-lg active:scale-95',
+              badge: 'bg-black/20 border border-white/20 text-white backdrop-blur-md',
+              saveActive: 'bg-white border-white text-blue-600 shadow-md',
+              saveIdle: 'bg-transparent border-white/30 text-white/70 hover:bg-white/20 hover:text-white',
+              appliedBtn: 'bg-white/20 text-white border border-white/30 opacity-80',
+              closeBtn: 'bg-black/20 hover:bg-red-500/80 text-white border border-white/10 shadow-sm',
+              iconColor: 'text-white',
+              divider: 'border-white/20'
           };
       }
+  };
+
+  const getLocalCatIcon = (id) => {
+      const map = { 'EDUCATION': AcademicCapIcon, 'AGRICULTURE': SunIcon, 'AUTOMOTIVE': Cog8ToothIcon, 'CARPENTRY': WrenchScrewdriverIcon, 'HOUSEHOLD': HomeIcon, 'CUSTOMER_SERVICE': UserGroupIcon };
+      return map[id] || TagIcon;
   };
 
   return (
@@ -868,7 +947,7 @@ export default function ApplicantDashboard() {
                 myProfileImage={profileImage || applicantData?.profilePic}
                 activeChat={activeChat}
                 togglePinMessage={togglePinMessage}
-                chatStatus={activeChat ? formatLastSeen(conversations.find(c => c.chatId.includes(activeChat.id))?.lastTimestamp) : null}
+                chatStatus={activeChat ? formatLastSeen(conversations.find(c => c.chatId?.includes(activeChat.id))?.lastTimestamp) : null}
                 conversations={conversations}
                 openChat={openChat}
                 closeChat={closeChat}
@@ -922,7 +1001,6 @@ export default function ApplicantDashboard() {
                 getAvatarUrl={getAvatarUrl}
                 isChatOptionsOpen={isChatOptionsOpen}
                 setIsChatOptionsOpen={setIsChatOptionsOpen}
-                
             />
         )}
 
@@ -993,47 +1071,70 @@ export default function ApplicantDashboard() {
 
       {/* --- OVERLAYS: MODALS & BUBBLES --- */}
       
+      {/* GLOBAL CONFIRMATION MODAL */}
+      {confirmDialog.isOpen && (
+          <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={closeConfirm}>
+              <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm p-6 md:p-8 rounded-[2.5rem] shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center text-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/60 text-slate-900'}`}>
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${confirmDialog.isDestructive ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                      {confirmDialog.isDestructive ? <TrashIcon className="w-8 h-8"/> : <CheckCircleIcon className="w-8 h-8"/>}
+                  </div>
+                  <h3 className="text-xl font-black mb-2 tracking-tight">{confirmDialog.title}</h3>
+                  <p className={`text-sm font-medium mb-8 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{confirmDialog.message}</p>
+                  <div className="flex gap-3 w-full">
+                      <button onClick={closeConfirm} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Cancel</button>
+                      <button onClick={() => { confirmDialog.onConfirm(); closeConfirm(); }} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg text-white ${confirmDialog.isDestructive ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'}`}>{confirmDialog.confirmText}</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* 1. JOB DETAILS MODAL */}
       {selectedJob && (() => {
           const theme = getModalTheme(selectedJob.category, darkMode);
           const typeStyle = getJobStyle(selectedJob.type);
           const isSaved = savedJobs.some(s => s.jobId === selectedJob.id);
+          const CatIcon = getLocalCatIcon(selectedJob.category);
 
           return (
-            <div className={`fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm animate-in fade-in ${darkMode ? 'bg-slate-950/60' : 'bg-slate-900/40'}`} onClick={() => setSelectedJob(null)}>
+            <div className={`fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md animate-in fade-in ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={() => setSelectedJob(null)}>
                 <div 
                    onClick={(e) => e.stopPropagation()}
-                   className={`relative w-[92vw] sm:w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-[2rem] border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:items-start md:gap-8 overflow-y-auto md:overflow-hidden max-h-[85vh] md:h-[80vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white shadow-2xl' : 'bg-white border-slate-200 text-slate-900 shadow-xl'}`}
+                   className={`relative w-[92vw] sm:w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-[2.5rem] animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh] max-h-[900px] md:h-[80vh] overflow-hidden ${theme.modalBg}`}
                 >
-                    <button onClick={() => setSelectedJob(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                    {/* Background Icon matching Job Card Style */}
+                    <div className={`absolute -right-12 -bottom-12 md:-right-16 md:-bottom-16 opacity-[0.08] rotate-12 pointer-events-none z-0 ${theme.iconColor}`}>
+                        <CatIcon className="w-80 h-80 md:w-[28rem] md:h-[28rem]" />
+                    </div>
+
+                    <button onClick={() => setSelectedJob(null)} className={`absolute top-4 right-4 z-20 p-2.5 rounded-full transition-all hover:rotate-90 ${theme.closeBtn}`}>
                         <XMarkIcon className="w-5 h-5"/>
                     </button>
                     
                    {/* --- LEFT SIDE: Employer Info --- */}
-                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-4 md:mb-0 pt-2">
+                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-4 md:mb-0 pt-2 z-10 relative">
                         <div 
-                            className={`w-16 h-16 sm:w-32 sm:h-32 rounded-2xl sm:rounded-[2rem] overflow-hidden mb-3 sm:mb-4 shrink-0 shadow-inner cursor-pointer hover:opacity-80 transition-opacity ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
+                            className={`w-20 h-20 sm:w-36 sm:h-36 rounded-[2rem] overflow-hidden mb-4 sm:mb-5 shrink-0 shadow-xl cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-300 ring-4 ring-black/10`}
                             onClick={() => setModalRightView('profile')}
                         >
                             {(employerContact?.profilePic || selectedJob.employerLogo) ? (
                                 <img src={employerContact?.profilePic || selectedJob.employerLogo} alt={selectedJob.employerName} className="w-full h-full object-cover" />
                             ) : (
-                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-3xl sm:text-4xl font-black text-white uppercase">{selectedJob.employerName?.charAt(0)}</div>
+                                <div className="w-full h-full bg-black/20 flex items-center justify-center text-4xl sm:text-5xl font-black text-white uppercase backdrop-blur-md">{selectedJob.employerName?.charAt(0)}</div>
                             )}
                         </div>
                         
                         <h2 
                             onClick={() => setModalRightView('profile')}
-                            className={`text-xl sm:text-2xl font-black mb-3 text-center leading-tight w-full cursor-pointer transition-colors ${darkMode ? 'hover:text-blue-400 text-white' : 'hover:text-blue-500 text-slate-900'}`}
+                            className={`text-2xl sm:text-3xl font-black mb-3 text-center leading-tight w-full cursor-pointer transition-all hover:scale-105 ${theme.textPrimary}`}
                             title="View Employer Profile"
                         >
                             {selectedJob.employerName}
                         </h2>
 
-                        <div className={`flex flex-col gap-4 text-xs font-bold w-full items-center text-center cursor-default select-none ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <div className={`flex flex-col gap-4 text-xs font-bold w-full items-center text-center cursor-default select-none ${theme.textSecondary}`}>
                             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
                                 <div className="flex items-center gap-1.5">
-                                    <MapPinIcon className="w-4 h-4 shrink-0" />
+                                    <MapPinIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
                                     <span className={!selectedJob.sitio ? 'opacity-50 italic' : ''}>{selectedJob.sitio || "Location not set"}</span>
                                 </div>
                                 {(() => {
@@ -1043,13 +1144,13 @@ export default function ApplicantDashboard() {
                                         <>
                                             {emailInfo && (
                                                 <div className="flex items-center gap-1.5" title="Email">
-                                                    <EnvelopeIcon className="w-4 h-4 shrink-0" />
+                                                    <EnvelopeIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
                                                     <span className="truncate max-w-[150px]">{emailInfo}</span>
                                                 </div>
                                             )}
                                             {phoneInfo && (
                                                 <div className="flex items-center gap-1.5" title="Phone Number">
-                                                    <PhoneIcon className="w-4 h-4 shrink-0" />
+                                                    <PhoneIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
                                                     <span className="truncate max-w-[150px]">{phoneInfo}</span>
                                                 </div>
                                             )}
@@ -1059,159 +1160,158 @@ export default function ApplicantDashboard() {
                             </div>
 
                             <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
-                                <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
+                                <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${theme.badge}`}>
                                     <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
                                     {selectedJob.type}
                                 </span>
-                                {selectedJob.category && (() => {
-                                    const getLocalCatIcon = (id) => {
-                                        const map = { 'EDUCATION': AcademicCapIcon, 'AGRICULTURE': SunIcon, 'AUTOMOTIVE': Cog8ToothIcon, 'CARPENTRY': WrenchScrewdriverIcon, 'HOUSEHOLD': HomeIcon, 'CUSTOMER_SERVICE': UserGroupIcon };
-                                        return map[id] || TagIcon;
-                                    };
-                                    const CatIcon = getLocalCatIcon(selectedJob.category);
-                                    return (
-                                        <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
-                                            <CatIcon className="w-3.5 h-3.5" />
-                                            {JOB_CATEGORIES.find(c => c.id === selectedJob.category)?.label || selectedJob.category}
-                                        </span>
-                                    );
-                                })()}
+                                {selectedJob.category && (
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${theme.badge}`}>
+                                        <CatIcon className="w-3.5 h-3.5" />
+                                        {JOB_CATEGORIES.find(c => c.id === selectedJob.category)?.label || selectedJob.category}
+                                    </span>
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    {/* --- RIGHT SIDE: TABS AND CONTENT --- */}
-                    <div className="w-full md:w-2/3 flex flex-col flex-1 min-h-[40vh] md:min-h-0 md:h-full overflow-visible md:overflow-hidden mt-4 md:mt-0">
+                    {/* --- RIGHT SIDE: TABS AND SWIPING CONTENT --- */}
+                    <div className="w-full md:w-2/3 flex flex-col flex-1 min-h-0 overflow-hidden mt-4 md:mt-0 relative z-10 md:ml-8">
                         
                         {/* Right Panel Tabs */}
-                        <div className={`flex flex-wrap gap-2 p-1.5 rounded-2xl mb-4 shrink-0 border ${darkMode ? 'bg-slate-800/50 border-white/5' : 'bg-slate-100 border-transparent'}`}>
-                            <button onClick={() => setModalRightView('job')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all ${modalRightView === 'job' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border border-white/10' : 'bg-white text-blue-600 shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
-                                Job Details
+                        <div className={`flex flex-wrap gap-2 p-1.5 shrink-0 ${theme.tabContainer}`}>
+                            <button onClick={() => setModalRightView('job')} className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalRightView === 'job' ? theme.tabActive : theme.tabIdle}`}>
+                                <span className="relative z-10">Job Details</span>
                             </button>
-                            <button onClick={() => setModalRightView('profile')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all ${modalRightView === 'profile' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border border-white/10' : 'bg-white text-blue-600 shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
-                                Employer Profile
+                            <button onClick={() => setModalRightView('profile')} className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalRightView === 'profile' ? theme.tabActive : theme.tabIdle}`}>
+                                <span className="relative z-10">Employer</span>
                             </button>
-                            <button onClick={() => setModalRightView('reputation')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all ${modalRightView === 'reputation' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border border-white/10' : 'bg-white text-blue-600 shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
-                                Reputation
+                            <button onClick={() => setModalRightView('reputation')} className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalRightView === 'reputation' ? theme.tabActive : theme.tabIdle}`}>
+                                <span className="relative z-10">Reviews</span>
                             </button>
                         </div>
 
-                        {/* Scrollable Content Area */}
-                        <div className="flex-1 overflow-y-auto hide-scrollbar pb-2 pr-2">
-                            
-                            {modalRightView === 'job' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                                    <div className={`p-5 rounded-2xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Job Title</p>
-                                        <h2 className={`text-3xl sm:text-4xl font-black mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{selectedJob.title}</h2>
-                                    </div>
-
-                                    <div className={`p-5 rounded-2xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <div>
-                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Salary</p>
-                                            <div className={`flex items-center gap-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                                                <span className="text-xl font-black">₱</span>
-                                                <span className="text-xl font-black">{selectedJob.salary}</span>
-                                            </div>
+                        {/* Sliding Content Wrapper */}
+                        <div className="flex-1 overflow-hidden relative mt-4 w-full">
+                            <div 
+                                className="flex w-[300%] h-full transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
+                                style={{ transform: modalRightView === 'job' ? 'translateX(0)' : modalRightView === 'profile' ? 'translateX(-33.333333%)' : 'translateX(-66.666667%)' }}
+                            >
+                                {/* Slide 1: Job Details */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-2 ${theme.textSecondary}`}>Job Title</p>
+                                            <h2 className={`text-3xl sm:text-4xl font-black mb-1 leading-tight ${theme.textPrimary}`}>{selectedJob.title}</h2>
                                         </div>
-                                    </div>
 
-                                    <div className={`p-5 rounded-2xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Job Description</p>
-                                        <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${darkMode ? 'text-white' : 'text-slate-800'}`}>{selectedJob.description || "No description provided."}</p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {modalRightView === 'profile' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                                    <div className={`p-5 rounded-2xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>About the Employer</p>
-                                        <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.bio || "No description provided."}</p>
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div className={`p-4 rounded-2xl flex items-center gap-3 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                            <EnvelopeIcon className={`w-5 h-5 opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}/>
-                                            <div className="overflow-hidden">
-                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Email</p>
-                                                <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.email || selectedJob.email || "N/A"}</p>
-                                            </div>
-                                        </div>
-                                        <div className={`p-4 rounded-2xl flex items-center gap-3 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                            <PhoneIcon className={`w-5 h-5 opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}/>
-                                            <div className="overflow-hidden">
-                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Contact</p>
-                                                <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.contact || selectedJob.contact || "N/A"}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {modalRightView === 'reputation' && (
-                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                                    <div className={`p-6 rounded-3xl flex flex-col items-center justify-center text-center ${darkMode ? 'bg-blue-900/20 border border-blue-500/20' : 'bg-blue-50 border border-blue-100'}`}>
-                                        <h3 className="text-5xl font-black text-amber-500 mb-2">{employerAverageRating}</h3>
-                                        <div className="flex gap-1 mb-2 text-amber-500">
-                                            {[1,2,3,4,5].map(star => (
-                                                <span key={star}>{star <= Math.round(employerAverageRating) ? <StarIconSolid className="w-6 h-6"/> : <StarIconOutline className="w-6 h-6 opacity-30"/>}</span>
-                                            ))}
-                                        </div>
-                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mt-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Based on {employerReviews.length} Reviews</p>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        {employerReviews.length === 0 ? (
-                                            <p className={`text-center text-sm opacity-50 font-bold py-8 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No reviews yet.</p>
-                                        ) : (
-                                            employerReviews.map((review, idx) => (
-                                                <div key={idx} className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white border-slate-200'}`}>
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <div className="flex gap-0.5 text-amber-500">
-                                                            {[1,2,3,4,5].map(star => (
-                                                                <span key={star}>{star <= review.rating ? <StarIconSolid className="w-4 h-4"/> : <StarIconOutline className="w-4 h-4 opacity-30"/>}</span>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    <p className={`text-sm font-medium leading-relaxed ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>"{review.comment}"</p>
+                                        <div className={`p-6 rounded-[2rem] flex items-center justify-between ${theme.innerPanel}`}>
+                                            <div>
+                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-1 ${theme.textSecondary}`}>Salary</p>
+                                                <div className={`flex items-center gap-2 ${theme.textPrimary}`}>
+                                                    <span className="text-2xl font-black opacity-80">₱</span>
+                                                    <span className="text-2xl font-black">{selectedJob.salary}</span>
                                                 </div>
-                                            ))
-                                        )}
+                                            </div>
+                                        </div>
+
+                                        <div className={`p-6 rounded-[2rem] flex-1 ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-4 ${theme.textSecondary}`}>Job Description</p>
+                                            <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${theme.textPrimary}`}>{selectedJob.description || "No description provided."}</p>
+                                        </div>
                                     </div>
                                 </div>
-                            )}
 
+                                {/* Slide 2: Employer */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${theme.textSecondary}`}>About the Employer</p>
+                                            <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${theme.textPrimary}`}>{employerContact?.bio || "No description provided."}</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div className={`p-5 rounded-[2rem] flex items-center gap-4 ${theme.innerPanel}`}>
+                                                <div className="p-3 bg-black/20 rounded-xl"><EnvelopeIcon className={`w-6 h-6 ${theme.textPrimary}`}/></div>
+                                                <div className="overflow-hidden">
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-1 ${theme.textSecondary}`}>Email</p>
+                                                    <p className={`text-sm font-bold truncate ${theme.textPrimary}`}>{employerContact?.email || selectedJob.email || "N/A"}</p>
+                                                </div>
+                                            </div>
+                                            <div className={`p-5 rounded-[2rem] flex items-center gap-4 ${theme.innerPanel}`}>
+                                                <div className="p-3 bg-black/20 rounded-xl"><PhoneIcon className={`w-6 h-6 ${theme.textPrimary}`}/></div>
+                                                <div className="overflow-hidden">
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-1 ${theme.textSecondary}`}>Contact</p>
+                                                    <p className={`text-sm font-bold truncate ${theme.textPrimary}`}>{employerContact?.contact || selectedJob.contact || "N/A"}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Slide 3: Reputation */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-8 rounded-[2rem] flex flex-col items-center justify-center text-center ${theme.innerPanel}`}>
+                                            <h3 className="text-6xl font-black text-amber-400 mb-3 drop-shadow-md">{employerAverageRating}</h3>
+                                            <div className="flex gap-1.5 mb-3 text-amber-400 drop-shadow-sm">
+                                                {[1,2,3,4,5].map(star => (
+                                                    <span key={star}>{star <= Math.round(employerAverageRating) ? <StarIconSolid className="w-7 h-7"/> : <StarIconOutline className="w-7 h-7 opacity-40"/>}</span>
+                                                ))}
+                                            </div>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 ${theme.textSecondary}`}>Based on {employerReviews.length} Reviews</p>
+                                        </div>
+
+                                        <div className="space-y-4 mt-2">
+                                            {employerReviews.length === 0 ? (
+                                                <p className={`text-center text-sm font-bold py-8 opacity-60 ${theme.textPrimary}`}>No reviews yet.</p>
+                                            ) : (
+                                                employerReviews.map((review, idx) => (
+                                                    <div key={idx} className={`p-5 rounded-[2rem] ${theme.innerPanel}`}>
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div className="flex gap-1 text-amber-400">
+                                                                {[1,2,3,4,5].map(star => (
+                                                                    <span key={star}>{star <= review.rating ? <StarIconSolid className="w-4 h-4"/> : <StarIconOutline className="w-4 h-4 opacity-40"/>}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <p className={`text-sm font-medium leading-relaxed opacity-90 ${theme.textPrimary}`}>"{review.comment}"</p>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                        {/* --- THEMED ACTIONS (Pinned to bottom) --- */}
-                        <div className={`w-full flex gap-3 pt-4 mt-2 shrink-0 border-t ${darkMode ? 'border-white/10' : 'border-slate-100'}`}>
+                        <div className={`w-full flex gap-3 pt-4 shrink-0 border-t z-10 mt-2 ${theme.divider}`}>
                             {(() => {
                                 const isAtCapacity = selectedJob.capacity > 0 && (selectedJob.applicationCount || 0) >= selectedJob.capacity;
                                 const hasApplied = myApplications.some(app => app.jobId === selectedJob.id && app.status !== 'withdrawn' && app.status !== 'rejected');
 
                                 if (hasApplied) {
                                     return (
-                                        <button disabled className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest cursor-not-allowed border ${theme.appliedBtn}`}>
+                                        <button disabled className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest cursor-not-allowed border transition-all ${theme.appliedBtn}`}>
                                             Application Sent
                                         </button>
                                     );
                                 } else if (isAtCapacity) {
                                     return (
-                                        <button disabled className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest cursor-not-allowed border ${darkMode ? 'bg-slate-800/50 text-slate-500 border-white/10' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                                        <button disabled className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest cursor-not-allowed border bg-black/20 text-white/50 border-white/10 backdrop-blur-md`}>
                                             Capacity Reached
                                         </button>
                                     );
                                 } else {
                                     return (
-                                        <button onClick={() => handleApplyToJob(selectedJob)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all ${theme.solid}`}>
+                                        <button onClick={() => handleApplyToJob(selectedJob)} className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 hover:-translate-y-1 transition-transform duration-300 shadow-lg ${theme.solid}`}>
                                             Apply Now
                                         </button>
                                     );
                                 }
                             })()}
                             
-                            <button onClick={() => handleToggleSaveJob(selectedJob)} className={`flex-none p-4 rounded-xl transition-all border ${isSaved ? theme.saveActive : theme.saveIdle}`}>
-                                <BookmarkIcon className={`w-6 h-6 ${isSaved ? 'fill-current' : ''}`}/>
+                            <button onClick={() => handleToggleSaveJob(selectedJob)} className={`flex-none p-4 rounded-2xl transition-all duration-300 border hover:-translate-y-1 shadow-sm ${isSaved ? theme.saveActive : theme.saveIdle}`}>
+                                <BookmarkIcon className={`w-7 h-7 ${isSaved ? 'fill-current' : ''}`}/>
                             </button>
                         </div>
                     </div>
@@ -1222,45 +1322,53 @@ export default function ApplicantDashboard() {
 
       {/* 2. APPLICATION DETAILS MODAL */}
       {viewingApplication && (() => {
-        const theme = getModalTheme(modalJobDetails?.category, darkMode);
+        const categoryId = viewingApplication.category || modalJobDetails?.category || 'AUTOMOTIVE';
+        const theme = getModalTheme(categoryId, darkMode);
+        const CatIcon = getLocalCatIcon(categoryId);
+
         return (
-        <div className={`fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm animate-in fade-in ${darkMode ? 'bg-slate-950/60' : 'bg-slate-900/40'}`} onClick={() => setViewingApplication(null)}>
+        <div className={`fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md animate-in fade-in ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={() => setViewingApplication(null)}>
             <div 
-                className={`relative w-[92vw] sm:w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-[2rem] border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:items-start md:gap-8 overflow-y-auto md:overflow-hidden max-h-[85vh] md:h-[80vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white shadow-2xl' : 'bg-white border-slate-200 text-slate-900 shadow-xl'}`} 
+                className={`relative w-[92vw] sm:w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-[2.5rem] animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh] max-h-[900px] md:h-[80vh] overflow-hidden ${theme.modalBg}`} 
                 onClick={e => e.stopPropagation()}
             >
+                {/* Background Icon matching Job Card Style */}
+                <div className={`absolute -right-12 -bottom-12 md:-right-16 md:-bottom-16 opacity-[0.08] rotate-12 pointer-events-none z-0 ${theme.iconColor}`}>
+                    <CatIcon className="w-80 h-80 md:w-[28rem] md:h-[28rem]" />
+                </div>
                 
-                <button onClick={() => setViewingApplication(null)} className={`absolute top-4 right-4 z-20 p-2 rounded-full transition-colors border shadow-sm ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'}`}><XMarkIcon className="w-5 h-5"/></button>
+                <button onClick={() => setViewingApplication(null)} className={`absolute top-4 right-4 z-20 p-2.5 rounded-full transition-all hover:rotate-90 ${theme.closeBtn}`}>
+                    <XMarkIcon className="w-5 h-5"/>
+                </button>
                 
                 {/* --- LEFT SIDE: Employer Info --- */}
-                <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-4 md:mb-0 pt-2">
+                <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-4 md:mb-0 pt-2 z-10 relative">
                     <div 
-                        className={`w-16 h-16 sm:w-32 sm:h-32 rounded-2xl sm:rounded-[2rem] overflow-hidden mb-3 sm:mb-4 shrink-0 shadow-inner cursor-pointer hover:opacity-80 transition-opacity ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
+                        className={`w-20 h-20 sm:w-36 sm:h-36 rounded-[2rem] overflow-hidden mb-4 sm:mb-5 shrink-0 shadow-xl cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-300 ring-4 ring-black/10`}
                         onClick={() => setModalRightView('profile')}
                     >
-                         {/* PRIORITY TO LIVE EMPLOYER DATA */}
                         {(employerContact?.profilePic || viewingApplication.employerLogo) ? (
                             <img src={employerContact?.profilePic || viewingApplication.employerLogo} alt={viewingApplication.employerName} className="w-full h-full object-cover" />
                         ) : (
-                            <div className="w-full h-full bg-blue-600 flex items-center justify-center text-3xl sm:text-4xl font-black text-white uppercase">{viewingApplication.employerName?.charAt(0)}</div>
+                            <div className="w-full h-full bg-black/20 flex items-center justify-center text-4xl sm:text-5xl font-black text-white uppercase backdrop-blur-md">{viewingApplication.employerName?.charAt(0)}</div>
                         )}
                     </div>
                     
                     <h2 
                         onClick={() => setModalRightView('profile')}
-                        className={`text-xl sm:text-2xl font-black mb-3 text-center leading-tight w-full cursor-pointer transition-colors ${darkMode ? 'hover:text-blue-400 text-white' : 'hover:text-blue-500 text-slate-900'}`}
+                        className={`text-2xl sm:text-3xl font-black mb-3 text-center leading-tight w-full cursor-pointer transition-all hover:scale-105 ${theme.textPrimary}`}
                         title="View Employer Profile"
                     >
                         {viewingApplication.employerName}
                     </h2>
                     
                     {modalLoading ? (
-                        <div className="w-full flex justify-center opacity-50 pt-2"><div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div></div>
+                        <div className="w-full flex justify-center opacity-50 pt-2"><div className={`w-5 h-5 border-2 border-t-transparent rounded-full animate-spin ${theme.textPrimary}`}></div></div>
                     ) : (
-                        <div className={`flex flex-col gap-4 text-xs font-bold w-full items-center text-center cursor-default select-none ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <div className={`flex flex-col gap-4 text-xs font-bold w-full items-center text-center cursor-default select-none ${theme.textSecondary}`}>
                             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
                                 <div className="flex items-center gap-1.5">
-                                    <MapPinIcon className="w-4 h-4 shrink-0" />
+                                    <MapPinIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
                                     <span className={!modalJobDetails?.sitio ? 'opacity-50 italic' : ''}>{modalJobDetails?.sitio || "Location not set"}</span>
                                 </div>
                                 {(() => {
@@ -1270,13 +1378,13 @@ export default function ApplicantDashboard() {
                                         <>
                                             {emailInfo && (
                                                 <div className="flex items-center gap-1.5" title="Email">
-                                                    <EnvelopeIcon className="w-4 h-4 shrink-0" />
+                                                    <EnvelopeIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
                                                     <span className="truncate max-w-[150px]">{emailInfo}</span>
                                                 </div>
                                             )}
                                             {phoneInfo && (
                                                 <div className="flex items-center gap-1.5" title="Phone Number">
-                                                    <PhoneIcon className="w-4 h-4 shrink-0" />
+                                                    <PhoneIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
                                                     <span className="truncate max-w-[150px]">{phoneInfo}</span>
                                                 </div>
                                             )}
@@ -1290,25 +1398,18 @@ export default function ApplicantDashboard() {
                                     {modalJobDetails?.type && (() => {
                                         const typeStyle = getJobStyle(modalJobDetails.type);
                                         return (
-                                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
+                                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${theme.badge}`}>
                                                 <span className="scale-75 w-3.5 h-3.5 flex items-center justify-center">{typeStyle.icon}</span>
                                                 {modalJobDetails.type}
                                             </span>
                                         )
                                     })()}
-                                    {modalJobDetails?.category && (() => {
-                                        const getLocalCatIcon = (id) => {
-                                            const map = { 'EDUCATION': AcademicCapIcon, 'AGRICULTURE': SunIcon, 'AUTOMOTIVE': Cog8ToothIcon, 'CARPENTRY': WrenchScrewdriverIcon, 'HOUSEHOLD': HomeIcon, 'CUSTOMER_SERVICE': UserGroupIcon };
-                                            return map[id] || TagIcon;
-                                        };
-                                        const CatIcon = getLocalCatIcon(modalJobDetails.category);
-                                        return (
-                                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
-                                                <CatIcon className="w-3.5 h-3.5" />
-                                                {JOB_CATEGORIES.find(c => c.id === modalJobDetails.category)?.label || modalJobDetails.category}
-                                            </span>
-                                        );
-                                    })()}
+                                    {modalJobDetails?.category && (
+                                        <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${theme.badge}`}>
+                                            <CatIcon className="w-3.5 h-3.5" />
+                                            {JOB_CATEGORIES.find(c => c.id === modalJobDetails.category)?.label || modalJobDetails.category}
+                                        </span>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -1316,128 +1417,137 @@ export default function ApplicantDashboard() {
                 </div>
 
                 {/* --- RIGHT SIDE: TABS AND CONTENT --- */}
-                <div className="w-full md:w-2/3 flex flex-col flex-1 min-h-[40vh] md:min-h-0 md:h-full overflow-visible md:overflow-hidden mt-4 md:mt-0">
+                <div className="w-full md:w-2/3 flex flex-col flex-1 min-h-0 overflow-hidden mt-4 md:mt-0 relative z-10 md:ml-8">
                     
-                    <div className={`flex flex-wrap gap-2 p-1.5 rounded-2xl mb-4 shrink-0 border ${darkMode ? 'bg-slate-800/50 border-white/5' : 'bg-slate-100 border-transparent'}`}>
-                        <button onClick={() => setModalRightView('job')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all border ${modalRightView === 'job' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border-white/10' : 'bg-white text-blue-600 shadow-sm border-slate-200') : (darkMode ? 'border-transparent text-slate-400 hover:bg-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
-                            Application
+                    <div className={`flex flex-wrap gap-2 p-1.5 shrink-0 ${theme.tabContainer}`}>
+                        <button onClick={() => setModalRightView('job')} className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalRightView === 'job' ? theme.tabActive : theme.tabIdle}`}>
+                            <span className="relative z-10">Application</span>
                         </button>
-                        <button onClick={() => setModalRightView('profile')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all border ${modalRightView === 'profile' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border-white/10' : 'bg-white text-blue-600 shadow-sm border-slate-200') : (darkMode ? 'border-transparent text-slate-400 hover:bg-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
-                            Employer Profile
+                        <button onClick={() => setModalRightView('profile')} className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalRightView === 'profile' ? theme.tabActive : theme.tabIdle}`}>
+                            <span className="relative z-10">Employer</span>
                         </button>
-                        <button onClick={() => setModalRightView('reputation')} className={`flex-1 min-w-[80px] py-2 text-[10px] sm:text-xs font-bold rounded-xl transition-all border ${modalRightView === 'reputation' ? (darkMode ? 'bg-slate-700 text-white shadow-sm border-white/10' : 'bg-white text-blue-600 shadow-sm border-slate-200') : (darkMode ? 'border-transparent text-slate-400 hover:bg-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-200/50')}`}>
-                            Reputation
+                        <button onClick={() => setModalRightView('reputation')} className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalRightView === 'reputation' ? theme.tabActive : theme.tabIdle}`}>
+                            <span className="relative z-10">Reviews</span>
                         </button>
                     </div>
 
                     {modalLoading ? (
                         <div className="flex flex-col items-center justify-center h-full gap-4 opacity-50 py-20">
-                            <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                            <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-slate-900'}`}>Loading Details...</p>
+                            <div className={`w-8 h-8 border-4 border-t-transparent rounded-full animate-spin ${theme.textPrimary}`}></div>
+                            <p className={`text-[10px] font-black uppercase tracking-widest ${theme.textPrimary}`}>Loading Details...</p>
                         </div>
                     ) : (
                         <>
-                            <div className="flex-1 md:overflow-y-auto hide-scrollbar pb-2 md:pr-2">
-                                {modalRightView === 'job' && (
-                                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                                        <div className={`p-5 rounded-2xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                            <div className="flex justify-between items-start mb-1">
-                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Job Title</p>
-                                                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${viewingApplication.status === 'accepted' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : viewingApplication.status === 'rejected' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500/10 text-slate-500 border border-slate-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-blue-500' : viewingApplication.status === 'rejected' ? 'bg-red-500' : viewingApplication.status === 'withdrawn' ? 'bg-slate-500' : 'bg-amber-500'}`}></span>
-                                                    {viewingApplication.status}
-                                                </div>
-                                            </div>
-                                            <h2 className={`text-3xl sm:text-4xl font-black mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>{viewingApplication.jobTitle}</h2>
-                                        </div>
-
-                                        <div className={`p-5 rounded-2xl flex items-center justify-between ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                            <div>
-                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Salary</p>
-                                                <div className={`flex items-center gap-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                                                    <span className="text-xl font-black">₱</span>
-                                                    <span className="text-xl font-black">{modalJobDetails?.salary || "N/A"}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className={`p-5 rounded-2xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Job Description</p>
-                                            <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{modalJobDetails?.description || "Description not available."}</p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {modalRightView === 'profile' && (
-                                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                                        <div className={`p-5 rounded-2xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>About the Employer</p>
-                                            <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{employerContact?.bio || "No description provided."}</p>
-                                        </div>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            <div className={`p-4 rounded-2xl flex items-center gap-3 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                                <EnvelopeIcon className={`w-5 h-5 opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}/>
-                                                <div className="overflow-hidden">
-                                                    <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Email</p>
-                                                    <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.email || modalJobDetails?.email || "N/A"}</p>
-                                                </div>
-                                            </div>
-                                            <div className={`p-4 rounded-2xl flex items-center gap-3 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                                <PhoneIcon className={`w-5 h-5 opacity-80 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}/>
-                                                <div className="overflow-hidden">
-                                                    <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Contact</p>
-                                                    <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-slate-800'}`}>{employerContact?.contact || modalJobDetails?.contact || "N/A"}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {modalRightView === 'reputation' && (
-                                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                                        <div className={`p-6 rounded-3xl flex flex-col items-center justify-center text-center ${darkMode ? 'bg-blue-900/20 border border-blue-500/20' : 'bg-blue-50 border border-blue-100'}`}>
-                                            <h3 className="text-5xl font-black text-amber-500 mb-2">{employerAverageRating}</h3>
-                                            <div className="flex gap-1 mb-2 text-amber-500">
-                                                {[1,2,3,4,5].map(star => (
-                                                    <span key={star}>{star <= Math.round(employerAverageRating) ? <StarIconSolid className="w-6 h-6"/> : <StarIconOutline className="w-6 h-6 opacity-30"/>}</span>
-                                                ))}
-                                            </div>
-                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-40 mt-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Based on {employerReviews.length} Reviews</p>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                            {employerReviews.length === 0 ? (
-                                                <p className={`text-center text-sm opacity-50 font-bold py-8 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No reviews yet.</p>
-                                            ) : (
-                                                employerReviews.map((review, idx) => (
-                                                    <div key={idx} className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`}>
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <div className="flex gap-0.5 text-amber-500">
-                                                                {[1,2,3,4,5].map(star => (
-                                                                    <span key={star}>{star <= review.rating ? <StarIconSolid className="w-4 h-4"/> : <StarIconOutline className="w-4 h-4 opacity-30"/>}</span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                        <p className={`text-sm font-medium leading-relaxed ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>"{review.comment}"</p>
+                            <div className="flex-1 overflow-hidden relative mt-4 w-full">
+                                <div 
+                                    className="flex w-[300%] h-full transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
+                                    style={{ transform: modalRightView === 'job' ? 'translateX(0)' : modalRightView === 'profile' ? 'translateX(-33.333333%)' : 'translateX(-66.666667%)' }}
+                                >
+                                    
+                                    {/* Application View */}
+                                    <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                        <div className="space-y-4 pb-2">
+                                            <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 ${theme.textSecondary}`}>Job Title</p>
+                                                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/20 border border-white/20 text-white backdrop-blur-md shadow-sm`}>
+                                                        <span className={`w-2 h-2 rounded-full ${viewingApplication.status === 'accepted' ? 'bg-green-400' : viewingApplication.status === 'rejected' ? 'bg-red-400' : viewingApplication.status === 'withdrawn' ? 'bg-slate-400' : 'bg-amber-400'}`}></span>
+                                                        {viewingApplication.status}
                                                     </div>
-                                                ))
-                                            )}
+                                                </div>
+                                                <h2 className={`text-3xl sm:text-4xl font-black mb-1 leading-tight ${theme.textPrimary}`}>{viewingApplication.jobTitle}</h2>
+                                            </div>
+
+                                            <div className={`p-6 rounded-[2rem] flex items-center justify-between ${theme.innerPanel}`}>
+                                                <div>
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-1 ${theme.textSecondary}`}>Salary</p>
+                                                    <div className={`flex items-center gap-2 ${theme.textPrimary}`}>
+                                                        <span className="text-2xl font-black opacity-80">₱</span>
+                                                        <span className="text-2xl font-black">{modalJobDetails?.salary || "N/A"}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className={`p-6 rounded-[2rem] flex-1 ${theme.innerPanel}`}>
+                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-4 ${theme.textSecondary}`}>Job Description</p>
+                                                <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${theme.textPrimary}`}>{modalJobDetails?.description || "Description not available."}</p>
+                                            </div>
                                         </div>
                                     </div>
-                                )}
+
+                                    {/* Profile View */}
+                                    <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                        <div className="space-y-4 pb-2">
+                                            <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${theme.textSecondary}`}>About the Employer</p>
+                                                <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${theme.textPrimary}`}>{employerContact?.bio || "No description provided."}</p>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                <div className={`p-5 rounded-[2rem] flex items-center gap-4 ${theme.innerPanel}`}>
+                                                    <div className="p-3 bg-black/20 rounded-xl"><EnvelopeIcon className={`w-6 h-6 ${theme.textPrimary}`}/></div>
+                                                    <div className="overflow-hidden">
+                                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-1 ${theme.textSecondary}`}>Email</p>
+                                                        <p className={`text-sm font-bold truncate ${theme.textPrimary}`}>{employerContact?.email || modalJobDetails?.email || "N/A"}</p>
+                                                    </div>
+                                                </div>
+                                                <div className={`p-5 rounded-[2rem] flex items-center gap-4 ${theme.innerPanel}`}>
+                                                    <div className="p-3 bg-black/20 rounded-xl"><PhoneIcon className={`w-6 h-6 ${theme.textPrimary}`}/></div>
+                                                    <div className="overflow-hidden">
+                                                        <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-1 ${theme.textSecondary}`}>Contact</p>
+                                                        <p className={`text-sm font-bold truncate ${theme.textPrimary}`}>{employerContact?.contact || modalJobDetails?.contact || "N/A"}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Reputation View */}
+                                    <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                        <div className="space-y-4 pb-2">
+                                            <div className={`p-8 rounded-[2rem] flex flex-col items-center justify-center text-center ${theme.innerPanel}`}>
+                                                <h3 className="text-6xl font-black text-amber-400 mb-3 drop-shadow-md">{employerAverageRating}</h3>
+                                                <div className="flex gap-1.5 mb-3 text-amber-400 drop-shadow-sm">
+                                                    {[1,2,3,4,5].map(star => (
+                                                        <span key={star}>{star <= Math.round(employerAverageRating) ? <StarIconSolid className="w-7 h-7"/> : <StarIconOutline className="w-7 h-7 opacity-40"/>}</span>
+                                                    ))}
+                                                </div>
+                                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 ${theme.textSecondary}`}>Based on {employerReviews.length} Reviews</p>
+                                            </div>
+
+                                            <div className="space-y-4 mt-2">
+                                                {employerReviews.length === 0 ? (
+                                                    <p className={`text-center text-sm font-bold py-8 opacity-60 ${theme.textPrimary}`}>No reviews yet.</p>
+                                                ) : (
+                                                    employerReviews.map((review, idx) => (
+                                                        <div key={idx} className={`p-5 rounded-[2rem] ${theme.innerPanel}`}>
+                                                            <div className="flex justify-between items-start mb-3">
+                                                                <div className="flex gap-1 text-amber-400">
+                                                                    {[1,2,3,4,5].map(star => (
+                                                                        <span key={star}>{star <= review.rating ? <StarIconSolid className="w-4 h-4"/> : <StarIconOutline className="w-4 h-4 opacity-40"/>}</span>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            <p className={`text-sm font-medium leading-relaxed opacity-90 ${theme.textPrimary}`}>"{review.comment}"</p>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Actions (Pinned to bottom) */}
-                            <div className={`flex gap-4 pt-4 mt-2 shrink-0 border-t ${darkMode ? 'border-white/10' : 'border-slate-100'}`}>
-                                <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className={`flex-1 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] border active:scale-95 transition-transform ${darkMode ? 'border-red-500/30 text-red-400 hover:bg-red-500/10' : 'border-red-500/30 text-red-600 hover:bg-red-50'}`}>
-                                    {viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw Application'}
+                            <div className={`flex gap-3 pt-4 shrink-0 border-t z-10 mt-2 ${theme.divider}`}>
+                                <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] border active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-sm ${darkMode ? 'border-red-500/30 text-red-400 hover:bg-red-500/20' : 'bg-red-500/10 text-red-100 hover:bg-red-500 hover:text-white border-transparent'}`}>
+                                    {viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw'}
                                 </button>
                                 {viewingApplication.status === 'accepted' ? (
-                                    <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className={`flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] text-white hover:bg-blue-500 active:scale-95 transition-all ${darkMode ? 'bg-blue-600 shadow-lg shadow-blue-600/20' : 'bg-blue-600 shadow-lg shadow-blue-600/30'}`}>
+                                    <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className={`flex-[2] py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-lg ${theme.solid}`}>
                                         Message Employer
                                     </button>
                                 ) : (
-                                    <button disabled className={`flex-[2] py-4 rounded-xl font-black uppercase tracking-widest text-[10px] cursor-not-allowed border ${darkMode ? 'bg-slate-800/50 text-slate-500 border-white/10 opacity-60' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                                    <button disabled className={`flex-[2] py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] cursor-not-allowed border bg-black/20 text-white/50 border-white/10 backdrop-blur-md`}>
                                         {viewingApplication.status === 'rejected' ? 'Application Rejected' : viewingApplication.status === 'withdrawn' ? 'Application Withdrawn' : 'Pending Review'}
                                     </button>
                                 )}
@@ -1468,7 +1578,7 @@ export default function ApplicantDashboard() {
                             <button onClick={(e) => { if (!isDragging) { setIsBubbleExpanded(true); if(effectiveActiveChatUser) { openChat(effectiveActiveChatUser); markConversationAsRead(effectiveActiveChatUser.id); } } }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white/80 border border-white/60 backdrop-blur-md'}`}>
                                 {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? ((getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>) : <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} />}
                             </button>
-                            {(() => { const activeUnread = activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.[`unread_${auth.currentUser.uid}`] || 0) : conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0); return activeUnread > 0 ? <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-10 animate-in zoom-in border-none">{activeUnread}</span> : null; })()}
+                            {(() => { const activeUnread = activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (conversations.find(c => c.chatId?.includes(effectiveActiveChatUser.id))?.[`unread_${auth.currentUser.uid}`] || 0) : conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0); return activeUnread > 0 ? <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-10 animate-in zoom-in border-none">{activeUnread}</span> : null; })()}
                         </div>
                     </div>
                 )}
@@ -1478,7 +1588,7 @@ export default function ApplicantDashboard() {
                         <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
                             {openBubbles.map((chat) => {
                                 const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
-                                const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
+                                const chatPic = chat.profilePic || conversations.find(c => c.chatId?.includes(chat.id))?.profilePics?.[chat.id];
                                 return (
                                     <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
                                         <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${darkMode ? 'border-white/10' : 'border-white/60'} ${activeBubbleView === chat.id ? 'scale-110 shadow-blue-500/50' : 'opacity-80'}`}>
@@ -1504,7 +1614,8 @@ export default function ApplicantDashboard() {
                                         <div className={`px-5 py-3 border-b ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/30 border-white/60'}`}><div className={`flex items-center p-2 rounded-xl border shadow-inner ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}><MagnifyingGlassIcon className={`w-4 h-4 ml-2 ${darkMode ? 'text-slate-400' : 'text-blue-400'}`} /><input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold ${darkMode ? 'text-white placeholder-slate-500' : 'text-blue-900 placeholder-blue-300'}`} /></div></div>
                                         <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
                                             {bubbleFilteredChats.map(c => {
-                                                const otherId = c.participants.find(p => p !== auth.currentUser.uid);
+                                                const otherId = c.participants?.find(p => p !== auth.currentUser.uid);
+                                                if (!otherId) return null;
                                                 const name = c.names?.[otherId] || "User";
                                                 const otherPic = c.profilePics?.[otherId];
                                                 const unread = c[`unread_${auth.currentUser.uid}`] || 0;
@@ -1530,7 +1641,7 @@ export default function ApplicantDashboard() {
                                                         <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-blue-900'}`}>{effectiveActiveChatUser.name}</h3>
                                                         <p className={`text-[10px] font-bold opacity-70 uppercase flex items-center gap-1 mt-0.5 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`}>
                                                             {(() => {
-                                                                const status = formatLastSeen(conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.lastTimestamp);
+                                                                const status = formatLastSeen(conversations.find(c => c.chatId?.includes(effectiveActiveChatUser.id))?.lastTimestamp);
                                                                 return <><span className={`w-2 h-2 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
                                                             })()}
                                                         </p>
@@ -1585,16 +1696,16 @@ export default function ApplicantDashboard() {
                                             
                                             <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
                                                {replyingTo && (
-    <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-        <div className="flex flex-col">
-            <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
-            <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
-                {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
-            </span>
-        </div>
-        <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
-    </div>
-)}
+                                                <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
+                                                        <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+                                                            {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
+                                                        </span>
+                                                    </div>
+                                                    <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
+                                                </div>
+                                            )}
                                                 <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
                                                     <input type="file" ref={bubbleFileRef} onChange={handleFileSelect} className="hidden" />
                                                     <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
@@ -1621,8 +1732,8 @@ export default function ApplicantDashboard() {
                     {conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-20 animate-bounce border-none">{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0)}</span>}
                 </div>
                 {openBubbles.map((chat) => {
-                    const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
-                    const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
+                    const unread = chat[`unread_${auth.currentUser?.uid}`] || 0;
+                    const chatPic = chat.profilePic || conversations.find(c => c.chatId?.includes(chat.id))?.profilePics?.[chat.id];
                     return (
                     <div key={chat.id} className="pointer-events-auto relative group flex items-center gap-3">
                         <span className={`absolute right-full mr-3 px-3 py-1.5 rounded-xl backdrop-blur-md border text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/60 text-blue-900'}`}>{chat.name}</span>
@@ -1650,7 +1761,8 @@ export default function ApplicantDashboard() {
                             </div>
                             <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
                                 {filteredChats.map(c => {
-                                    const otherId = c.participants.find(p => p !== auth.currentUser.uid);
+                                    const otherId = c.participants?.find(p => p !== auth.currentUser?.uid);
+                                    if (!otherId) return null;
                                     const name = c.names?.[otherId] || "User";
                                     const otherPic = c.profilePics?.[otherId];
                                     const unread = c[`unread_${auth.currentUser.uid}`] || 0;
@@ -1680,7 +1792,7 @@ export default function ApplicantDashboard() {
                                         <span className={`font-black text-xs uppercase block ${darkMode ? 'text-white' : 'text-blue-900'}`}>{activeChat.name}</span>
                                         <span className={`text-[9px] opacity-80 font-bold flex items-center gap-1 mt-0.5 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                             {(() => {
-                                                const status = formatLastSeen(conversations.find(c => c.chatId.includes(activeChat.id))?.lastTimestamp);
+                                                const status = formatLastSeen(conversations.find(c => c.chatId?.includes(activeChat.id))?.lastTimestamp);
                                                 return <><span className={`w-1.5 h-1.5 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
                                             })()}
                                         </span>
@@ -1737,16 +1849,16 @@ export default function ApplicantDashboard() {
                             {/* Desktop Chat Input */}
                             <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
                                 {replyingTo && (
-    <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-        <div className="flex flex-col">
-            <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
-            <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
-                {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
-            </span>
-        </div>
-        <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
-    </div>
-)}
+                                <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                                    <div className="flex flex-col">
+                                        <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
+                                        <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+                                            {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
+                                        </span>
+                                    </div>
+                                    <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
+                                </div>
+                            )}
                                 <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
                                     <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
                                     <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
@@ -1759,48 +1871,6 @@ export default function ApplicantDashboard() {
                 )}
             </div>
         ))}
-
-      {/* --- MOBILE NAV --- */}
-      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] backdrop-blur-xl ${isFullScreenPage ? 'hidden' : ''} ${darkMode ? 'bg-slate-900/80 border-white/10' : 'bg-white/60 border-white/60'}`}>
-         {/* ... (Nav buttons) ... */}
-         <button onClick={() => setActiveTab("FindJobs")}><SparklesIcon className={`w-6 h-6 ${activeTab === 'FindJobs' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`}/></button>
-         <button onClick={() => setActiveTab("Saved")}><BookmarkIcon className={`w-6 h-6 ${activeTab === 'Saved' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`}/></button>
-         {/* Changed bg-amber-500 to bg-red-500 */}
-         <button onClick={() => setActiveTab("Applications")}>
-             <div className="relative">
-                 <PaperAirplaneIcon className={`w-6 h-6 ${activeTab === 'Applications' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`}/>
-                 {hasUnreadUpdates && (
-                     <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>
-                 )}
-             </div>
-         </button>
-         <button onClick={() => setActiveTab("Messages")}><div className="relative"><ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`}/>{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 min-w-[16px] h-[16px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-none">{unreadMsgCount}</span>}</div></button>
-      </nav>
-
-        {/* 5. IMAGE LIGHTBOX OVERLAY */}
-      {lightboxUrl && createPortal(
-        <div 
-            className="fixed inset-0 flex items-center justify-center bg-black/95 backdrop-blur-sm animate-in fade-in duration-200"
-            style={{ zIndex: 999999 }} 
-            onClick={(e) => { e.stopPropagation(); setLightboxUrl(null); }}
-        >
-            <button 
-                onClick={(e) => { e.stopPropagation(); setLightboxUrl(null); }} 
-                className="absolute top-6 right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-                style={{ zIndex: 9999999 }}
-            >
-                <XMarkIcon className="w-8 h-8"/>
-            </button>
-            <img 
-                src={lightboxUrl} 
-                alt="Enlarged attachment" 
-                className="max-w-[95vw] max-h-[90vh] object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-200"
-                style={{ zIndex: 9999999 }}
-                onClick={(e) => e.stopPropagation()} 
-            />
-        </div>,
-        document.body
-      )}
     </div>
   );
 }

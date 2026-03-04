@@ -1,11 +1,14 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { 
     UsersIcon, BriefcaseIcon, ClockIcon, ChatBubbleLeftRightIcon, 
     MagnifyingGlassIcon, MapPinIcon, ChevronDownIcon, TagIcon, 
     MegaphoneIcon, SparklesIcon, AcademicCapIcon, SunIcon, 
     Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon,
-    BoltIcon
+    BoltIcon, StarIcon as StarIconOutline
 } from "@heroicons/react/24/outline";
+import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { db } from "../../../firebase/config";
 
 export default function DiscoverTab({
     discoverTalents, myPostedJobs, receivedApplications, unreadMsgCount,
@@ -17,11 +20,19 @@ export default function DiscoverTab({
     onImmediateHire
 }) {
 
-    // --- DESKTOP SCROLL FIXES ---
+    const [applicantReviews, setApplicantReviews] = useState([]);
+    
+    useEffect(() => {
+        const q = query(collection(db, "reviews"), where("type", "==", "applicant_review"));
+        const unsub = onSnapshot(q, snap => {
+            setApplicantReviews(snap.docs.map(d => d.data()));
+        });
+        return () => unsub();
+    }, []);
+
     const suggestedRef = useRef(null);
     const recentRef = useRef(null);
 
-    // 1. Convert Vertical Mouse Wheel to Horizontal Scroll
     useEffect(() => {
         const handleWheelScroll = (e) => {
             if (e.deltaY !== 0) {
@@ -42,7 +53,6 @@ export default function DiscoverTab({
         };
     }, []);
 
-    // 2. Mouse Drag-to-Scroll Logic
     const handleMouseDown = (e, ref) => {
         if (!ref.current) return;
         ref.current.isDown = true;
@@ -71,7 +81,6 @@ export default function DiscoverTab({
         ref.current.scrollLeft = ref.current.scrollLeftPos - walk;
     };
 
-    // --- STYLES ---
     const glassPanel = `backdrop-blur-xl transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white/60 border-slate-200 text-slate-800'}`;
     const glassInput = `w-full flex-1 bg-transparent outline-none font-bold text-xs ${darkMode ? 'text-white placeholder-slate-400' : 'text-slate-800 placeholder-slate-500'}`;
     
@@ -143,25 +152,28 @@ export default function DiscoverTab({
         }
     };
 
-    // --- 1. FILTERING LOGIC ---
+    // Helper to safely check active status
+    const checkIsOnline = (user) => {
+        if (user.isOnline) return true;
+        if (!user.lastSeen) return false;
+        const now = new Date();
+        const date = user.lastSeen?.toDate ? user.lastSeen.toDate() : new Date(user.lastSeen);
+        return (now - date) / 60000 < 3; // Active within last 3 minutes
+    };
+
     const filteredTalents = discoverTalents.filter(user => {
         const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
         const matchesSearch = fullName.includes(talentSearch.toLowerCase()) || (user.skills && user.skills.toLowerCase().includes(talentSearch.toLowerCase()));
         const matchesSitio = talentSitioFilter ? (user.sitio === talentSitioFilter) : true;
-        
         const matchesCategory = talentCategoryFilter ? (
             (user.category === talentCategoryFilter) || 
             (user.title && user.title.toLowerCase().includes(talentCategoryFilter.toLowerCase())) ||
             (user.skills && user.skills.toLowerCase().includes(talentCategoryFilter.toLowerCase()))
         ) : true;
-
         return matchesSearch && matchesSitio && matchesCategory;
     });
 
-    // --- 2. SUGGESTION LOGIC ---
     const isFiltering = (talentSearch?.length > 0) || (talentSitioFilter?.length > 0) || (talentCategoryFilter?.length > 0);
-    
-    // Suggest candidates based on the categories or locations of jobs the employer has posted
     const employerCategories = [...new Set(myPostedJobs.map(job => job.category).filter(Boolean))];
     const employerSitios = [...new Set(myPostedJobs.map(job => job.sitio).filter(Boolean))];
 
@@ -171,31 +183,37 @@ export default function DiscoverTab({
         return matchCategory || matchLocation;
     });
     
-    // Everything else falls into recently joined
     const recentTalents = filteredTalents.filter(user => !suggestedTalents.includes(user));
 
-    // --- 3. REUSABLE CARD RENDERER ---
     const renderCandidateCard = (user, isHorizontal = false) => {
         const pic = getAvatarUrl(user);
         const isHired = receivedApplications.some(app => app.applicantId === user.id && app.status === 'accepted');
         const catStyle = user.category ? getCatStyles(user.category) : getCatStyles('');
         const theme = getCardTheme(user.category, darkMode);
         const CatIcon = catStyle.icon;
+        
+        // Dynamic Online Status
+        const isOnline = checkIsOnline(user);
 
-        // Narrower dimensions when horizontal so it sits well in sideways scroll
+        // Fetch User Ratings dynamically
+        const userReviews = applicantReviews.filter(r => r.targetId === user.id);
+        const avgRating = userReviews.length > 0 
+            ? (userReviews.reduce((acc, curr) => acc + parseFloat(curr.rating), 0) / userReviews.length).toFixed(1) 
+            : "0.0";
+
         const sizingClass = isHorizontal ? 'w-[45vw] sm:w-[220px] shrink-0 snap-start' : 'w-full';
         const baseCardStyle = `group relative p-4 md:p-5 rounded-2xl transition-all duration-300 hover:-translate-y-1 flex flex-col items-center text-center cursor-pointer overflow-hidden ${sizingClass}`;
 
         return (
             <div key={user.id} onClick={() => setSelectedTalent(user)} className={`${baseCardStyle} ${theme.cardBg} ${theme.hoverShadow}`}>
                 
-                {/* Large Background Icon to match Job Cards */}
                 <div className={`absolute -right-4 bottom-0 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${theme.bgIcon}`}>
                     <CatIcon className="w-32 h-32 md:w-40 md:h-40" />
                 </div>
 
+                {/* ACTIVE/INACTIVE DOT */}
                 <div className="absolute top-3 right-3 md:top-4 md:right-4 z-10">
-                    <span className={`flex h-2.5 w-2.5 rounded-full ${user.isOnline ? 'bg-green-500' : 'bg-slate-300/50 dark:bg-slate-600'} shadow-sm`}></span>
+                    <span className={`flex h-2.5 w-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-slate-300/50 dark:bg-slate-600'} shadow-sm transition-colors duration-500`}></span>
                 </div>
                 
                 <div className="w-14 h-14 md:w-16 md:h-16 mb-3 md:mb-4 rounded-[1rem] md:rounded-[1.5rem] overflow-hidden shrink-0 relative z-10 shadow-sm border border-white/20">
@@ -204,12 +222,20 @@ export default function DiscoverTab({
                 
                 <h3 className={`text-xs md:text-sm font-black mb-0.5 truncate w-full relative z-10 ${theme.title}`}>{user.firstName} {user.lastName}</h3>
                 
-                {/* Overflow strictly clamped so the bio doesn't push the card size */}
-                <p className={`text-[9px] line-clamp-2 mb-3 px-1 leading-tight mt-1 overflow-hidden text-ellipsis relative z-10 ${theme.location}`}>
-                    {user.bio || user.aboutMe || "No bio available."}
-                </p>
+                {/* 5-STAR RATING SYSTEM */}
+                <div className="flex flex-col items-center justify-center mt-1 mb-3 relative z-10">
+                    <div className="flex gap-0.5 text-amber-400 drop-shadow-sm mb-0.5">
+                        {[1, 2, 3, 4, 5].map(star => (
+                            <span key={star}>
+                                {star <= Math.round(parseFloat(avgRating || 0)) 
+                                    ? <StarIconSolid className="w-3.5 h-3.5"/> 
+                                    : <StarIconOutline className="w-3.5 h-3.5 opacity-40"/>}
+                            </span>
+                        ))}
+                    </div>
+                    <span className={`text-[9px] font-bold opacity-80 ${darkMode ? 'text-slate-300' : 'text-blue-100'}`}>({userReviews.length} Reviews)</span>
+                </div>
                 
-                {/* CATEGORY BADGE ONLY - CENTERED */}
                 <div className="mt-auto mb-3 md:mb-4 flex flex-wrap items-center justify-center gap-1.5 w-full relative z-10">
                     {user.category ? (
                         <div className={`px-2.5 py-1 rounded-full text-[8px] md:text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 shrink-0 shadow-sm ${theme.badge}`}>
@@ -224,7 +250,6 @@ export default function DiscoverTab({
                     )}
                 </div>
 
-                {/* IMMEDIATE HIRE BUTTON */}
                 <button 
                     disabled={isHired}
                     onClick={(e) => { 
@@ -249,14 +274,13 @@ export default function DiscoverTab({
         <div className="animate-content">
             <div className="space-y-6 mb-8">
                 
-                {/* --- STATS CARDS --- */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mt-4 md:mt-8">
                     <div onClick={() => setActiveTab("Discover")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
                         <div className="relative z-10">
                             <h3 className={`text-2xl md:text-4xl lg:text-5xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{discoverTalents.length}</h3>
                             <p className={`text-[9px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 truncate ${darkMode ? 'text-blue-200' : 'text-blue-800'}`}>Candidates</p>
                         </div>
-                        <UsersIcon className={`w-16 h-16 md:w-24 md:h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
+                        <UsersIcon className={`w-16 h-16 md:w-24 h-24 absolute -right-3 -bottom-3 md:-right-4 md:-bottom-4 opacity-20 rotate-12 transform group-hover:scale-110 transition-transform ${darkMode ? 'text-white' : 'text-blue-700'}`}/>
                     </div>
 
                     <div onClick={() => setActiveTab("Listings")} className={`relative p-4 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 cursor-pointer ${darkMode ? 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20 border backdrop-blur-xl' : 'bg-gradient-to-br from-blue-200 to-blue-400 border border-blue-300 shadow-md'}`}>
@@ -286,8 +310,6 @@ export default function DiscoverTab({
 
                 {/* --- SEARCH BAR & FILTERS --- */}
                 <div className="flex flex-col gap-3 w-full relative z-40">
-                    
-                    {/* MOBILE Heads Up */}
                     {displayAnnouncement && (
                         <div className={`md:hidden w-full rounded-2xl shadow-sm p-1.5 flex items-center relative overflow-hidden group border ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-blue-600 border-transparent shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]'}`}>
                             {darkMode ? (
@@ -318,32 +340,16 @@ export default function DiscoverTab({
                         </div>
                     )}
 
-                    {/* Search Bar + Inside Filters */}
                     <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${glassPanel}`}>
                         <MagnifyingGlassIcon className={`ml-3 w-5 h-5 shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-                        
-                        <input 
-                            type="text" 
-                            placeholder="Search name or skill..." 
-                            value={talentSearch} 
-                            onChange={(e) => setTalentSearch(e.target.value)} 
-                            className={glassInput + " pl-3 pr-2 py-2.5"} 
-                        />
-                        
-                        {/* Divider */}
+                        <input type="text" placeholder="Search name or skill..." value={talentSearch} onChange={(e) => setTalentSearch(e.target.value)} className={glassInput + " pl-3 pr-2 py-2.5"} />
                         <div className={`w-px h-6 mx-1 shrink-0 ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
-                        
-                        {/* Location Dropdown Icon */}
                         <div className="relative shrink-0">
-                            <button 
-                                onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} 
-                                className={`p-2 md:px-4 md:py-2 flex items-center gap-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${talentSitioFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}
-                            >
+                            <button onClick={() => { setIsSitioDropdownOpen(!isSitioDropdownOpen); setIsCategoryDropdownOpen(false); }} className={`p-2 md:px-4 md:py-2 flex items-center gap-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${talentSitioFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}>
                                 <MapPinIcon className="w-5 h-5 shrink-0" />
                                 <span className="hidden md:block text-xs font-bold whitespace-nowrap">{talentSitioFilter || "All Locations"}</span>
                                 {talentSitioFilter && <span className={`absolute top-1.5 right-1.5 md:right-2 w-2 h-2 rounded-full border ${darkMode ? 'bg-red-500 border-slate-900' : 'bg-red-500 border-white'}`}></span>}
                             </button>
-                            
                             {isSitioDropdownOpen && (
                                 <div className={`absolute top-full right-0 mt-3 w-56 z-[60] rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
                                     <div className="max-h-60 overflow-y-auto p-2 space-y-1 hide-scrollbar">
@@ -357,12 +363,8 @@ export default function DiscoverTab({
                             {isSitioDropdownOpen && <div className="fixed inset-0 z-[50]" onClick={() => setIsSitioDropdownOpen(false)}></div>}
                         </div>
 
-                        {/* Category Dropdown Icon */}
                         <div className="relative shrink-0 pr-1">
-                            <button 
-                                onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} 
-                                className={`p-2 md:px-4 md:py-2 flex items-center gap-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${talentCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}
-                            >
+                            <button onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSitioDropdownOpen(false); }} className={`p-2 md:px-4 md:py-2 flex items-center gap-2 rounded-xl transition-colors relative ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'} ${talentCategoryFilter ? (darkMode ? 'text-blue-400' : 'text-blue-600') : 'text-slate-400'}`}>
                                 {(() => {
                                     const ActiveIcon = talentCategoryFilter ? getCatStyles(talentCategoryFilter).icon : TagIcon;
                                     return <ActiveIcon className="w-5 h-5 shrink-0" />;
@@ -386,20 +388,12 @@ export default function DiscoverTab({
                                             const CatIcon = catStyle.icon;
                                             const isSelected = talentCategoryFilter === c.id;
                                             return (
-                                                <button 
-                                                    key={c.id} 
-                                                    onClick={() => { setTalentCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} 
-                                                    className={`relative overflow-hidden w-full text-left p-3 rounded-xl transition-all duration-300 group border backdrop-blur-sm ${isSelected ? catStyle.active : `border-transparent ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'} ${catStyle.hover}`}`}
-                                                >
+                                                <button key={c.id} onClick={() => { setTalentCategoryFilter(c.id); setIsCategoryDropdownOpen(false); }} className={`relative overflow-hidden w-full text-left p-3 rounded-xl transition-all duration-300 group border backdrop-blur-sm ${isSelected ? catStyle.active : `border-transparent ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'} ${catStyle.hover}`}`}>
                                                     <div className="flex items-center gap-3 relative z-10">
                                                         <CatIcon className={`w-5 h-5 transition-colors ${isSelected ? catStyle.text : `text-slate-400 ${catStyle.hoverText}`}`} />
                                                         <div className="flex flex-col">
-                                                            <span className={`text-xs font-black block transition-colors ${isSelected ? catStyle.text : `text-slate-700 dark:text-slate-200 ${catStyle.hoverText}`}`}>
-                                                                {c.label}
-                                                            </span>
-                                                            <span className={`text-[9px] mt-0.5 font-medium truncate transition-colors ${isSelected ? catStyle.text : 'opacity-50 group-hover:opacity-80'}`}>
-                                                                {c.examples}
-                                                            </span>
+                                                            <span className={`text-xs font-black block transition-colors ${isSelected ? catStyle.text : `text-slate-700 dark:text-slate-200 ${catStyle.hoverText}`}`}>{c.label}</span>
+                                                            <span className={`text-[9px] mt-0.5 font-medium truncate transition-colors ${isSelected ? catStyle.text : 'opacity-50 group-hover:opacity-80'}`}>{c.examples}</span>
                                                         </div>
                                                     </div>
                                                 </button>
@@ -414,7 +408,6 @@ export default function DiscoverTab({
                 </div>
             </div>
 
-            {/* --- SECTIONS: SUGGESTED / RECENTLY JOINED --- */}
             {isFiltering ? (
                 <div className="mt-6">
                     <h2 className={`text-sm font-black uppercase tracking-widest opacity-50 mb-4 pl-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Search Results</h2>
@@ -429,25 +422,14 @@ export default function DiscoverTab({
                 </div>
             ) : (
                 <div className="mt-6 space-y-10 w-full">
-                    
-                    {/* Suggested Section */}
                     <div className="w-full">
                         <div className="flex items-center justify-between mb-4 pl-2 pr-2">
                             <h2 className={`text-sm font-black uppercase tracking-widest flex items-center gap-2 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                 Suggested For You <SparklesIcon className="w-5 h-5"/>
                             </h2>
                         </div>
-
                         {suggestedTalents.length > 0 ? (
-                            <div 
-                                ref={suggestedRef}
-                                onMouseDown={(e) => handleMouseDown(e, suggestedRef)}
-                                onMouseLeave={(e) => handleMouseLeave(e, suggestedRef)}
-                                onMouseUp={(e) => handleMouseUp(e, suggestedRef)}
-                                onMouseMove={(e) => handleMouseMove(e, suggestedRef)}
-                                className="flex overflow-x-auto gap-3 md:gap-4 pt-6 pb-10 -mt-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab"
-                            >
-                                {/* Passes 'true' to renderCandidateCard to enable horizontal specific styling */}
+                            <div ref={suggestedRef} onMouseDown={(e) => handleMouseDown(e, suggestedRef)} onMouseLeave={(e) => handleMouseLeave(e, suggestedRef)} onMouseUp={(e) => handleMouseUp(e, suggestedRef)} onMouseMove={(e) => handleMouseMove(e, suggestedRef)} className="flex overflow-x-auto gap-3 md:gap-4 pt-6 pb-10 -mt-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab">
                                 {suggestedTalents.map(user => renderCandidateCard(user, true))}
                             </div>
                         ) : (
@@ -459,22 +441,13 @@ export default function DiscoverTab({
                         )}
                     </div>
 
-                    {/* Recently Joined Section */}
                     <div className="w-full">
                         <div className="flex items-center justify-between mb-4 pl-2 pr-2">
                             <h2 className={`text-sm font-black uppercase tracking-widest opacity-50 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                                 Recently Joined
                             </h2>
                         </div>
-                        <div 
-                            ref={recentRef}
-                            onMouseDown={(e) => handleMouseDown(e, recentRef)}
-                            onMouseLeave={(e) => handleMouseLeave(e, recentRef)}
-                            onMouseUp={(e) => handleMouseUp(e, recentRef)}
-                            onMouseMove={(e) => handleMouseMove(e, recentRef)}
-                            className="flex overflow-x-auto gap-3 md:gap-4 pt-6 pb-10 -mt-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab"
-                        >
-                             {/* Passes 'true' to renderCandidateCard to enable horizontal specific styling */}
+                        <div ref={recentRef} onMouseDown={(e) => handleMouseDown(e, recentRef)} onMouseLeave={(e) => handleMouseLeave(e, recentRef)} onMouseUp={(e) => handleMouseUp(e, recentRef)} onMouseMove={(e) => handleMouseMove(e, recentRef)} className="flex overflow-x-auto gap-3 md:gap-4 pt-6 pb-10 -mt-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab">
                             {recentTalents.length > 0 ? recentTalents.map(user => renderCandidateCard(user, true)) : (
                                 <div className="w-full text-center py-20"><SparklesIcon className="w-12 h-12 mx-auto text-slate-300 mb-4" /><p className="opacity-50 font-black uppercase text-xs tracking-[0.3em] select-none cursor-default">No talents available right now</p></div>
                             )}

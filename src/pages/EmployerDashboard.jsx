@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, cloneElement } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext"; 
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config"; 
 import { createPortal } from "react-dom";
@@ -9,14 +10,11 @@ import {
   addDoc, serverTimestamp, setDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, increment, arrayUnion
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { ArrowLeftOnRectangleIcon } from "@heroicons/react/24/outline";
 
-// --- HOOKS ---
 import { useChat } from "../hooks/useChat"; 
 
-// --- ICONS ---
 import { 
-  BriefcaseIcon, XMarkIcon, 
+  BriefcaseIcon, XMarkIcon, ArrowLeftOnRectangleIcon,
   MapPinIcon, SunIcon, MoonIcon, 
   ChevronLeftIcon, ChatBubbleLeftRightIcon,
   MagnifyingGlassIcon, PaperAirplaneIcon, EyeIcon,
@@ -36,7 +34,6 @@ import {
 
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
-// --- SUB-COMPONENTS ---
 import DiscoverTab from "../components/dashboard/employer/DiscoverTab";
 import ListingsTab from "../components/dashboard/employer/ListingsTab";
 import ApplicantsTab from "../components/dashboard/employer/ApplicantsTab";
@@ -46,11 +43,10 @@ import RatingsTab from "../components/dashboard/employer/RatingsTab";
 import SupportTab from "../components/dashboard/employer/SupportTab";
 import AnnouncementsTab from "../components/dashboard/employer/AnnouncementsTab";
 import RateApplicantModal from "../components/dashboard/employer/RateApplicantModal";
+import MessageBubble from "../components/MessageBubble";
 
-// --- CONSTANTS ---
 import { PUROK_LIST, JOB_CATEGORIES, ADMIN_EMAIL, JOB_TYPES, BOT_FAQ } from "../utils/employerConstants";
 
-// --- UTILITIES ---
 const splitByNewLine = (text) => {
     if (!text) return [];
     return text.split('\n').filter(line => line.trim() !== '');
@@ -79,81 +75,32 @@ const formatLastSeen = (timestamp) => {
     return { text: "Offline", isOnline: false };
 };
 
-// --- STYLES ---
 const glassPanel = (darkMode) => `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
 const glassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out group ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-500'}`;
 const activeGlassNavBtn = (darkMode) => `relative p-3 rounded-xl transition-all duration-300 ease-out scale-110 -translate-y-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`;
 
-// --- MOBILE SWIPE HELPER ---
-const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) => {
-    const [touchStartPos, setTouchStartPos] = useState(null);
-    const [offset, setOffset] = useState(0);
-    const pressTimer = useRef(null);
-    const isSwiping = useRef(false);
-
-    if (!isMobile) return <div className="relative w-full group">{children}</div>;
-
-    const onTouchStart = (e) => {
-        const touch = e.targetTouches[0];
-        setTouchStartPos({ x: touch.clientX, y: touch.clientY });
-        isSwiping.current = false;
-        pressTimer.current = setTimeout(() => { if (!isSwiping.current) onLongPress(); }, 400);
-    };
-
-    const onTouchMove = (e) => {
-        if (!touchStartPos) return;
-        const touch = e.targetTouches[0];
-        const diffX = touch.clientX - touchStartPos.x;
-        const diffY = touch.clientY - touchStartPos.y;
-
-        if (Math.abs(diffX) > 10 || Math.abs(diffY) > 10) {
-            isSwiping.current = true;
-            clearTimeout(pressTimer.current);
-        }
-        if (Math.abs(diffX) > Math.abs(diffY)) {
-            if (!isMe && diffX > 0) setOffset(Math.min(diffX, 60)); 
-            if (isMe && diffX < 0) setOffset(Math.max(diffX, -60)); 
-        }
-    };
-
-    const onTouchEnd = () => {
-        clearTimeout(pressTimer.current);
-        if (Math.abs(offset) > 40) onReply();
-        setOffset(0);
-        setTouchStartPos(null);
-    };
-
-    return (
-        <div 
-            onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
-            style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.3s ease-out' : 'none' }}
-            className="relative touch-pan-y w-full group"
-        >
-             {offset !== 0 && (
-                <div className={`absolute top-1/2 -translate-y-1/2 ${isMe ? 'right-full mr-4' : 'left-full ml-4'} opacity-50`}>
-                    <ArrowUturnLeftIcon className="w-5 h-5 text-slate-400"/>
-                </div>
-            )}
-            {children}
-        </div>
-    );
-};
-
 export default function EmployerDashboard() {
   const navigate = useNavigate();
   const { userData } = useAuth(); 
+  const { showToast } = useToast(); 
   const [activeTab, setActiveTab] = useState("Discover"); 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
   const [loading, setLoading] = useState(false); 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // --- CUSTOM CONFIRMATION MODAL STATE ---
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: "", message: "", onConfirm: null, isDestructive: false, confirmText: "Confirm" });
   
+  const requestConfirm = (title, message, onConfirm, isDestructive = false, confirmText = "Confirm") => {
+      setConfirmDialog({ isOpen: true, title, message, onConfirm, isDestructive, confirmText });
+  };
+  const closeConfirm = () => setConfirmDialog(prev => ({ ...prev, isOpen: false }));
 
   const togglePinMessage = async (msgId, currentPinnedStatus) => {
       try { await updateDoc(doc(db, "messages", msgId), { isPinned: !currentPinnedStatus }); } 
       catch (err) { console.error("Failed to pin message", err); }
   };
 
-  // --- SUPPORT TICKET STATE ---
   const [supportTickets, setSupportTickets] = useState([]); 
   const [activeSupportTicket, setActiveSupportTicket] = useState(null); 
   const [ticketMessage, setTicketMessage] = useState("");
@@ -165,13 +112,11 @@ export default function EmployerDashboard() {
   const ticketScrollRef = useRef(null);
   const supportFileRef = useRef(null); 
 
-  // --- LOCAL BUBBLE & UI STATES ---
   const [isDesktopInboxVisible, setIsDesktopInboxVisible] = useState(false); 
   const [bubblePos, setBubblePos] = useState({ x: window.innerWidth - 80, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
     
-  // --- INTEGRATED CHAT HOOK ---
   const chat = useChat(auth.currentUser, isMobile);
   const { 
     conversations, activeChat, openChat, closeChat, sendMessage, messages, setActiveChat,
@@ -180,7 +125,6 @@ export default function EmployerDashboard() {
     activeBubbleView, setActiveBubbleView, scrollRef, unsendMessage
   } = chat;
 
-  // Additional Chat UI States
   const [newMessage, setNewMessage] = useState("");
   const [isChatOptionsOpen, setIsChatOptionsOpen] = useState(false); 
   const [chatSearch, setChatSearch] = useState(""); 
@@ -189,14 +133,14 @@ export default function EmployerDashboard() {
   const [attachment, setAttachment] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   const [lightboxUrl, setLightboxUrl] = useState(null);
-  const [activeMenuId, setActiveMenuId] = useState(null);
+  const [activeMenuId, setActiveMenuId] = useState(null); 
+  const [menuPosition, setMenuPosition] = useState('top'); 
   const chatFileRef = useRef(null); 
   const bubbleFileRef = useRef(null);
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [adminUser, setAdminUser] = useState(null);
     
-  // --- EMPLOYER SPECIFIC STATES ---
   const [announcements, setAnnouncements] = useState([]);
   const [lastReadAnnouncementId, setLastReadAnnouncementId] = useState(localStorage.getItem("lastReadAnnounce")); 
   const [myPostedJobs, setMyPostedJobs] = useState([]); 
@@ -217,7 +161,6 @@ export default function EmployerDashboard() {
   const [isRatingApplicantModalOpen, setIsRatingApplicantModalOpen] = useState(false);
   const [selectedApplicantToRate, setSelectedApplicantToRate] = useState(null);
       
-  // -- DISCOVER TALENT STATES --
   const [discoverTalents, setDiscoverTalents] = useState([]);
   const [talentSearch, setTalentSearch] = useState("");
   const [talentSitioFilter, setTalentSitioFilter] = useState(""); 
@@ -226,29 +169,52 @@ export default function EmployerDashboard() {
   const [isSitioDropdownOpen, setIsSitioDropdownOpen] = useState(false); 
   const [selectedTalent, setSelectedTalent] = useState(null); 
 
-  // -- APPLICATIONS STATES --
   const [applicantSearch, setApplicantSearch] = useState("");
   const [selectedApplication, setSelectedApplication] = useState(null); 
   const [modalApplicant, setModalApplicant] = useState(null); 
   const [modalJob, setModalJob] = useState(null); 
   const [modalLoading, setModalLoading] = useState(false);
 
-  // -- NEW STATE FOR PROFILE/RESUME SWITCH --
-  const [modalSubTab, setModalSubTab] = useState("details"); // 'details' | 'resume'
+  const [applicantReviews, setApplicantReviews] = useState([]);
+  const [applicantAverageRating, setApplicantAverageRating] = useState(0);
+
+  const [modalSubTab, setModalSubTab] = useState("details"); 
   
-  // Reset modalSubTab when opening a modal
   useEffect(() => {
       if (selectedTalent || selectedApplication) setModalSubTab("details");
   }, [selectedTalent, selectedApplication]);
   
-  // --- JOB MODAL STATES ---
+  useEffect(() => {
+      const targetId = selectedTalent?.id || selectedApplication?.applicantId;
+      if (targetId) {
+          const fetchReviews = async () => {
+              try {
+                  const qReviews = query(collection(db, "reviews"), where("targetId", "==", targetId));
+                  const revSnap = await getDocs(qReviews);
+                  let revs = revSnap.docs.map(d => ({id: d.id, ...d.data()}));
+                  revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                  setApplicantReviews(revs);
+                  if(revs.length > 0) {
+                      const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
+                      setApplicantAverageRating((total / revs.length).toFixed(1));
+                  } else {
+                      setApplicantAverageRating(0);
+                  }
+              } catch(err) {}
+          };
+          fetchReviews();
+      } else {
+          setApplicantReviews([]);
+          setApplicantAverageRating(0);
+      }
+  }, [selectedTalent, selectedApplication]);
+
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false); 
   const [isJobCategoryDropdownOpen, setIsJobCategoryDropdownOpen] = useState(false); 
   const [jobForm, setJobForm] = useState({ title: "", sitio: "", salary: "", type: "Full-time", description: "", category: "", capacity: "" });
   
-  // --- PROFILE STATES ---
   const [profileImage, setProfileImage] = useState(null);
   const [imgScale, setImgScale] = useState(1);
   const [isEditingImage, setIsEditingImage] = useState(false);
@@ -269,11 +235,7 @@ export default function EmployerDashboard() {
   const isVerified = employerData.verificationStatus === 'verified';
   const effectiveActiveChatUser = (isBubbleVisible && isMobile) ? openBubbles.find(b => b.id === activeBubbleView) : activeChat;
   const isFullScreenPage = isMobile && ((activeTab === "Messages" && activeChat) || (activeTab === "Support" && isSupportOpen));
-  
-  const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
-  const bubbleFilteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(bubbleSearch.toLowerCase()); });
 
-  // --- HELPERS & HANDLERS ---
   const markConversationAsRead = async (otherUserId) => {
       if (!auth.currentUser || !otherUserId) return;
       const myId = auth.currentUser.uid;
@@ -298,11 +260,11 @@ export default function EmployerDashboard() {
   }, [activeTab]);
 
   useEffect(() => {
-    const isModalActive = selectedApplication !== null || selectedTalent !== null || isJobModalOpen || isEditingImage || lightboxUrl !== null || isBubbleExpanded;
+    const isModalActive = selectedApplication !== null || selectedTalent !== null || isJobModalOpen || isEditingImage || lightboxUrl !== null || isBubbleExpanded || confirmDialog.isOpen;
     if (isModalActive) document.body.style.overflow = "hidden"; 
     else document.body.style.overflow = "auto";    
     return () => { document.body.style.overflow = "auto"; };
-  }, [selectedApplication, selectedTalent, isJobModalOpen, isEditingImage, lightboxUrl, isBubbleExpanded]);
+  }, [selectedApplication, selectedTalent, isJobModalOpen, isEditingImage, lightboxUrl, isBubbleExpanded, confirmDialog.isOpen]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -332,6 +294,11 @@ export default function EmployerDashboard() {
   });
 
   useEffect(() => {
+    localStorage.setItem("theme", darkMode ? "dark" : "light");
+    document.documentElement.classList.toggle('dark', darkMode);
+  }, [darkMode]);
+
+  useEffect(() => {
       const fetchAdmin = async () => {
           try {
             let q = query(collection(db, "admins"), where("email", "==", ADMIN_EMAIL));
@@ -358,32 +325,22 @@ export default function EmployerDashboard() {
 
   useEffect(() => {
      if(activeTab === "Discover") {
-        const fetchTalents = async () => {
-            try {
-                const q = query(collection(db, "applicants"));
-                const querySnapshot = await getDocs(q);
-                const talents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                const validTalents = talents.filter(t => t.firstName || t.lastName);
-                setDiscoverTalents(validTalents);
-            } catch (err) {}
-        };
-        fetchTalents();
+        const q = query(collection(db, "applicants"));
+        const unsub = onSnapshot(q, (querySnapshot) => {
+            const talents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const validTalents = talents.filter(t => t.firstName || t.lastName);
+            setDiscoverTalents(validTalents);
+        });
+        return () => unsub();
      }
      if(activeTab === "Ratings") {
          const fetchReviews = () => {
-             // FIX: Query 'targetId' and remove 'orderBy' to avoid Index requirement
              const q = query(collection(db, "reviews"), where("targetId", "==", auth.currentUser.uid));
-             
              const unsub = onSnapshot(q, (snap) => {
                  let revs = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                 
-                 // FIX: Sort locally by createdAt descending
                  revs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                 
                  setReviews(revs);
-                 
                  if(revs.length > 0) {
-                     // Ensure rating is treated as a number for calculation
                      const total = revs.reduce((acc, curr) => acc + (parseFloat(curr.rating) || 0), 0);
                      setAverageRating((total / revs.length).toFixed(1));
                  } else { 
@@ -458,8 +415,36 @@ export default function EmployerDashboard() {
     return () => { unsubJobs(); unsubApps(); unsubAnnouncements(); };
   }, [auth.currentUser]);
 
+  const handleImmediateHire = (talent) => {
+      requestConfirm("Immediate Hire", `Hire ${talent.firstName}? They will automatically appear in your Applicants tab as Accepted.`, async () => {
+          setLoading(true);
+          try {
+              await addDoc(collection(db, "applications"), {
+                  jobId: myPostedJobs.length > 0 ? myPostedJobs[0].id : "direct_hire",
+                  jobTitle: myPostedJobs.length > 0 ? myPostedJobs[0].title : "Direct Hire",
+                  employerId: auth.currentUser.uid,
+                  employerName: `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer",
+                  employerLogo: profileImage || "",
+                  applicantId: talent.id,
+                  applicantName: `${talent.firstName} ${talent.lastName}`.trim(),
+                  applicantProfilePic: getAvatarUrl(talent) || talent.profilePic || "",
+                  status: 'accepted',
+                  appliedAt: serverTimestamp(),
+                  isViewed: true,
+                  isReadByApplicant: false,
+                  isRatedByEmployer: false
+              });
+              showToast(`${talent.firstName} has been successfully hired!`, "success");
+          } catch (err) {
+              showToast("Error processing hire: " + err.message, "error");
+          } finally {
+              setLoading(false);
+          }
+      }, false, "Confirm Hire");
+  };
+
   const handleStartChatFromExternal = (userObj) => {
-    if (!isVerified) return alert("Your account must be verified to send messages.");
+    if (!isVerified) return showToast("Your account must be verified to send messages.", "error"); 
     const pic = getAvatarUrl(userObj) || userObj.profilePic;
     openChat({ ...userObj, profilePic: pic });
     markConversationAsRead(userObj.id);
@@ -527,7 +512,7 @@ export default function EmployerDashboard() {
             setNewMessage(""); setAttachment(null); setReplyingTo(null); 
             if (chatFileRef.current) chatFileRef.current.value = ""; 
             if (bubbleFileRef.current) bubbleFileRef.current.value = ""; 
-        } catch (err) { alert("Failed to send file."); } finally { setIsUploading(false); }
+        } catch (err) { showToast("Failed to send file.", "error"); } finally { setIsUploading(false); }
     }
   };
 
@@ -538,7 +523,7 @@ export default function EmployerDashboard() {
       const botMsg = { sender: 'admin', text: `🤖 ${faq.answer}`, timestamp: new Date() };
       try {
           if (activeSupportTicket) {
-               if(activeSupportTicket.status === 'closed') { alert("This ticket is closed. Please start a new one."); return; }
+               if(activeSupportTicket.status === 'closed') { return showToast("This ticket is closed. Please start a new one.", "error"); }
                await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), { messages: arrayUnion(userMsg, botMsg), lastUpdated: serverTimestamp(), status: 'open' });
           } else {
               const ticketIdString = Math.floor(1000 + Math.random() * 9000).toString();
@@ -557,8 +542,7 @@ export default function EmployerDashboard() {
       const cooldown = 5 * 60 * 1000;
       if (!activeSupportTicket && (now - lastTicketCreatedAt < cooldown)) {
           const remaining = Math.ceil((cooldown - (now - lastTicketCreatedAt)) / 60000);
-          alert(`Please wait ${remaining} more minute(s) before opening a new support request.`);
-          return;
+          return showToast(`Please wait ${remaining} more minute(s) before opening a new support request.`, "error");
       }
       setIsSupportUploading(true);
       try {
@@ -569,13 +553,36 @@ export default function EmployerDashboard() {
              const uploadTask = await uploadBytes(storageRef, supportAttachment);
              imageUrl = await getDownloadURL(uploadTask.ref);
           }
-          const msgObj = { sender: 'user', text: ticketMessage, imageUrl: imageUrl || null, timestamp: new Date() };
+          
+          const userMsgObj = { sender: 'user', text: ticketMessage, imageUrl: imageUrl || null, timestamp: new Date() };
+          const messagesToSave = [userMsgObj];
+          const botReplyText = getBotAutoReply(ticketMessage, BOT_FAQ);
+          
+          if (botReplyText) {
+              messagesToSave.push({
+                  sender: 'admin', 
+                  text: botReplyText, 
+                  timestamp: new Date()
+              });
+          }
 
           if (activeSupportTicket) {
-              await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), { messages: arrayUnion(msgObj), lastUpdated: serverTimestamp(), status: 'open' });
+              await updateDoc(doc(db, "support_tickets", activeSupportTicket.id), { 
+                  messages: arrayUnion(...messagesToSave), 
+                  lastUpdated: serverTimestamp(), 
+                  status: 'open' 
+              });
           } else {
               const ticketIdString = Math.floor(1000 + Math.random() * 9000).toString();
-              const newTicketRef = await addDoc(collection(db, "support_tickets"), { ticketId: ticketIdString, user: displayName, userId: auth.currentUser.uid, type: 'Employer', status: 'open', lastUpdated: serverTimestamp(), messages: [msgObj] });
+              const newTicketRef = await addDoc(collection(db, "support_tickets"), { 
+                  ticketId: ticketIdString, 
+                  user: displayName, 
+                  userId: auth.currentUser.uid, 
+                  type: 'Employer', 
+                  status: 'open', 
+                  lastUpdated: serverTimestamp(), 
+                  messages: messagesToSave 
+              });
               setLastTicketCreatedAt(now);
               const newTicketSnap = await getDoc(newTicketRef);
               setActiveSupportTicket({ id: newTicketRef.id, ...newTicketSnap.data() });
@@ -585,20 +592,23 @@ export default function EmployerDashboard() {
   };
   
   const handleCloseSupportTicket = async (ticketId) => {
-      if(!confirm("Close this support request?")) return;
-      try {
-          await updateDoc(doc(db, "support_tickets", ticketId), { status: 'closed', lastUpdated: serverTimestamp() });
-          setActiveSupportTicket(null); setIsSupportOpen(false);
-      } catch (err) {}
+      requestConfirm("Close Ticket", "Are you sure you want to close this support request?", async () => {
+          try {
+              await updateDoc(doc(db, "support_tickets", ticketId), { status: 'closed', lastUpdated: serverTimestamp() });
+              setActiveSupportTicket(null); setIsSupportOpen(false);
+              showToast("Ticket closed successfully.", "success");
+          } catch (err) { showToast("Failed to close ticket.", "error"); }
+      }, false, "Close Ticket");
   };
 
   const handleDeleteTicket = async (ticketId) => {
-    if(confirm("Delete this conversation permanently?")) {
+    requestConfirm("Delete Ticket", "Delete this conversation permanently?", async () => {
         try {
             await deleteDoc(doc(db, "support_tickets", ticketId));
             if(activeSupportTicket?.id === ticketId) { setActiveSupportTicket(null); setIsSupportOpen(false); }
-        } catch(err) {}
-    }
+            showToast("Ticket deleted.", "success");
+        } catch(err) { showToast("Failed to delete ticket.", "error"); }
+    }, true, "Delete");
   };
 
   const handleSaveProfile = async () => {
@@ -627,15 +637,16 @@ export default function EmployerDashboard() {
         
         setIsEditingImage(false); 
         setIsEditingProfile(false); 
+        showToast("Profile successfully updated!", "success");
     } catch (err) { 
-        alert("Error saving profile: " + err.message); 
+        showToast("Error saving profile: " + err.message, "error"); 
     } finally { 
         setLoading(false); 
     }
   };
 
   const handleOpenJobModal = (job = null) => {
-    if (!isVerified) return alert("Your account is pending verification. You cannot post jobs yet.");
+    if (!isVerified) return showToast("Your account is pending verification. You cannot post jobs yet.", "error");
     if (job) {
       setEditingJobId(job.id);
       setJobForm({ title: job.title, sitio: job.sitio || "", salary: job.salary, type: job.type, description: job.description, category: job.category || "", capacity: job.capacity || "" });
@@ -647,13 +658,13 @@ export default function EmployerDashboard() {
   };
 
   const handleSaveJob = async () => {
-    if (!jobForm.title || !jobForm.salary) return alert("Title and Salary are required.");
-    if (!jobForm.category) return alert("Category is required.");
+    if (!jobForm.title || !jobForm.salary) return showToast("Title and Salary are required.", "error");
+    if (!jobForm.category) return showToast("Category is required.", "error");
     setLoading(true);
     try {
       const jobData = {
         ...jobForm, 
-        capacity: Number(jobForm.capacity) || 0, // 0 means unlimited
+        capacity: Number(jobForm.capacity) || 0, 
         employerId: auth.currentUser.uid, 
         employerName: `${employerData.firstName} ${employerData.lastName}`, 
         employerLogo: profileImage || "", 
@@ -663,18 +674,22 @@ export default function EmployerDashboard() {
       if (editingJobId) {
           await updateDoc(doc(db, "jobs", editingJobId), jobData);
       } else {
-          jobData.applicationCount = 0; // Initialize counter for applicants
+          jobData.applicationCount = 0; 
           await addDoc(collection(db, "jobs"), { ...jobData, createdAt: serverTimestamp() });
       }
       setIsJobModalOpen(false); setActiveTab("Listings");
-    } catch (err) { alert("Error saving job: " + err.message); } 
+      showToast(editingJobId ? "Job successfully updated." : "Job successfully posted!", "success");
+    } catch (err) { showToast("Error saving job: " + err.message, "error"); } 
     finally { setLoading(false); }
   };
 
   const handleDeleteJob = async (jobId) => {
-    if (window.confirm("Are you sure? This will hide the job from applicants.")) {
-      try { await deleteDoc(doc(db, "jobs", jobId)); } catch (err) { alert("Error deleting job: " + err.message); }
-    }
+    requestConfirm("Delete Listing", "Are you sure? This will permanently hide the job from applicants.", async () => {
+        try { 
+            await deleteDoc(doc(db, "jobs", jobId)); 
+            showToast("Job deleted.", "success");
+        } catch (err) { showToast("Error deleting job: " + err.message, "error"); }
+    }, true, "Delete");
   };
 
   const handleViewApplication = async (app) => {
@@ -686,39 +701,42 @@ export default function EmployerDashboard() {
             if (userSnap.exists()) { setModalApplicant(userSnap.data()); }
         }
         if (app.jobId) { const jobSnap = await getDoc(doc(db, "jobs", app.jobId)); if (jobSnap.exists()) setModalJob(jobSnap.data()); }
-    } catch (err) { alert("Could not load details."); } finally { setModalLoading(false); }
+    } catch (err) { showToast("Could not load details.", "error"); } finally { setModalLoading(false); }
   };
 
   const handleUpdateApplicationStatus = async (appId, newStatus) => {
-    if (!window.confirm(`Mark this applicant as ${newStatus}?`)) return;
-    setLoading(true);
-    try {
-      await updateDoc(doc(db, "applications", appId), { status: newStatus, isReadByApplicant: false });
-      
-      // Free up a capacity slot if the applicant is rejected
-      if (newStatus === 'rejected') {
-          const appDoc = await getDoc(doc(db, "applications", appId));
-          if (appDoc.exists() && appDoc.data().jobId) {
-              await updateDoc(doc(db, "jobs", appDoc.data().jobId), { applicationCount: increment(-1) });
+    const isReject = newStatus === 'rejected';
+    requestConfirm(`${isReject ? 'Reject' : 'Accept'} Application`, `Are you sure you want to mark this applicant as ${newStatus}?`, async () => {
+        setLoading(true);
+        try {
+          await updateDoc(doc(db, "applications", appId), { status: newStatus, isReadByApplicant: false });
+          
+          if (newStatus === 'rejected') {
+              const appDoc = await getDoc(doc(db, "applications", appId));
+              if (appDoc.exists() && appDoc.data().jobId) {
+                  await updateDoc(doc(db, "jobs", appDoc.data().jobId), { applicationCount: increment(-1) });
+              }
           }
-      }
 
-      if (selectedApplication?.id === appId) setSelectedApplication(prev => ({ ...prev, status: newStatus }));
-    } catch (err) { alert("Error updating status: " + err.message); } finally { setLoading(false); }
+          if (selectedApplication?.id === appId) setSelectedApplication(prev => ({ ...prev, status: newStatus }));
+          showToast(`Applicant marked as ${newStatus}`, "success");
+        } catch (err) { showToast("Error updating status: " + err.message, "error"); } finally { setLoading(false); }
+    }, isReject, isReject ? 'Reject' : 'Accept');
   };
 
   const handleDeleteApplication = async (appId) => {
-    if (!window.confirm("Delete this application?")) return;
-    setLoading(true);
-    try { 
-        // Free up a capacity slot if deleted directly without being withdrawn/rejected first
-        const appDoc = await getDoc(doc(db, "applications", appId));
-        if (appDoc.exists() && appDoc.data().jobId && appDoc.data().status !== 'rejected' && appDoc.data().status !== 'withdrawn') {
-            await updateDoc(doc(db, "jobs", appDoc.data().jobId), { applicationCount: increment(-1) });
-        }
-        await deleteDoc(doc(db, "applications", appId)); 
-        if (selectedApplication?.id === appId) setSelectedApplication(null); 
-    } catch (err) { alert("Error deleting: " + err.message); } finally { setLoading(false); }
+    requestConfirm("Delete Application", "Are you sure you want to permanently delete this application record?", async () => {
+        setLoading(true);
+        try { 
+            const appDoc = await getDoc(doc(db, "applications", appId));
+            if (appDoc.exists() && appDoc.data().jobId && appDoc.data().status !== 'rejected' && appDoc.data().status !== 'withdrawn') {
+                await updateDoc(doc(db, "jobs", appDoc.data().jobId), { applicationCount: increment(-1) });
+            }
+            await deleteDoc(doc(db, "applications", appId)); 
+            if (selectedApplication?.id === appId) setSelectedApplication(null); 
+            showToast("Application deleted.", "success");
+        } catch (err) { showToast("Error deleting: " + err.message, "error"); } finally { setLoading(false); }
+    }, true, "Delete");
   };
   
   const handleSubmitApplicantRating = async (ratingData) => {
@@ -731,8 +749,8 @@ export default function EmployerDashboard() {
             rating: ratingData.rating, comment: ratingData.comment, type: 'applicant_review', createdAt: serverTimestamp()
         });
         await updateDoc(doc(db, "applications", selectedApplicantToRate.id), { isRatedByEmployer: true });
-        alert("Applicant rated successfully!"); setIsRatingApplicantModalOpen(false);
-    } catch (error) { alert("Failed to submit rating."); } finally { setLoading(false); }
+        showToast("Applicant rated successfully!", "success"); setIsRatingApplicantModalOpen(false);
+    } catch (error) { showToast("Failed to submit rating.", "error"); } finally { setLoading(false); }
   };
   
   const handleViewAnnouncement = (annId) => {
@@ -754,19 +772,74 @@ export default function EmployerDashboard() {
   const latestAnnouncement = announcements.length > 0 ? announcements[0] : null;
   const hasNewAnnouncement = latestAnnouncement && latestAnnouncement.id !== lastReadAnnouncementId;
   const totalNotifications = newAppCount + (hasNewAnnouncement ? 1 : 0);
+  
   const unreadMsgCount = conversations.reduce((acc, curr) => {
-    const otherId = curr.participants.find(p => p !== auth.currentUser?.uid);
-    if (adminUser && otherId === adminUser.id) return acc;
+    const otherId = curr.participants?.find(p => p !== auth.currentUser?.uid);
+    if (!otherId || (adminUser && otherId === adminUser.id)) return acc;
     return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0);
   }, 0);
 
   const getJobStyle = (type) => { const found = JOB_TYPES.find(j => j.id === type); if (found) return found; return { icon: <BoltIcon className="w-6 h-6"/>, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' }; };
+  
+  const getLocalCatIcon = (id) => {
+      const map = { 'EDUCATION': AcademicCapIcon, 'AGRICULTURE': SunIcon, 'AUTOMOTIVE': Cog8ToothIcon, 'CARPENTRY': WrenchScrewdriverIcon, 'HOUSEHOLD': HomeIcon, 'CUSTOMER_SERVICE': UserGroupIcon };
+      return map[id] || TagIcon;
+  };
+
+  const getModalTheme = (categoryId, isDark) => {
+      const darkColors = {
+          'EDUCATION': { text: 'text-blue-400', cardBg: 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border border-blue-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-blue-500/10', tabActive: 'bg-blue-500 text-white shadow-md shadow-blue-500/20', tabIdle: 'text-slate-400 hover:text-blue-300 hover:bg-blue-500/10', solid: 'bg-blue-500 text-white hover:bg-blue-600', badge: 'bg-blue-500/10 border border-blue-500/30 text-blue-400', saveActive: 'bg-blue-500 border-blue-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-blue-500/10 hover:text-blue-400', appliedBtn: 'bg-blue-500/10 text-blue-400 border-blue-500/30 opacity-60' },
+          'AGRICULTURE': { text: 'text-green-400', cardBg: 'bg-gradient-to-br from-green-500/20 to-green-500/5 border border-green-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-green-500/10', tabActive: 'bg-green-500 text-white shadow-md shadow-green-500/20', tabIdle: 'text-slate-400 hover:text-green-300 hover:bg-green-500/10', solid: 'bg-green-500 text-white hover:bg-green-600', badge: 'bg-green-500/10 border border-green-500/30 text-green-400', saveActive: 'bg-green-500 border-green-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-green-500/10 hover:text-green-400', appliedBtn: 'bg-green-500/10 text-green-400 border-green-500/30 opacity-60' },
+          'AUTOMOTIVE': { text: 'text-slate-300', cardBg: 'bg-gradient-to-br from-slate-500/20 to-slate-500/5 border border-slate-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-slate-500/10', tabActive: 'bg-slate-500 text-white shadow-md shadow-slate-500/20', tabIdle: 'text-slate-400 hover:text-slate-300 hover:bg-slate-500/10', solid: 'bg-slate-500 text-white hover:bg-slate-600', badge: 'bg-slate-500/10 border border-slate-500/30 text-slate-300', saveActive: 'bg-slate-500 border-slate-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-slate-500/10 hover:text-slate-300', appliedBtn: 'bg-slate-500/10 text-slate-300 border-slate-500/30 opacity-60' },
+          'CARPENTRY': { text: 'text-yellow-400', cardBg: 'bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border border-yellow-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-yellow-500/10', tabActive: 'bg-yellow-500 text-slate-900 shadow-md shadow-yellow-500/20', tabIdle: 'text-slate-400 hover:text-yellow-300 hover:bg-yellow-500/10', solid: 'bg-yellow-500 text-slate-900 hover:bg-yellow-600', badge: 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400', saveActive: 'bg-yellow-500 border-yellow-500 text-slate-900', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-yellow-500/10 hover:text-yellow-400', appliedBtn: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 opacity-60' },
+          'HOUSEHOLD': { text: 'text-pink-400', cardBg: 'bg-gradient-to-br from-pink-500/20 to-pink-500/5 border border-pink-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-pink-500/10', tabActive: 'bg-pink-500 text-white shadow-md shadow-pink-500/20', tabIdle: 'text-slate-400 hover:text-pink-300 hover:bg-pink-500/10', solid: 'bg-pink-500 text-white hover:bg-pink-600', badge: 'bg-pink-500/10 border border-pink-500/30 text-pink-400', saveActive: 'bg-pink-500 border-pink-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-pink-500/10 hover:text-pink-400', appliedBtn: 'bg-pink-500/10 text-pink-400 border-pink-500/30 opacity-60' },
+          'CUSTOMER_SERVICE': { text: 'text-purple-400', cardBg: 'bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/20 backdrop-blur-xl', innerPanel: 'bg-slate-800/60 border border-purple-500/10', tabActive: 'bg-purple-500 text-white shadow-md shadow-purple-500/20', tabIdle: 'text-slate-400 hover:text-purple-300 hover:bg-purple-500/10', solid: 'bg-purple-500 text-white hover:bg-purple-600', badge: 'bg-purple-500/10 border border-purple-500/30 text-purple-400', saveActive: 'bg-purple-500 border-purple-500 text-white', saveIdle: 'bg-slate-800 border-transparent text-slate-400 hover:bg-purple-500/10 hover:text-purple-400', appliedBtn: 'bg-purple-500/10 text-purple-400 border-purple-500/30 opacity-60' },
+      };
+      const fallbackDark = darkColors['AUTOMOTIVE'];
+
+      if (isDark) {
+          const cat = darkColors[categoryId] || fallbackDark;
+          return {
+              modalBg: cat.cardBg,
+              textPrimary: 'text-white',
+              textSecondary: 'text-slate-400',
+              innerPanel: cat.innerPanel,
+              tabContainer: 'bg-slate-900/50 p-1.5 rounded-2xl border border-white/10',
+              tabActive: cat.tabActive,
+              tabIdle: `relative overflow-hidden hover:-translate-y-0.5 hover:shadow-sm ${cat.tabIdle}`,
+              solid: cat.solid,
+              badge: cat.badge,
+              saveActive: cat.saveActive,
+              saveIdle: cat.saveIdle,
+              appliedBtn: cat.appliedBtn,
+              closeBtn: 'bg-white/5 hover:bg-red-500/20 text-white hover:text-red-400 border border-white/10',
+              iconColor: cat.text,
+              divider: 'border-white/10'
+          };
+      } else {
+          return {
+              modalBg: 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 shadow-[0_10px_20px_-5px_rgba(37,99,235,0.4)] ring-1 ring-inset ring-white/40',
+              textPrimary: 'text-white drop-shadow-sm',
+              textSecondary: 'text-blue-100',
+              innerPanel: 'bg-white/10 border border-white/20 shadow-inner',
+              tabContainer: 'bg-black/20 p-1.5 rounded-2xl shadow-inner border border-white/10',
+              tabActive: 'bg-white text-blue-700 shadow-md',
+              tabIdle: 'text-blue-100 hover:text-white hover:bg-white/10 relative overflow-hidden hover:-translate-y-0.5 hover:shadow-lg',
+              solid: 'bg-white text-blue-700 hover:bg-blue-50 shadow-lg active:scale-95',
+              badge: 'bg-black/20 border border-white/20 text-white backdrop-blur-md',
+              saveActive: 'bg-white border-white text-blue-600 shadow-md',
+              saveIdle: 'bg-transparent border-white/30 text-white/70 hover:bg-white/20 hover:text-white',
+              appliedBtn: 'bg-white/20 text-white border border-white/30 opacity-80',
+              closeBtn: 'bg-black/20 hover:bg-red-500/80 text-white border border-white/10 shadow-sm',
+              iconColor: 'text-white',
+              divider: 'border-white/20'
+          };
+      }
+  };
 
 return (
-    <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
+    <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200 text-blue-900'}`}>
         
-      
-
       <style>{`
         .hide-scrollbar::-webkit-scrollbar { display: none; } 
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -808,9 +881,12 @@ return (
         </div>, document.body
       )}
 
-      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/80 border-slate-200'} ${(isFullScreenPage) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified && !isFullScreenPage ? 'top-10' : 'top-0'}`}>
+      {/* --- HEADER MATCHING APPLICANT DASHBOARD --- */}
+      <header className={`fixed top-0 left-0 right-0 z-40 h-20 px-6 flex items-center justify-between transition-all duration-300 backdrop-blur-xl border-b ${darkMode ? 'bg-slate-900/80 border-white/5' : 'bg-white/50 border-blue-200/50'} ${(isFullScreenPage) ? '-translate-y-full' : 'translate-y-0'} ${!isVerified && !isFullScreenPage ? 'top-10' : 'top-0'}`}>
             <div className="flex items-center gap-3">
-                 <h1 className={`font-black text-lg tracking-tight leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>LIVELI<span className="text-blue-500">MATCH</span></h1>
+                 <h1 className={`font-black text-xl sm:text-2xl tracking-tighter shrink-0 cursor-pointer ${darkMode ? 'text-white' : 'text-blue-900'}`}>
+                    LIVELI<span className={darkMode ? 'text-blue-400' : 'text-blue-600'}>MATCH</span>
+                 </h1>
             </div>
 
             <div className="hidden lg:flex items-center gap-24">
@@ -826,13 +902,13 @@ return (
 
             <div className="flex items-center gap-4">
                 <div className="relative">
-                    <button onClick={() => isVerified && setIsNotifOpen(!isNotifOpen)} className={`relative p-2 rounded-full transition-all active:scale-95 ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-slate-100 text-slate-600'} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+                    <button onClick={() => isVerified && setIsNotifOpen(!isNotifOpen)} className={`relative p-2 rounded-full transition-all active:scale-95 ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/40 text-blue-900/60'} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                         <BellIcon className="w-6 h-6" />
                         {isVerified && totalNotifications > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>}
                     </button>
                     {isNotifOpen && isVerified && (
-                        <div className={`fixed top-20 left-1/2 -translate-x-1/2 w-[90%] md:absolute md:translate-x-0 md:top-12 md:right-0 md:w-80 md:left-auto rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 z-[100] ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white border-slate-200'}`}>
-                             <div className="p-3 border-b border-white/5 font-black text-xs uppercase tracking-widest opacity-50">Notifications</div>
+                        <div className={`fixed top-24 left-1/2 -translate-x-1/2 w-[90vw] md:absolute md:translate-x-0 md:top-12 md:right-0 md:w-80 md:left-auto rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 z-[100] ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/90 border-white/60 backdrop-blur-xl'}`}>
+                             <div className={`p-3 border-b font-black text-xs uppercase tracking-widest opacity-50 ${darkMode ? 'border-white/10' : 'border-slate-200 text-slate-500'}`}>Notifications</div>
                              <div className="p-2 space-y-1">
                                  {latestAnnouncement && (
                                      <button onClick={() => handleViewAnnouncement(latestAnnouncement.id)} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${hasNewAnnouncement ? 'text-pink-500 bg-pink-500/10' : 'opacity-50'}`}>
@@ -855,130 +931,65 @@ return (
                     </div>
                 </div>
                   
-                <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl transition-colors ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-900 hover:bg-slate-100'}`}><Bars3BottomRightIcon className="w-7 h-7" /></button>
+                <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-xl transition-colors ${darkMode ? 'text-white hover:bg-white/10' : 'text-slate-600 hover:bg-slate-100'}`}><Bars3BottomRightIcon className="w-7 h-7" /></button>
             </div>
       </header>
 
-<aside
-  className={`fixed top-0 right-0 h-full w-64 z-[100] rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel(darkMode)} ${
-    isSidebarOpen ? "translate-x-0 shadow-2xl" : "translate-x-full"
-  }`}
->
-  <div
-    className="h-24 flex items-center justify-center relative mt-8 cursor-pointer"
-    onClick={() => {
-      setActiveTab("Profile");
-      setIsSidebarOpen(false);
-    }}
-  >
-    <div className="flex items-center gap-3 p-2 pr-4 rounded-2xl hover:bg-white/10 group">
-      <div className="w-12 h-12 rounded-2xl overflow-hidden">
-        {profileImage ? (
-          <img src={profileImage} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">
-            E
-          </div>
-        )}
-      </div>
+      <aside className={`fixed top-0 right-0 h-full w-64 z-[100] rounded-l-3xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${glassPanel(darkMode)} ${isSidebarOpen ? "translate-x-0 shadow-2xl" : "translate-x-full"}`}>
+        <div className="h-24 flex items-center justify-center relative mt-8 cursor-pointer" onClick={() => { setActiveTab("Profile"); setIsSidebarOpen(false); }}>
+            <div className={`flex items-center gap-3 p-2 pr-4 rounded-2xl transition-colors group ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-50'}`}>
+            <div className="w-12 h-12 rounded-2xl overflow-hidden">
+                {profileImage ? ( <img src={profileImage} className="w-full h-full object-cover" /> ) : ( <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">E</div> )}
+            </div>
 
-      <div>
-        <h1 className="font-black text-sm tracking-tight">{displayName}</h1>
-        <p className="text-[10px] opacity-60 font-bold uppercase group-hover:text-blue-500">
-          View Profile
-        </p>
-      </div>
-    </div>
+            <div>
+                <h1 className={`font-black text-sm tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{displayName}</h1>
+                <p className={`text-[10px] opacity-60 font-bold uppercase ${darkMode ? 'group-hover:text-blue-400' : 'group-hover:text-blue-600'}`}>View Profile</p>
+            </div>
+            </div>
 
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setIsSidebarOpen(false);
-      }}
-      className="absolute top-0 right-4 p-2 opacity-50 hover:opacity-100"
-    >
-      <XMarkIcon className="w-6 h-6" />
-    </button>
-  </div>
+            <button onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }} className={`absolute top-0 right-4 p-2 opacity-50 hover:opacity-100 ${darkMode ? 'text-white' : 'text-slate-600'}`}>
+                <XMarkIcon className="w-6 h-6" />
+            </button>
+        </div>
 
-  <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
-    <button
-      onClick={() => {
-        isVerified && setActiveTab("Ratings");
-        setIsSidebarOpen(false);
-      }}
-      className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${
-        activeTab === "Ratings"
-          ? "text-blue-500"
-          : "text-slate-500 hover:text-blue-600"
-      }`}
-    >
-      <StarIconOutline className="w-6 h-6" />
-      <span className="font-bold text-xs uppercase tracking-widest">Ratings</span>
-    </button>
+        <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
+            <button onClick={() => { isVerified && setActiveTab("Ratings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Ratings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
+            <StarIconOutline className="w-6 h-6" />
+            <span className="font-bold text-xs uppercase tracking-widest">Ratings</span>
+            </button>
 
-    <button
-      onClick={() => {
-        setActiveTab("Announcements");
-        setIsSidebarOpen(false);
-      }}
-      className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${
-        activeTab === "Announcements"
-          ? "text-blue-500"
-          : "text-slate-500 hover:text-blue-600"
-      }`}
-    >
-      <MegaphoneIcon className="w-6 h-6" />
-      <span className="font-bold text-xs uppercase tracking-widest">
-        Announcements
-      </span>
-    </button>
+            <button onClick={() => { setActiveTab("Announcements"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Announcements' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
+            <MegaphoneIcon className="w-6 h-6" />
+            <span className="font-bold text-xs uppercase tracking-widest">Announcements</span>
+            </button>
 
-    <button
-      onClick={() => {
-        setActiveTab("Support");
-        setIsSidebarOpen(false);
-      }}
-      className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${
-        activeTab === "Support"
-          ? "text-blue-500"
-          : "text-slate-500 hover:text-blue-600"
-      }`}
-    >
-      <QuestionMarkCircleIcon className="w-6 h-6" />
-      <span className="font-bold text-xs uppercase tracking-widest">Support</span>
-    </button>
-  </nav>
+            <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
+            <QuestionMarkCircleIcon className="w-6 h-6" />
+            <span className="font-bold text-xs uppercase tracking-widest">Support</span>
+            </button>
+        </nav>
 
-  <div className="p-4 space-y-3">
-    <button
-      onClick={() => setDarkMode(!darkMode)}
-      className="w-full p-3 rounded-2xl flex items-center gap-3 bg-white/5 hover:bg-white/10"
-    >
-      {darkMode ? (
-        <SunIcon className="w-6 h-6 text-amber-400" />
-      ) : (
-        <MoonIcon className="w-6 h-6 text-slate-600" />
-      )}
-      <span className="text-xs font-bold">Switch Theme</span>
-    </button>
+        <div className="p-4 space-y-3">
+            <button onClick={() => setDarkMode(!darkMode)} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100 text-slate-700'}`}>
+            {darkMode ? <SunIcon className="w-6 h-6 text-amber-400" /> : <MoonIcon className="w-6 h-6 text-slate-600" />}
+            <span className="text-xs font-bold">Switch Theme</span>
+            </button>
 
-    <button
-      onClick={handleLogout}
-      className="w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 hover:bg-red-500/10"
-    >
-      <ArrowLeftOnRectangleIcon className="w-6 h-6" />
-      <span className="text-xs font-bold">Logout</span>
-    </button>
-  </div>
-</aside>
+            <button onClick={handleLogout} className={`w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 transition-colors ${darkMode ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}>
+            <ArrowLeftOnRectangleIcon className="w-6 h-6" />
+            <span className="text-xs font-bold">Logout</span>
+            </button>
+        </div>
+      </aside>
 
       <main className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${(isFullScreenPage) ? 'p-0 pt-0' : 'p-4 lg:p-8 pt-24 lg:pt-28'}`}>
         
+        {/* --- SUBHEADER MATCHING APPLICANT DASHBOARD --- */}
         {!(isFullScreenPage) && (
-        <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 md:p-5 rounded-2xl transition-all duration-300 relative overflow-hidden ${darkMode ? 'bg-slate-900 border border-white/10 shadow-sm' : 'bg-white border border-slate-200 shadow-sm'}`}>
+        <header className={`mb-6 lg:mb-8 flex items-center justify-between p-4 md:p-5 rounded-[2rem] transition-all duration-300 relative overflow-hidden ${darkMode ? 'bg-slate-900 border border-white/10 shadow-sm' : 'bg-white/60 border border-white/60 shadow-xl backdrop-blur-xl'}`}>
             <div className="flex items-center gap-4 relative z-10">
-                <div className={`p-2 rounded-xl hidden md:block ${darkMode ? 'bg-blue-400/10 text-blue-400' : 'bg-blue-600/10 text-blue-600'}`}>
+                <div className={`p-3 rounded-2xl hidden md:flex items-center justify-center shadow-sm ${darkMode ? 'bg-blue-400/10 text-blue-400 border border-blue-400/20' : 'bg-white border border-slate-200 text-blue-600'}`}>
                     {activeTab === "Discover" && <SparklesIcon className="w-6 h-6"/>}
                     {activeTab === "Listings" && <BriefcaseIcon className="w-6 h-6"/>}
                     {activeTab === "Applicants" && <UsersIcon className="w-6 h-6"/>}
@@ -989,8 +1000,8 @@ return (
                     {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6"/>}
                 </div>
                 <div>
-                    <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>{activeTab === "Profile" ? "Profile" : activeTab === "Support" ? "Help & Support" : activeTab}</h2>
-                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">Employer Workspace</p>
+                    <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{activeTab === "Profile" ? "Profile" : activeTab === "Support" ? "Help & Support" : activeTab}</h2>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>Employer Workspace</p>
                 </div>
             </div>
         </header>
@@ -1075,6 +1086,7 @@ return (
                 handleViewAnnouncement={handleViewAnnouncement}
                 setActiveTab={setActiveTab}
                 getAvatarUrl={getAvatarUrl}
+                onImmediateHire={handleImmediateHire} 
             />
         )}
 
@@ -1124,7 +1136,7 @@ return (
                 myProfileImage={profileImage || employerData?.profilePic}
                 activeChat={activeChat}
                 togglePinMessage={togglePinMessage}
-                chatStatus={activeChat ? formatLastSeen(conversations.find(c => c.chatId.includes(activeChat.id))?.lastTimestamp) : null}
+                chatStatus={activeChat ? formatLastSeen(conversations.find(c => c.chatId?.includes(activeChat.id))?.lastTimestamp) : null}
                 conversations={conversations}
                 openChat={openChat}
                 closeChat={closeChat}
@@ -1162,18 +1174,7 @@ return (
                 setIsDesktopInboxVisible={setIsDesktopInboxVisible}
                 chatSearch={chatSearch}
                 setChatSearch={setChatSearch}
-                newMessage={newMessage}
-                setNewMessage={setNewMessage}
-                attachment={attachment}
-                setAttachment={setAttachment}
-                isUploading={isUploading}
-                replyingTo={replyingTo}
-                setReplyingTo={setReplyingTo}
-                chatFileRef={chatFileRef}
-                bubbleFileRef={bubbleFileRef}
                 scrollRef={scrollRef}
-                handleSendMessageWrapper={handleSendMessageWrapper}
-                handleFileSelect={handleFileSelect}
                 formatTime={formatTime}
                 getAvatarUrl={getAvatarUrl}
                 isChatOptionsOpen={isChatOptionsOpen}
@@ -1185,14 +1186,14 @@ return (
       </main>
 
       {/* MOBILE BOTTOM NAV */}
-      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${(isFullScreenPage) ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/70 border-white/10' : 'bg-white/70 border-white/20'}`}>
-        <button onClick={() => setActiveTab("Discover")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Discover" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}><SparklesIcon className="w-6 h-6" /></button>
-        <button onClick={() => setActiveTab("Listings")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Listings" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}><BriefcaseIcon className="w-6 h-6" /></button>
-       <button onClick={() => setActiveTab("Applicants")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Applicants" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
-            <div className="relative"><UsersIcon className="w-6 h-6" />{newAppCount > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>}</div>
+      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${(isFullScreenPage) ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/80 border-white/10' : 'bg-white/60 border-white/60'}`}>
+        <button onClick={() => setActiveTab("Discover")}><SparklesIcon className={`w-6 h-6 ${activeTab === 'Discover' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} /></button>
+        <button onClick={() => setActiveTab("Listings")}><BriefcaseIcon className={`w-6 h-6 ${activeTab === 'Listings' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} /></button>
+       <button onClick={() => setActiveTab("Applicants")}>
+            <div className="relative"><UsersIcon className={`w-6 h-6 ${activeTab === 'Applicants' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />{newAppCount > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>}</div>
         </button>
-        <button onClick={() => setActiveTab("Messages")} className={`relative p-2 transition-all duration-300 ease-out overflow-hidden ${activeTab === "Messages" ? 'scale-125 text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
-            <div className="relative"><ChatBubbleLeftRightIcon className="w-6 h-6" />{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1 rounded-full min-w-[16px] text-center">{unreadMsgCount}</span>}</div>
+        <button onClick={() => setActiveTab("Messages")}>
+            <div className="relative"><ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />{unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] font-bold px-1 rounded-full min-w-[16px] text-center border-none">{unreadMsgCount}</span>}</div>
         </button>
       </nav>
 
@@ -1204,8 +1205,27 @@ return (
         darkMode={darkMode} 
       />
 
+      {/* =========================================================
+          GLOBAL CONFIRMATION MODAL
+          ========================================================= */}
+      {confirmDialog.isOpen && (
+          <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={closeConfirm}>
+              <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm p-6 md:p-8 rounded-[2.5rem] shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center text-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/60 text-slate-900'}`}>
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${confirmDialog.isDestructive ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                      {confirmDialog.isDestructive ? <TrashIcon className="w-8 h-8"/> : <CheckCircleIcon className="w-8 h-8"/>}
+                  </div>
+                  <h3 className="text-xl font-black mb-2 tracking-tight">{confirmDialog.title}</h3>
+                  <p className={`text-sm font-medium mb-8 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{confirmDialog.message}</p>
+                  <div className="flex gap-3 w-full">
+                      <button onClick={closeConfirm} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Cancel</button>
+                      <button onClick={() => { confirmDialog.onConfirm(); closeConfirm(); }} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg text-white ${confirmDialog.isDestructive ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'}`}>{confirmDialog.confirmText}</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
      {/* =========================================================
-          JOB CREATION / EDITING MODAL (Refined Stats-Card Theme)
+          JOB CREATION / EDITING MODAL 
           ========================================================= */}
       {isJobModalOpen && (
           <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in" onClick={() => setIsJobModalOpen(false)}>
@@ -1216,12 +1236,10 @@ return (
                         ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border-white/10 text-white' 
                         : 'bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200 border-white/60 ring-1 ring-inset ring-white/40 text-blue-900 shadow-[0_20px_50px_-10px_rgba(37,99,235,0.2)]'}`}
               >
-                  {/* Decorative Icon Background */}
                   <div className={`absolute -right-10 -bottom-10 opacity-[0.08] pointer-events-none rotate-12 transition-transform duration-500 ${darkMode ? 'text-white' : 'text-blue-600'}`}>
                       <BriefcaseIcon className="w-64 h-64" />
                   </div>
 
-                  {/* Header */}
                   <div className="flex items-center justify-between mb-8 relative z-10">
                       <div className="flex items-center gap-4">
                           <div className={`p-3 rounded-2xl backdrop-blur-md border shadow-sm ${darkMode ? 'bg-blue-500/20 border-blue-500/30 text-white' : 'bg-white/60 border-white text-blue-600 shadow-inner'}`}>
@@ -1240,7 +1258,6 @@ return (
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10">
-                      {/* 1. Job Title */}
                       <div className="md:col-span-2">
                           <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Job Title <span className="text-red-500">*</span></label>
                           <input 
@@ -1253,7 +1270,6 @@ return (
                           />
                       </div>
                       
-                      {/* 2A. Location Dropdown */}
                       <div className="relative">
                           <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Location (Sitio) <span className="text-red-500">*</span></label>
                           <button 
@@ -1282,7 +1298,6 @@ return (
                           )}
                       </div>
 
-                      {/* 2B. Category Dropdown */}
                       <div className="relative">
                           <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Category <span className="text-red-500">*</span></label>
                           <button 
@@ -1311,7 +1326,6 @@ return (
                           )}
                       </div>
 
-                      {/* 3A. Salary */}
                       <div>
                           <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Salary (₱) <span className="text-red-500">*</span></label>
                           <input 
@@ -1324,7 +1338,6 @@ return (
                           />
                       </div>
 
-                      {/* 3B. Application Capacity */}
                       <div>
                           <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Capacity</label>
                           <input 
@@ -1338,7 +1351,6 @@ return (
                           />
                       </div>
 
-                      {/* 4. Job Type Icons Picker */}
                       <div className="md:col-span-2 mt-2">
                           <label className={`block text-[10px] font-black uppercase tracking-widest mb-3 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Select Job Type <span className="text-red-500">*</span></label>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1363,7 +1375,6 @@ return (
                           </div>
                       </div>
 
-                      {/* 5. Description */}
                       <div className="md:col-span-2 mt-2">
                           <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Description</label>
                           <textarea 
@@ -1376,7 +1387,6 @@ return (
                           ></textarea>
                       </div>
 
-                      {/* Action Button */}
                       <div className="md:col-span-2 pt-4">
                           <button 
                               onClick={handleSaveJob} 
@@ -1400,103 +1410,59 @@ return (
           CANDIDATE DETAILS MODAL (Discover Tab)
           ========================================================= */}
       {selectedTalent && (() => {
-          const getModalTheme = (categoryId, isDark) => {
-              const darkColors = {
-                  'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500', saveActive: 'bg-blue-400 border-blue-400 text-slate-900', saveIdle: 'hover:bg-blue-400/10 hover:text-blue-400 hover:border-blue-400/50' },
-                  'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500', saveActive: 'bg-green-400 border-green-400 text-slate-900', saveIdle: 'hover:bg-green-400/10 hover:text-green-400 hover:border-green-400/50' },
-                  'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', saveActive: 'bg-slate-400 border-slate-400 text-slate-900', saveIdle: 'hover:bg-slate-400/10 hover:text-slate-400 hover:border-slate-400/50' },
-                  'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', btn: 'bg-yellow-400 text-slate-900 hover:bg-yellow-500', saveActive: 'bg-yellow-400 border-yellow-400 text-slate-900', saveIdle: 'hover:bg-yellow-400/10 hover:text-yellow-400 hover:border-yellow-400/50' },
-                  'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', btn: 'bg-pink-400 text-slate-900 hover:bg-pink-500', saveActive: 'bg-pink-400 border-pink-400 text-slate-900', saveIdle: 'hover:bg-pink-400/10 hover:text-pink-400 hover:border-pink-400/50' },
-                  'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', btn: 'bg-purple-400 text-slate-900 hover:bg-purple-500', saveActive: 'bg-purple-400 border-purple-400 text-slate-900', saveIdle: 'hover:bg-purple-400/10 hover:text-purple-400 hover:border-purple-400/50' },
-              };
-              const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500', saveActive: 'bg-slate-400 border-slate-400 text-slate-900', saveIdle: 'hover:bg-slate-400/10 hover:text-slate-400 hover:border-slate-400/50' };
-        
-              if (isDark) {
-                  const cat = darkColors[categoryId] || fallbackDark;
-                  return { solid: cat.btn, badge: `${cat.bgLight} ${cat.border} ${cat.text}`, saveActive: cat.saveActive, saveIdle: `bg-slate-800 border-transparent text-slate-400 ${cat.saveIdle}` };
-              } else {
-                  return { solid: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 text-white', badge: 'bg-blue-600/10 border-blue-600/20 text-blue-600', saveActive: 'bg-blue-600 border-blue-600 text-white', saveIdle: 'bg-white border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200' };
-              }
-          };
-
           const theme = getModalTheme(selectedTalent.category, darkMode);
           const pic = getAvatarUrl(selectedTalent) || selectedTalent.profilePic;
+          const CatIcon = getLocalCatIcon(selectedTalent.category);
           
-          // Check if applicant is already immediately hired 
           const isHired = receivedApplications.some(app => app.applicantId === selectedTalent.id && app.status === 'accepted');
 
-          const handleImmediateHire = async () => {
-              if (!window.confirm(`Immediately hire ${selectedTalent.firstName}? They will automatically appear in your Applicants tab as Accepted.`)) return;
-              setLoading(true);
-              try {
-                  await addDoc(collection(db, "applications"), {
-                      jobId: myPostedJobs.length > 0 ? myPostedJobs[0].id : "direct_hire",
-                      jobTitle: myPostedJobs.length > 0 ? myPostedJobs[0].title : "Direct Hire",
-                      employerId: auth.currentUser.uid,
-                      employerName: `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer",
-                      employerLogo: profileImage || "",
-                      applicantId: selectedTalent.id,
-                      applicantName: `${selectedTalent.firstName} ${selectedTalent.lastName}`.trim(),
-                      applicantProfilePic: pic || "",
-                      status: 'accepted',
-                      appliedAt: serverTimestamp(),
-                      isViewed: true,
-                      isReadByApplicant: false,
-                      isRatedByEmployer: false
-                  });
-                  alert(`${selectedTalent.firstName} has been successfully hired!`);
-              } catch (err) {
-                  alert("Error processing hire: " + err.message);
-              } finally {
-                  setLoading(false);
-              }
-          };
-
           return (
-            <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedTalent(null)}>
+            <div className={`fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md animate-in fade-in ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={() => setSelectedTalent(null)}>
                 <div 
                    onClick={(e) => e.stopPropagation()}
-                   className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                   className={`relative w-[92vw] sm:w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-[2.5rem] animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh] max-h-[900px] md:h-[80vh] overflow-hidden ${theme.modalBg}`}
                 >
-                    <button onClick={() => setSelectedTalent(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                    <div className={`absolute -right-12 -bottom-12 md:-right-16 md:-bottom-16 opacity-[0.08] rotate-12 pointer-events-none z-0 ${theme.iconColor}`}>
+                        <CatIcon className="w-80 h-80 md:w-[28rem] md:h-[28rem]" />
+                    </div>
+
+                    <button onClick={() => setSelectedTalent(null)} className={`absolute top-4 right-4 z-20 p-2.5 rounded-full transition-all hover:rotate-90 ${theme.closeBtn}`}>
                         <XMarkIcon className="w-5 h-5"/>
                     </button>
                     
-                    {/* --- LEFT SIDE: Candidate Info --- */}
-                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
-                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
+                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-4 md:mb-0 pt-2 z-10 relative">
+                        <div className="w-20 h-20 sm:w-36 sm:h-36 rounded-[2rem] overflow-hidden mb-4 sm:mb-5 shrink-0 shadow-xl cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-300 ring-4 ring-black/10">
                             {pic ? (
                                 <img src={pic} alt={selectedTalent.firstName} className="w-full h-full object-cover" />
                             ) : (
-                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedTalent.firstName?.charAt(0) || "U"}</div>
+                                <div className="w-full h-full bg-black/20 flex items-center justify-center text-4xl sm:text-5xl font-black text-white uppercase backdrop-blur-md">{selectedTalent.firstName?.charAt(0) || "U"}</div>
                             )}
                         </div>
                         
-                        <h2 className="text-2xl font-black mb-6 text-center leading-tight w-full">{selectedTalent.firstName} {selectedTalent.lastName}</h2>
+                        <h2 className={`text-2xl sm:text-3xl font-black mb-3 text-center leading-tight w-full ${theme.textPrimary}`}>{selectedTalent.firstName} {selectedTalent.lastName}</h2>
                         
-                        <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
+                        <div className={`flex flex-col gap-4 text-xs font-bold w-full items-center text-center cursor-default select-none ${theme.textSecondary}`}>
                             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
                                 <div className="flex items-center gap-1.5">
-                                    <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <MapPinIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
                                     <span className={!selectedTalent.sitio ? 'opacity-50 italic' : ''}>{selectedTalent.sitio || "Location not set"}</span>
                                 </div>
                                 {selectedTalent.email && (
                                     <div className="flex items-center gap-1.5" title="Email">
-                                        <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                        <span className="text-slate-500 truncate max-w-[150px]">{selectedTalent.email}</span>
+                                        <EnvelopeIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
+                                        <span className="truncate max-w-[150px]">{selectedTalent.email}</span>
                                     </div>
                                 )}
                             </div>
 
-                            {/* CATEGORY BADGE BELOW LOCATION/CONTACT */}
                             <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
                                 {selectedTalent.category ? (
-                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${theme.badge}`}>
                                         <TagIcon className="w-3.5 h-3.5" />
                                         {JOB_CATEGORIES.find(c => c.id === selectedTalent.category)?.label || selectedTalent.category}
                                     </span>
                                 ) : (
-                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 opacity-50`}>
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 opacity-50 ${theme.textPrimary}`}>
                                         <TagIcon className="w-3.5 h-3.5" />
                                         Uncategorized
                                     </span>
@@ -1505,133 +1471,186 @@ return (
                         </div>
                     </div>
 
-                    {/* --- RIGHT SIDE: Candidate Details --- */}
-                    <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
+                    <div className="w-full md:w-2/3 flex flex-col flex-1 min-h-0 overflow-hidden mt-4 md:mt-0 relative z-10 md:ml-8">
                         
-                        {/* Switch Sub-Header */}
-                        <div className="flex justify-end mb-4 shrink-0">
+                        <div className={`flex flex-wrap gap-2 p-1.5 shrink-0 ${theme.tabContainer}`}>
                             <button 
-                                onClick={() => setModalSubTab(prev => prev === "details" ? "resume" : "details")}
-                                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                onClick={() => setModalSubTab("details")}
+                                className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalSubTab === "details" ? theme.tabActive : theme.tabIdle}`}
                             >
-                                {modalSubTab === "details" ? (
-                                    <><DocumentIcon className="w-4 h-4" /><span>View Resume</span></>
-                                ) : (
-                                    <><UserCircleIcon className="w-4 h-4" /><span>Profile Details</span></>
-                                )}
+                                <span className="relative z-10">Profile Details</span>
+                            </button>
+                            <button 
+                                onClick={() => setModalSubTab("resume")}
+                                className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalSubTab === "resume" ? theme.tabActive : theme.tabIdle}`}
+                            >
+                                <span className="relative z-10">View Resume</span>
+                            </button>
+                            <button 
+                                onClick={() => setModalSubTab("reputation")}
+                                className={`flex-1 min-w-[80px] py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalSubTab === "reputation" ? theme.tabActive : theme.tabIdle}`}
+                            >
+                                <span className="relative z-10">Reviews</span>
                             </button>
                         </div>
 
-                        {/* Scrollable Container */}
-                        <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
-                            {modalSubTab === "details" ? (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">About Candidate</p>
-                                        <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{selectedTalent.aboutMe || selectedTalent.bio || "No bio provided."}</p>
-                                    </div>
-                                    
-                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
-                                        {typeof selectedTalent.education === 'object' && selectedTalent.education !== null ? (
-                                            <div className="space-y-2">
-                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{selectedTalent.education.primary || "-"}</p>
-                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{selectedTalent.education.secondary || "-"}</p>
-                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{selectedTalent.education.college || "-"}</p>
-                                            </div>
-                                        ) : (
-                                            <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.education ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                                {selectedTalent.education || "No educational background provided."}
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
-                                        {Array.isArray(selectedTalent.experience) || Array.isArray(selectedTalent.workExperience) ? (
-                                            <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
-                                                {(selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').length > 0 
-                                                    ? (selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
-                                                        <li key={idx} className="text-sm opacity-90 font-medium pl-1">{exp}</li>
-                                                    ))
-                                                    : <p className="text-sm opacity-50 italic -ml-4">No work experience provided.</p>
-                                                }
-                                            </ul>
-                                        ) : (
-                                            <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.workExperience || selectedTalent.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                                {selectedTalent.workExperience || selectedTalent.experience || "No work experience provided."}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2"><PhotoIcon className="w-4 h-4"/> Resume Image</p>
-                                        {selectedTalent.resumeImageUrl ? (
-                                            <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 shadow-sm group bg-black/5">
-                                                <img src={selectedTalent.resumeImageUrl} alt="Resume" className="w-full h-full object-contain cursor-pointer" onClick={() => setLightboxUrl(selectedTalent.resumeImageUrl)} />
-                                                <div className="absolute top-2 right-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                                    Click to Expand
+                        <div className="flex-1 overflow-hidden relative mt-4 w-full">
+                            <div 
+                                className="flex w-[300%] h-full transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
+                                style={{ transform: modalSubTab === "details" ? 'translateX(0)' : modalSubTab === "resume" ? 'translateX(-33.333333%)' : 'translateX(-66.666667%)' }}
+                            >
+                                {/* Slide 1: Profile Details */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${theme.textSecondary}`}>About Candidate</p>
+                                            <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${theme.textPrimary}`}>{selectedTalent.aboutMe || selectedTalent.bio || "No bio provided."}</p>
+                                        </div>
+                                        
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${theme.textSecondary}`}>Educational Background</p>
+                                            {typeof selectedTalent.education === 'object' && selectedTalent.education !== null ? (
+                                                <div className="space-y-2">
+                                                    <p className={`text-sm opacity-90 ${theme.textPrimary}`}><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{selectedTalent.education.primary || "-"}</p>
+                                                    <p className={`text-sm opacity-90 ${theme.textPrimary}`}><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{selectedTalent.education.secondary || "-"}</p>
+                                                    <p className={`text-sm opacity-90 ${theme.textPrimary}`}><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{selectedTalent.education.college || "-"}</p>
                                                 </div>
-                                            </div>
-                                        ) : (
-                                            <div className={`w-full h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center opacity-50 ${darkMode ? 'border-white/20' : 'border-slate-300'}`}>
-                                                <PhotoIcon className="w-6 h-6 mb-1" />
-                                                <span className="text-[10px] font-bold uppercase tracking-widest">No Image Uploaded</span>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2"><DocumentIcon className="w-4 h-4"/> Resume Document</p>
-                                        {isHired ? (
-                                            selectedTalent.resumeFileUrl ? (
-                                                <a 
-                                                    href={selectedTalent.resumeFileUrl} 
-                                                    download={selectedTalent.resumeFileName || "Applicant_Resume"}
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer" 
-                                                    className={`w-full p-4 rounded-xl flex items-center gap-4 border transition-all group ${darkMode ? 'bg-slate-800 border-white/10 hover:bg-slate-700 text-white' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-lg text-slate-800'}`}
-                                                >
-                                                    <div className={`p-3 rounded-lg transition-colors ${darkMode ? 'bg-blue-500/20 text-blue-400 group-hover:bg-blue-500/40' : 'bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                                                        <ArrowDownTrayIcon className="w-6 h-6"/>
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-black text-sm group-hover:text-blue-500 transition-colors truncate">
-                                                            {selectedTalent.resumeFileName || "Download Resume File"}
-                                                        </p>
-                                                        <p className="text-[10px] uppercase font-bold opacity-50 tracking-widest mt-0.5">Click to view or save</p>
-                                                    </div>
-                                                </a>
                                             ) : (
-                                                <div className={`w-full p-4 rounded-xl flex flex-col items-center justify-center gap-1 border-2 border-dashed opacity-50 ${darkMode ? 'border-white/20' : 'border-slate-300'}`}>
-                                                    <p className="font-bold text-[10px] uppercase tracking-widest">No File Uploaded</p>
-                                                </div>
-                                            )
-                                        ) : (
-                                            <div className={`w-full p-6 flex flex-col items-center justify-center text-center rounded-xl border-2 border-dashed opacity-60 ${darkMode ? 'border-white/20 text-white' : 'border-slate-300 text-slate-600'}`}>
-                                                <LockClosedIcon className="w-6 h-6 mb-2" />
-                                                <p className="font-bold text-[10px] uppercase tracking-widest">Resume Document Locked</p>
-                                                <p className="text-[10px] font-medium mt-1 max-w-[200px]">You can only download the resume document once you hire this candidate.</p>
-                                            </div>
-                                        )}
+                                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.education ? 'opacity-90' : 'opacity-50 italic'} ${theme.textPrimary}`}>
+                                                    {selectedTalent.education || "No educational background provided."}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className={`p-6 rounded-[2rem] flex-1 ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${theme.textSecondary}`}>Work Experience</p>
+                                            {Array.isArray(selectedTalent.experience) || Array.isArray(selectedTalent.workExperience) ? (
+                                                <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
+                                                    {(selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').length > 0 
+                                                        ? (selectedTalent.experience || selectedTalent.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
+                                                            <li key={idx} className={`text-sm opacity-90 font-medium pl-1 ${theme.textPrimary}`}>{exp}</li>
+                                                        ))
+                                                        : <p className={`text-sm opacity-50 italic -ml-4 ${theme.textPrimary}`}>No work experience provided.</p>
+                                                    }
+                                                </ul>
+                                            ) : (
+                                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${selectedTalent.workExperience || selectedTalent.experience ? 'opacity-90' : 'opacity-50 italic'} ${theme.textPrimary}`}>
+                                                    {selectedTalent.workExperience || selectedTalent.experience || "No work experience provided."}
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            )}
+
+                                {/* Slide 2: Resume */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 flex items-center gap-2 ${theme.textSecondary}`}><PhotoIcon className="w-4 h-4"/> Resume Image</p>
+                                            {selectedTalent.resumeImageUrl ? (
+                                                <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 shadow-sm group bg-black/20">
+                                                    <img src={selectedTalent.resumeImageUrl} alt="Resume" className="w-full h-full object-contain cursor-pointer" onClick={() => setLightboxUrl(selectedTalent.resumeImageUrl)} />
+                                                    <div className="absolute top-2 right-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                        Click to Expand
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className={`w-full h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center opacity-50 ${theme.divider} ${theme.textPrimary}`}>
+                                                    <PhotoIcon className="w-6 h-6 mb-1" />
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest">No Image Uploaded</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 flex items-center gap-2 ${theme.textSecondary}`}><DocumentIcon className="w-4 h-4"/> Resume Document</p>
+                                            {isHired ? (
+                                                selectedTalent.resumeFileUrl ? (
+                                                    <a 
+                                                        href={selectedTalent.resumeFileUrl} 
+                                                        download={selectedTalent.resumeFileName || "Applicant_Resume"}
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer" 
+                                                        className={`w-full p-4 rounded-xl flex items-center gap-4 border transition-all group bg-black/20 hover:bg-black/30 border-white/10 text-white shadow-inner`}
+                                                    >
+                                                        <div className={`p-3 rounded-lg transition-colors bg-white/10 text-white group-hover:bg-white/20`}>
+                                                            <ArrowDownTrayIcon className="w-6 h-6"/>
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-black text-sm transition-colors truncate drop-shadow-md">
+                                                                {selectedTalent.resumeFileName || "Download Resume File"}
+                                                            </p>
+                                                            <p className="text-[10px] uppercase font-bold opacity-70 tracking-widest mt-0.5">Click to view or save</p>
+                                                        </div>
+                                                    </a>
+                                                ) : (
+                                                    <div className={`w-full p-4 rounded-xl flex flex-col items-center justify-center gap-1 border-2 border-dashed opacity-50 ${theme.divider} ${theme.textPrimary}`}>
+                                                        <p className="font-bold text-[10px] uppercase tracking-widest">No File Uploaded</p>
+                                                    </div>
+                                                )
+                                            ) : (
+                                                <div className={`w-full p-6 flex flex-col items-center justify-center text-center rounded-[1.5rem] border-2 border-dashed opacity-60 ${theme.divider} ${theme.textPrimary}`}>
+                                                    <LockClosedIcon className="w-6 h-6 mb-2" />
+                                                    <p className="font-bold text-[10px] uppercase tracking-widest">Resume Document Locked</p>
+                                                    <p className="text-[10px] font-medium mt-1 max-w-[200px]">You can only download the resume document once you hire this candidate.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Slide 3: Reputation */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-8 rounded-[2rem] flex flex-col items-center justify-center text-center ${theme.innerPanel}`}>
+                                            <h3 className="text-6xl font-black text-amber-400 mb-3 drop-shadow-md">{applicantAverageRating}</h3>
+                                            <div className="flex gap-1.5 mb-3 text-amber-400 drop-shadow-sm">
+                                                {[1,2,3,4,5].map(star => (
+                                                    <span key={star}>{star <= Math.round(applicantAverageRating) ? <StarIconSolid className="w-7 h-7"/> : <StarIconOutline className="w-7 h-7 opacity-40"/>}</span>
+                                                ))}
+                                            </div>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 ${theme.textSecondary}`}>Based on {applicantReviews.length} Reviews</p>
+                                        </div>
+
+                                        <div className="space-y-4 mt-2">
+                                            {applicantReviews.length === 0 ? (
+                                                <p className={`text-center text-sm font-bold py-8 opacity-60 ${theme.textPrimary}`}>No reviews yet.</p>
+                                            ) : (
+                                                applicantReviews.map((review, idx) => (
+                                                    <div key={idx} className={`p-5 rounded-[2rem] ${theme.innerPanel}`}>
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-6 h-6 rounded-full overflow-hidden bg-slate-200 shrink-0">
+                                                                    {review.reviewerPic ? <img src={review.reviewerPic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full text-[8px] text-slate-800 font-bold">{review.reviewerName?.charAt(0) || "U"}</span>}
+                                                                </div>
+                                                                <span className={`text-[10px] font-bold opacity-80 ${theme.textPrimary}`}>{review.reviewerName || "Employer"}</span>
+                                                            </div>
+                                                            <div className="flex gap-0.5 text-amber-400">
+                                                                {[1,2,3,4,5].map(star => (
+                                                                    <span key={star}>{star <= review.rating ? <StarIconSolid className="w-3.5 h-3.5"/> : <StarIconOutline className="w-3.5 h-3.5 opacity-40"/>}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <p className={`text-sm font-medium leading-relaxed opacity-90 ${theme.textPrimary}`}>"{review.comment}"</p>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                       {/* --- ACTIONS (Pinned to Bottom) --- */}
-                        <div className="w-full flex gap-3 pt-2 shrink-0 mt-2">
+                        <div className={`w-full flex gap-3 pt-4 shrink-0 border-t z-10 mt-2 ${theme.divider}`}>
                             <button onClick={() => { 
                                 setSelectedTalent(null); 
                                 handleStartChatFromExternal({ id: selectedTalent.id, name: `${selectedTalent.firstName} ${selectedTalent.lastName}`, profilePic: pic || null }); 
-                            }} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg ${theme.solid}`}>
+                            }} className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 hover:-translate-y-1 transition-transform duration-300 shadow-lg ${theme.solid}`}>
                                 Message Candidate
                             </button>
                             
-                            <button onClick={handleImmediateHire} disabled={isHired} title="Immediate Hire" className={`flex-none p-4 rounded-xl transition-all border ${isHired ? theme.saveActive : theme.saveIdle}`}>
-                                <BoltIcon className={`w-6 h-6 ${isHired ? 'fill-current' : ''}`}/>
+                            <button onClick={() => handleImmediateHire(selectedTalent)} disabled={isHired} title="Immediate Hire" className={`flex-none p-4 rounded-2xl transition-all duration-300 border hover:-translate-y-1 ${isHired ? theme.saveActive : theme.saveIdle}`}>
+                                <BoltIcon className={`w-7 h-7 ${isHired ? 'fill-current' : ''}`}/>
                             </button>
                         </div>
                     </div>
@@ -1644,76 +1663,59 @@ return (
           APPLICATION DETAILS MODAL (Applicants Tab)
           ========================================================= */}
       {selectedApplication && modalApplicant && (() => {
-          const getModalTheme = (categoryId, isDark) => {
-              const darkColors = {
-                  'EDUCATION': { text: 'text-blue-400', bgLight: 'bg-blue-400/10', border: 'border-blue-400/30', btn: 'bg-blue-400 text-slate-900 hover:bg-blue-500' },
-                  'AGRICULTURE': { text: 'text-green-400', bgLight: 'bg-green-400/10', border: 'border-green-400/30', btn: 'bg-green-400 text-slate-900 hover:bg-green-500' },
-                  'AUTOMOTIVE': { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500' },
-                  'CARPENTRY': { text: 'text-yellow-400', bgLight: 'bg-yellow-400/10', border: 'border-yellow-400/30', btn: 'bg-yellow-400 text-slate-900 hover:bg-yellow-500' },
-                  'HOUSEHOLD': { text: 'text-pink-400', bgLight: 'bg-pink-400/10', border: 'border-pink-400/30', btn: 'bg-pink-400 text-slate-900 hover:bg-pink-500' },
-                  'CUSTOMER_SERVICE': { text: 'text-purple-400', bgLight: 'bg-purple-400/10', border: 'border-purple-400/30', btn: 'bg-purple-400 text-slate-900 hover:bg-purple-500' },
-              };
-              const fallbackDark = { text: 'text-slate-400', bgLight: 'bg-slate-400/10', border: 'border-slate-400/30', btn: 'bg-slate-400 text-slate-900 hover:bg-slate-500' };
-        
-              if (isDark) {
-                  const cat = darkColors[categoryId] || fallbackDark;
-                  return { solid: cat.btn, badge: `${cat.bgLight} ${cat.border} ${cat.text}`, text: cat.text };
-              } else {
-                  return { solid: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 text-white', badge: 'bg-blue-600/10 border-blue-600/20 text-blue-600', text: 'text-blue-600' };
-              }
-          };
-
-          const appliedCategory = modalApplicant.category || modalJob?.category;
+          const appliedCategory = modalApplicant.category || modalJob?.category || 'AUTOMOTIVE';
           const theme = getModalTheme(appliedCategory, darkMode);
           const pic = getAvatarUrl(modalApplicant) || modalApplicant.profilePic || selectedApplication.applicantProfilePic;
-          
+          const CatIcon = getLocalCatIcon(appliedCategory);
           const isHired = selectedApplication.status === 'accepted';
 
           return (
-            <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedApplication(null)}>
+            <div className={`fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md animate-in fade-in ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={() => setSelectedApplication(null)}>
                 <div 
                    onClick={(e) => e.stopPropagation()}
-                   className={`relative w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col md:flex-row md:gap-8 overflow-y-auto max-h-[70vh] sm:max-h-[90vh] hide-scrollbar ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                   className={`relative w-[92vw] sm:w-full max-w-md md:max-w-4xl p-5 sm:p-8 rounded-[2.5rem] animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh] max-h-[900px] md:h-[80vh] overflow-hidden ${theme.modalBg}`}
                 >
-                    <button onClick={() => setSelectedApplication(null)} className={`absolute top-4 right-4 z-10 p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>
+                    <div className={`absolute -right-12 -bottom-12 md:-right-16 md:-bottom-16 opacity-[0.08] rotate-12 pointer-events-none z-0 ${theme.iconColor}`}>
+                        <CatIcon className="w-80 h-80 md:w-[28rem] md:h-[28rem]" />
+                    </div>
+
+                    <button onClick={() => setSelectedApplication(null)} className={`absolute top-4 right-4 z-20 p-2.5 rounded-full transition-all hover:rotate-90 ${theme.closeBtn}`}>
                         <XMarkIcon className="w-5 h-5"/>
                     </button>
                     
-                    {/* --- LEFT SIDE: Candidate Info --- */}
-                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-6 md:mb-0 pt-2">
-                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden mb-4 shrink-0 bg-slate-100 dark:bg-slate-800">
+                    <div className="flex flex-col items-center md:w-1/3 shrink-0 w-full mb-4 md:mb-0 pt-2 z-10 relative">
+                        <div className="w-20 h-20 sm:w-36 sm:h-36 rounded-[2rem] overflow-hidden mb-4 sm:mb-5 shrink-0 shadow-xl cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-300 ring-4 ring-black/10">
                             {pic ? (
                                 <img src={pic} alt={selectedApplication.applicantName} className="w-full h-full object-cover" />
                             ) : (
-                                <div className="w-full h-full bg-blue-600 flex items-center justify-center text-4xl font-black text-white uppercase">{selectedApplication.applicantName?.charAt(0) || "U"}</div>
+                                <div className="w-full h-full bg-black/20 flex items-center justify-center text-4xl sm:text-5xl font-black text-white uppercase backdrop-blur-md">{selectedApplication.applicantName?.charAt(0) || "U"}</div>
                             )}
                         </div>
                         
-                        <h2 className="text-2xl font-black mb-6 text-center leading-tight w-full">{selectedApplication.applicantName}</h2>
+                        <h2 className={`text-2xl sm:text-3xl font-black mb-3 text-center leading-tight w-full ${theme.textPrimary}`}>{selectedApplication.applicantName}</h2>
                         
-                        <div className="flex flex-col gap-4 text-xs font-bold text-slate-500 w-full items-center text-center cursor-default select-none">
+                        <div className={`flex flex-col gap-4 text-xs font-bold w-full items-center text-center cursor-default select-none ${theme.textSecondary}`}>
                             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 w-full">
                                 <div className="flex items-center gap-1.5">
-                                    <MapPinIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <MapPinIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
                                     <span className={!modalApplicant.sitio ? 'opacity-50 italic' : ''}>{modalApplicant.sitio || "Location not set"}</span>
                                 </div>
                                 {modalApplicant.email && (
                                     <div className="flex items-center gap-1.5" title="Email">
-                                        <EnvelopeIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                                        <span className="text-slate-500 truncate max-w-[150px]">{modalApplicant.email}</span>
+                                        <EnvelopeIcon className={`w-4 h-4 shrink-0 ${theme.iconColor}`} />
+                                        <span className="truncate max-w-[150px]">{modalApplicant.email}</span>
                                     </div>
                                 )}
                             </div>
 
-                            {/* Category Badge */}
                             <div className="mt-1 flex flex-wrap items-center justify-center gap-2 w-full">
                                 {appliedCategory ? (
-                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 ${theme.badge}`}>
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${theme.badge}`}>
                                         <TagIcon className="w-3.5 h-3.5" />
                                         {JOB_CATEGORIES.find(c => c.id === appliedCategory)?.label || appliedCategory}
                                     </span>
                                 ) : (
-                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1.5 opacity-50`}>
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 opacity-50 ${theme.textPrimary}`}>
                                         <TagIcon className="w-3.5 h-3.5" />
                                         Uncategorized
                                     </span>
@@ -1722,157 +1724,211 @@ return (
                         </div>
                     </div>
 
-                    {/* --- RIGHT SIDE: Candidate Details --- */}
-                    <div className="w-full md:w-2/3 flex flex-col h-full max-h-[55vh] md:max-h-[70vh]">
+                    <div className="w-full md:w-2/3 flex flex-col flex-1 min-h-0 overflow-hidden mt-4 md:mt-0 relative z-10 md:ml-8">
                         
-                        {/* HEADER: Leveled Applied For Badge & Switch Button */}
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6 shrink-0">
-                            {/* Applied for Badge (Matching switch button size/style) */}
-                            <div className={`flex-1 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border truncate flex items-center gap-2 ${darkMode ? 'bg-white/5 border-white/10 text-blue-300' : 'bg-blue-50 border-blue-100 text-blue-600'}`}>
-                                <span className="opacity-50 shrink-0">Applied for:</span>
-                                <span className="truncate font-black">{modalJob?.title || "Unknown Job"}</span>
+                        <div className={`flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4 shrink-0`}>
+                            <div className={`flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border truncate flex items-center gap-2 ${theme.innerPanel}`}>
+                                <span className={`opacity-60 shrink-0 ${theme.textSecondary}`}>Applied for:</span>
+                                <span className={`truncate font-black ${theme.textPrimary}`}>{modalJob?.title || "Unknown Job"}</span>
                             </div>
 
-                            {/* Switch Button */}
-                            <button 
-                                onClick={() => setModalSubTab(prev => prev === "details" ? "resume" : "details")}
-                                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-sm ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                            <div className={`flex gap-1 p-1.5 rounded-2xl w-full sm:w-auto ${theme.tabContainer}`}>
+                                <button 
+                                    onClick={() => setModalSubTab("details")}
+                                    className={`flex-1 sm:flex-none px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalSubTab === "details" ? theme.tabActive : theme.tabIdle}`}
+                                >
+                                    <span className="relative z-10 hidden sm:inline">Profile</span>
+                                    <span className="relative z-10 sm:hidden">Profile</span>
+                                </button>
+                                <button 
+                                    onClick={() => setModalSubTab("resume")}
+                                    className={`flex-1 sm:flex-none px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalSubTab === "resume" ? theme.tabActive : theme.tabIdle}`}
+                                >
+                                    <span className="relative z-10">Resume</span>
+                                </button>
+                                <button 
+                                    onClick={() => setModalSubTab("reputation")}
+                                    className={`flex-1 sm:flex-none px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modalSubTab === "reputation" ? theme.tabActive : theme.tabIdle}`}
+                                >
+                                    <span className="relative z-10">Reviews</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-hidden relative mt-2 w-full">
+                            <div 
+                                className="flex w-[300%] h-full transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
+                                style={{ transform: modalSubTab === "details" ? 'translateX(0)' : modalSubTab === "resume" ? 'translateX(-33.333333%)' : 'translateX(-66.666667%)' }}
                             >
-                                {modalSubTab === "details" ? (
-                                    <><DocumentIcon className="w-4 h-4" /><span>View Resume</span></>
-                                ) : (
-                                    <><UserCircleIcon className="w-4 h-4" /><span>Profile Details</span></>
-                                )}
-                            </button>
-                        </div>
-
-                        {/* Scrollable Container */}
-                        <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2 -mr-2 pb-2">
-                            {modalSubTab === "details" ? (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">About Candidate</p>
-                                        <p className="text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium">{modalApplicant.aboutMe || modalApplicant.bio || "No bio provided."}</p>
-                                    </div>
-                                    
-                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Educational Background</p>
-                                        {typeof modalApplicant.education === 'object' && modalApplicant.education !== null ? (
-                                            <div className="space-y-2">
-                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{modalApplicant.education.primary || "-"}</p>
-                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{modalApplicant.education.secondary || "-"}</p>
-                                                <p className="text-sm opacity-90"><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{modalApplicant.education.college || "-"}</p>
-                                            </div>
-                                        ) : (
-                                            <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.education ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                                {modalApplicant.education || "No educational background provided."}
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <div className={`p-5 rounded-xl flex-1 ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3">Work Experience</p>
-                                        {Array.isArray(modalApplicant.experience) || Array.isArray(modalApplicant.workExperience) ? (
-                                            <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
-                                                {(modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').length > 0 
-                                                    ? (modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
-                                                        <li key={idx} className="text-sm opacity-90 font-medium pl-1">{exp}</li>
-                                                    ))
-                                                    : <p className="text-sm opacity-50 italic -ml-4">No work experience provided.</p>
-                                                }
-                                            </ul>
-                                        ) : (
-                                            <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.workExperience || modalApplicant.experience ? 'opacity-90' : 'opacity-50 italic'}`}>
-                                                {modalApplicant.workExperience || modalApplicant.experience || "No work experience provided."}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2"><PhotoIcon className="w-4 h-4"/> Resume Image</p>
-                                        {modalApplicant.resumeImageUrl ? (
-                                            <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 shadow-sm group bg-black/5">
-                                                <img src={modalApplicant.resumeImageUrl} alt="Resume" className="w-full h-full object-contain cursor-pointer" onClick={() => setLightboxUrl(modalApplicant.resumeImageUrl)} />
-                                                <div className="absolute top-2 right-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                                    Click to Expand
+                                {/* Slide 1: Profile Details */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${theme.textSecondary}`}>About Candidate</p>
+                                            <p className={`text-sm opacity-90 leading-relaxed whitespace-pre-wrap font-medium ${theme.textPrimary}`}>{modalApplicant.aboutMe || modalApplicant.bio || "No bio provided."}</p>
+                                        </div>
+                                        
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${theme.textSecondary}`}>Educational Background</p>
+                                            {typeof modalApplicant.education === 'object' && modalApplicant.education !== null ? (
+                                                <div className="space-y-2">
+                                                    <p className={`text-sm opacity-90 ${theme.textPrimary}`}><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Primary:</span>{modalApplicant.education.primary || "-"}</p>
+                                                    <p className={`text-sm opacity-90 ${theme.textPrimary}`}><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">Secondary:</span>{modalApplicant.education.secondary || "-"}</p>
+                                                    <p className={`text-sm opacity-90 ${theme.textPrimary}`}><span className="opacity-50 text-[10px] uppercase font-bold tracking-widest mr-2">College:</span>{modalApplicant.education.college || "-"}</p>
                                                 </div>
-                                            </div>
-                                        ) : (
-                                            <div className={`w-full h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center opacity-50 ${darkMode ? 'border-white/20' : 'border-slate-300'}`}>
-                                                <PhotoIcon className="w-6 h-6 mb-1" />
-                                                <span className="text-[10px] font-bold uppercase tracking-widest">No Image Uploaded</span>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className={`p-5 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-50 border border-slate-100'}`}>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-3 flex items-center gap-2"><DocumentIcon className="w-4 h-4"/> Resume Document</p>
-                                        {isHired ? (
-                                            modalApplicant.resumeFileUrl ? (
-                                                <a 
-                                                    href={modalApplicant.resumeFileUrl} 
-                                                    download={modalApplicant.resumeFileName || "Applicant_Resume"}
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer" 
-                                                    className={`w-full p-4 rounded-xl flex items-center gap-4 border transition-all group ${darkMode ? 'bg-slate-800 border-white/10 hover:bg-slate-700 text-white' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-lg text-slate-800'}`}
-                                                >
-                                                    <div className={`p-3 rounded-lg transition-colors ${darkMode ? 'bg-blue-500/20 text-blue-400 group-hover:bg-blue-500/40' : 'bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                                                        <ArrowDownTrayIcon className="w-6 h-6"/>
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-black text-sm group-hover:text-blue-500 transition-colors truncate">
-                                                            {modalApplicant.resumeFileName || "Download Resume File"}
-                                                        </p>
-                                                        <p className="text-[10px] uppercase font-bold opacity-50 tracking-widest mt-0.5">Click to view or save</p>
-                                                    </div>
-                                                </a>
                                             ) : (
-                                                <div className={`w-full p-4 rounded-xl flex flex-col items-center justify-center gap-1 border-2 border-dashed opacity-50 ${darkMode ? 'border-white/20' : 'border-slate-300'}`}>
-                                                    <p className="font-bold text-[10px] uppercase tracking-widest">No File Uploaded</p>
-                                                </div>
-                                            )
-                                        ) : (
-                                            <div className={`w-full p-6 flex flex-col items-center justify-center text-center rounded-xl border-2 border-dashed opacity-60 ${darkMode ? 'border-white/20 text-white' : 'border-slate-300 text-slate-600'}`}>
-                                                <LockClosedIcon className="w-6 h-6 mb-2" />
-                                                <p className="font-bold text-[10px] uppercase tracking-widest">Resume Document Locked</p>
-                                                <p className="text-[10px] font-medium mt-1 max-w-[200px]">You can only download the resume document once you accept this application.</p>
-                                            </div>
-                                        )}
+                                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.education ? 'opacity-90' : 'opacity-50 italic'} ${theme.textPrimary}`}>
+                                                    {modalApplicant.education || "No educational background provided."}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className={`p-6 rounded-[2rem] flex-1 ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${theme.textSecondary}`}>Work Experience</p>
+                                            {Array.isArray(modalApplicant.experience) || Array.isArray(modalApplicant.workExperience) ? (
+                                                <ul className="space-y-2 pl-4 list-disc marker:text-blue-500">
+                                                    {(modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').length > 0 
+                                                        ? (modalApplicant.experience || modalApplicant.workExperience).filter(e=>e.trim()!=='').map((exp, idx) => (
+                                                            <li key={idx} className={`text-sm opacity-90 font-medium pl-1 ${theme.textPrimary}`}>{exp}</li>
+                                                        ))
+                                                        : <p className={`text-sm opacity-50 italic -ml-4 ${theme.textPrimary}`}>No work experience provided.</p>
+                                                    }
+                                                </ul>
+                                            ) : (
+                                                <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${modalApplicant.workExperience || modalApplicant.experience ? 'opacity-90' : 'opacity-50 italic'} ${theme.textPrimary}`}>
+                                                    {modalApplicant.workExperience || modalApplicant.experience || "No work experience provided."}
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            )}
+
+                                {/* Slide 2: Resume */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 flex items-center gap-2 ${theme.textSecondary}`}><PhotoIcon className="w-4 h-4"/> Resume Image</p>
+                                            {modalApplicant.resumeImageUrl ? (
+                                                <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 shadow-sm group bg-black/20">
+                                                    <img src={modalApplicant.resumeImageUrl} alt="Resume" className="w-full h-full object-contain cursor-pointer" onClick={() => setLightboxUrl(modalApplicant.resumeImageUrl)} />
+                                                    <div className="absolute top-2 right-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-xl text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                        Click to Expand
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className={`w-full h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center opacity-50 ${theme.divider} ${theme.textPrimary}`}>
+                                                    <PhotoIcon className="w-6 h-6 mb-1" />
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest">No Image Uploaded</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className={`p-6 rounded-[2rem] ${theme.innerPanel}`}>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 flex items-center gap-2 ${theme.textSecondary}`}><DocumentIcon className="w-4 h-4"/> Resume Document</p>
+                                            {isHired ? (
+                                                modalApplicant.resumeFileUrl ? (
+                                                    <a 
+                                                        href={modalApplicant.resumeFileUrl} 
+                                                        download={modalApplicant.resumeFileName || "Applicant_Resume"}
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer" 
+                                                        className={`w-full p-4 rounded-xl flex items-center gap-4 border transition-all group bg-black/20 hover:bg-black/30 border-white/10 text-white shadow-inner`}
+                                                    >
+                                                        <div className={`p-3 rounded-lg transition-colors bg-white/10 text-white group-hover:bg-white/20`}>
+                                                            <ArrowDownTrayIcon className="w-6 h-6"/>
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-black text-sm transition-colors truncate drop-shadow-md">
+                                                                {modalApplicant.resumeFileName || "Download Resume File"}
+                                                            </p>
+                                                            <p className="text-[10px] uppercase font-bold opacity-70 tracking-widest mt-0.5">Click to view or save</p>
+                                                        </div>
+                                                    </a>
+                                                ) : (
+                                                    <div className={`w-full p-4 rounded-xl flex flex-col items-center justify-center gap-1 border-2 border-dashed opacity-50 ${theme.divider} ${theme.textPrimary}`}>
+                                                        <p className="font-bold text-[10px] uppercase tracking-widest">No File Uploaded</p>
+                                                    </div>
+                                                )
+                                            ) : (
+                                                <div className={`w-full p-6 flex flex-col items-center justify-center text-center rounded-[1.5rem] border-2 border-dashed opacity-60 ${theme.divider} ${theme.textPrimary}`}>
+                                                    <LockClosedIcon className="w-6 h-6 mb-2" />
+                                                    <p className="font-bold text-[10px] uppercase tracking-widest">Resume Document Locked</p>
+                                                    <p className="text-[10px] font-medium mt-1 max-w-[200px]">You can only download the resume document once you accept this application.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Slide 3: Reputation */}
+                                <div className="w-1/3 h-full overflow-y-auto px-1 hide-scrollbar">
+                                    <div className="space-y-4 pb-2">
+                                        <div className={`p-8 rounded-[2rem] flex flex-col items-center justify-center text-center ${theme.innerPanel}`}>
+                                            <h3 className="text-6xl font-black text-amber-400 mb-3 drop-shadow-md">{applicantAverageRating}</h3>
+                                            <div className="flex gap-1.5 mb-3 text-amber-400 drop-shadow-sm">
+                                                {[1,2,3,4,5].map(star => (
+                                                    <span key={star}>{star <= Math.round(applicantAverageRating) ? <StarIconSolid className="w-7 h-7"/> : <StarIconOutline className="w-7 h-7 opacity-40"/>}</span>
+                                                ))}
+                                            </div>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest opacity-60 ${theme.textSecondary}`}>Based on {applicantReviews.length} Reviews</p>
+                                        </div>
+
+                                        <div className="space-y-4 mt-2">
+                                            {applicantReviews.length === 0 ? (
+                                                <p className={`text-center text-sm font-bold py-8 opacity-60 ${theme.textPrimary}`}>No reviews yet.</p>
+                                            ) : (
+                                                applicantReviews.map((review, idx) => (
+                                                    <div key={idx} className={`p-5 rounded-[2rem] ${theme.innerPanel}`}>
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-6 h-6 rounded-full overflow-hidden bg-slate-200 shrink-0">
+                                                                    {review.reviewerPic ? <img src={review.reviewerPic} className="w-full h-full object-cover"/> : <span className="flex items-center justify-center h-full text-[8px] text-slate-800 font-bold">{review.reviewerName?.charAt(0) || "U"}</span>}
+                                                                </div>
+                                                                <span className={`text-[10px] font-bold opacity-80 ${theme.textPrimary}`}>{review.reviewerName || "Employer"}</span>
+                                                            </div>
+                                                            <div className="flex gap-0.5 text-amber-400">
+                                                                {[1,2,3,4,5].map(star => (
+                                                                    <span key={star}>{star <= review.rating ? <StarIconSolid className="w-3.5 h-3.5"/> : <StarIconOutline className="w-3.5 h-3.5 opacity-40"/>}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <p className={`text-sm font-medium leading-relaxed opacity-90 ${theme.textPrimary}`}>"{review.comment}"</p>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                       {/* --- ACTIONS (Centered Centering Fix for Mobile) --- */}
-                        <div className="w-full flex flex-col sm:flex-row gap-2 pt-2 shrink-0 mt-2">
+                        <div className={`w-full flex flex-col sm:flex-row gap-2 pt-4 shrink-0 border-t z-10 mt-2 ${theme.divider}`}>
                             <button onClick={() => { 
                                 setSelectedApplication(null); 
                                 handleStartChatFromExternal({ id: selectedApplication.applicantId, name: selectedApplication.applicantName, profilePic: pic || null }); 
-                            }} className={`w-full sm:flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg ${theme.solid}`}>
-                                Message Candidate
+                            }} className={`w-full sm:flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-lg ${theme.solid}`}>
+                                Message
                             </button>
                             
                             {selectedApplication.status === 'pending' && (
                                 <div className="flex gap-2 w-full sm:flex-[2]">
-                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg bg-green-500 hover:bg-green-400 text-white`}>
+                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'accepted')} className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-lg bg-green-500 hover:bg-green-600 text-white`}>
                                         Accept
                                     </button>
-                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-lg bg-red-500 hover:bg-red-400 text-white`}>
+                                    <button onClick={() => handleUpdateApplicationStatus(selectedApplication.id, 'rejected')} className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-lg bg-red-500 hover:bg-red-600 text-white`}>
                                         Reject
                                     </button>
                                 </div>
                             )}
                             
                             {selectedApplication.status === 'accepted' && (
-                                <div className="w-full sm:flex-[2] flex items-center justify-center py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-green-500/10 text-green-500 border border-green-500/20 shadow-sm text-center">
+                                <div className="w-full sm:flex-[2] flex items-center justify-center py-4 rounded-2xl font-black text-xs uppercase tracking-widest bg-green-500/10 text-green-500 border border-green-500/20 shadow-sm text-center backdrop-blur-sm">
                                     <CheckCircleIcon className="w-5 h-5 mr-2 shrink-0" /> 
                                     <span>Application Accepted</span>
                                 </div>
                             )}
                             {selectedApplication.status === 'rejected' && (
-                                <div className="w-full sm:flex-[2] flex items-center justify-center py-4 rounded-xl font-black text-xs uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 shadow-sm text-center">
+                                <div className="w-full sm:flex-[2] flex items-center justify-center py-4 rounded-2xl font-black text-xs uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 shadow-sm text-center backdrop-blur-sm">
                                     <XMarkIcon className="w-5 h-5 mr-2 shrink-0" /> 
                                     <span>Application Rejected</span>
                                 </div>
@@ -1893,55 +1949,56 @@ return (
                 {!isBubbleExpanded && (
                     <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                         <div className="relative">
-                            <button onClick={(e) => { if (!isDragging) { setIsBubbleExpanded(true); if(effectiveActiveChatUser) { openChat(effectiveActiveChatUser); markConversationAsRead(effectiveActiveChatUser.id); } } }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
+                            <button onClick={(e) => { if (!isDragging) { setIsBubbleExpanded(true); if(effectiveActiveChatUser) { openChat(effectiveActiveChatUser); markConversationAsRead(effectiveActiveChatUser.id); } } }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white/80 border border-white/60 backdrop-blur-md'}`}>
                                 {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? ((getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>) : <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} />}
                             </button>
-                            {(() => { const activeUnread = activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.[`unread_${auth.currentUser.uid}`] || 0) : conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0); return activeUnread > 0 ? <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-10 animate-in zoom-in border-none">{activeUnread}</span> : null; })()}
+                            {(() => { const activeUnread = activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (conversations.find(c => c.chatId?.includes(effectiveActiveChatUser.id))?.[`unread_${auth.currentUser.uid}`] || 0) : conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0); return activeUnread > 0 ? <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-10 animate-in zoom-in border-none">{activeUnread}</span> : null; })()}
                         </div>
                     </div>
                 )}
-                {isDragging && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] w-16 h-16 rounded-full flex items-center justify-center border-4 border-slate-400/30 bg-transparent animate-in zoom-in backdrop-blur-sm"><XMarkIcon className="w-8 h-8 text-slate-400" /></div>}
+                {isDragging && <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] w-16 h-16 rounded-full flex items-center justify-center border-4 animate-in zoom-in backdrop-blur-md ${darkMode ? 'border-slate-500/30 bg-slate-800/40' : 'border-blue-400/30 bg-white/40'}`}><XMarkIcon className={`w-8 h-8 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`} /></div>}
                 {isBubbleExpanded && (
-                    <div className="fixed inset-0 z-[1000] flex flex-col bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className={`fixed inset-0 z-[1000] flex flex-col backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'bg-black/60' : 'bg-slate-900/40'}`}>
                         <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
                             {openBubbles.map((chat) => {
                                 const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
-                                const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
+                                const chatPic = chat.profilePic || conversations.find(c => c.chatId?.includes(chat.id))?.profilePics?.[chat.id];
                                 return (
                                     <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
-                                        <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all ${activeBubbleView === chat.id ? 'scale-110 shadow-blue-500/50' : 'opacity-60'}`}>
+                                        <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${darkMode ? 'border-white/10' : 'border-white/60'} ${activeBubbleView === chat.id ? 'scale-110 shadow-blue-500/50' : 'opacity-80'}`}>
                                             {chatPic ? <img src={chatPic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
                                         </button>
                                         {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-sm z-20 border-none">{unread}</span>}
-                                        {activeBubbleView === chat.id && (<button onClick={(e) => { e.stopPropagation(); const newBubbles = openBubbles.filter(b => b.id !== chat.id); setOpenBubbles(newBubbles); if(activeBubbleView === chat.id) { setActiveBubbleView(newBubbles.length ? newBubbles[0].id : 'inbox'); } }} className="absolute -top-1 -right-1 bg-slate-500 text-white rounded-full p-0.5 shadow-md animate-in zoom-in border-none"><XMarkIcon className="w-3 h-3"/></button>)}
+                                        {activeBubbleView === chat.id && (<button onClick={(e) => { e.stopPropagation(); const newBubbles = openBubbles.filter(b => b.id !== chat.id); setOpenBubbles(newBubbles); if(activeBubbleView === chat.id) { setActiveBubbleView(newBubbles.length ? newBubbles[0].id : 'inbox'); } }} className={`absolute -top-1 -right-1 text-white rounded-full p-0.5 shadow-md animate-in zoom-in border-none ${darkMode ? 'bg-slate-500' : 'bg-slate-600'}`}><XMarkIcon className="w-3 h-3"/></button>)}
                                     </div>
                                 );
                             })}
                             <div className="flex flex-col items-center gap-1 shrink-0">
-                                <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all border-2 ${activeBubbleView === 'inbox' ? 'border-blue-500 scale-110' : 'border-white dark:border-slate-700 opacity-60'} ${darkMode ? 'bg-slate-800' : 'bg-white'}`}><ChatBubbleOvalLeftEllipsisIcon className="w-7 h-7 text-blue-500" /></button>
+                                <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all backdrop-blur-md border ${darkMode ? 'bg-slate-800/80 border-white/10' : 'bg-white/60 border-white/60'} ${activeBubbleView === 'inbox' ? 'scale-110 shadow-blue-500/30' : 'opacity-80'}`}><ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} /></button>
                             </div>
                         </div>
                         <div className="flex-1 flex flex-col justify-end relative" onClick={() => setIsBubbleExpanded(false)}>
-                            <div className={`w-full h-[80vh] rounded-t-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`} onClick={(e) => e.stopPropagation()}>
+                            <div className={`w-full h-[80vh] rounded-t-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10 text-white' : 'bg-white/80 border-white/60 text-blue-900'}`} onClick={(e) => e.stopPropagation()}>
                                 {activeBubbleView === 'inbox' ? (
                                     <div className="flex flex-col h-full">
-                                        <div className={`p-5 flex justify-between items-center ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                                            <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
-                                            <button onClick={() => setIsBubbleExpanded(false)} className="p-2 bg-slate-100 dark:bg-white/10 rounded-full"><ChevronDownIcon className="w-5 h-5 opacity-50"/></button> 
+                                        <div className={`p-5 flex justify-between items-center border-b ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+                                            <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-blue-900'}`}>Chats</h3>
+                                            <button onClick={() => setIsBubbleExpanded(false)} className={`p-2 shadow-sm rounded-full ${darkMode ? 'bg-white/10 text-white' : 'bg-white/60 text-blue-600'}`}><ChevronDownIcon className="w-5 h-5"/></button> 
                                         </div>
-                                        <div className="px-5 pb-2"><div className={`flex items-center p-2 rounded-xl border ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}><MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" /><input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold" /></div></div>
-                                        <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
+                                        <div className={`px-5 py-3 border-b ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/30 border-white/60'}`}><div className={`flex items-center p-2 rounded-xl border shadow-inner ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}><MagnifyingGlassIcon className={`w-4 h-4 ml-2 ${darkMode ? 'text-slate-400' : 'text-blue-400'}`} /><input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold ${darkMode ? 'text-white placeholder-slate-500' : 'text-blue-900 placeholder-blue-300'}`} /></div></div>
+                                        <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
                                             {bubbleFilteredChats.map(c => {
                                                 const otherId = c.participants.find(p => p !== auth.currentUser.uid);
+                                                if (!otherId) return null;
                                                 const name = c.names?.[otherId] || "User";
                                                 const otherPic = c.profilePics?.[otherId];
                                                 const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                                 return (
-                                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                                        <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="other-pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/10 text-slate-200' : 'hover:bg-white/50 text-blue-900'}`}>
+                                                        <div className={`w-11 h-11 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="other-pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                                         <div className="flex-1 text-left overflow-hidden">
-                                                            <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div>
-                                                            <div className="flex justify-between items-center"><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
+                                                            <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className={`text-[9px] font-bold opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`}>{formatTime(c.lastTimestamp)}</span></div>
+                                                            <div className="flex justify-between items-center"><p className="text-[11px] truncate font-medium opacity-70">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
                                                         </div>
                                                     </button>
                                                 )
@@ -1951,26 +2008,26 @@ return (
                                 ) : (
                                     effectiveActiveChatUser && (
                                         <>
-                                            <div className={`p-4 flex justify-between items-center shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                            <div className={`p-4 flex justify-between items-center shrink-0 border-b ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200">{(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="header-pfp" /> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}</div>
+                                                    <div className={`w-10 h-10 rounded-full overflow-hidden shadow-inner ${darkMode ? 'bg-slate-800 text-blue-400' : 'bg-white/60 text-blue-600'}`}>{(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="header-pfp" /> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}</div>
                                                     <div>
-                                                        <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-slate-900'}`}>{effectiveActiveChatUser.name}</h3>
-                                                        <p className="text-[10px] font-bold opacity-60 uppercase flex items-center gap-1 mt-0.5">
+                                                        <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-blue-900'}`}>{effectiveActiveChatUser.name}</h3>
+                                                        <p className={`text-[10px] font-bold opacity-70 uppercase flex items-center gap-1 mt-0.5 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`}>
                                                             {(() => {
-                                                                const status = formatLastSeen(conversations.find(c => c.chatId.includes(effectiveActiveChatUser.id))?.lastTimestamp);
+                                                                const status = formatLastSeen(conversations.find(c => c.chatId?.includes(effectiveActiveChatUser.id))?.lastTimestamp);
                                                                 return <><span className={`w-2 h-2 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
                                                             })()}
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <div className="flex gap-4 text-blue-500"><button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button></div>
+                                                <div className={`flex gap-4 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}><button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button></div>
                                             </div>
                                             
-                                            <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50/50'}`} onClick={() => setActiveMenuId(null)}>
+                                            <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`} onClick={() => setActiveMenuId(null)}>
                                                 {messages.map((msg, index) => {
                                                     const isMe = msg.senderId === auth.currentUser.uid;
-                                                    const myPic = profileImage || employerData?.profilePic || null;
+                                                    const myPic = profileImage || applicantData?.profilePic || null;
                                                     const otherPic = effectiveActiveChatUser?.profilePic || getAvatarUrl(effectiveActiveChatUser) || null;
                                                     
                                                     const currentConv = conversations.find(c => c.participants?.includes(auth.currentUser.uid) && c.participants?.includes(effectiveActiveChatUser.id));
@@ -1985,67 +2042,49 @@ return (
                                                         else statusText = "Sent";
                                                     }
 
-                                                    if(msg.type === 'system') return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
-                                                    
                                                     return (
-                                                        <SwipeableMessage key={msg.id} isMe={isMe} isMobile={true} onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} onLongPress={() => setActiveMenuId(msg.id)}>
-                                                            <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group relative`}>
-                                                                {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
-                                                                <div className={`flex items-end gap-3 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                                    <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
-                                                                        {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : effectiveActiveChatUser.name.charAt(0))} 
-                                                                    </div>
-                                                                    <div className="relative group/bubble flex flex-col gap-1">
-                                                                        {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-500 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
-                                                                        {msg.isUnsent ? (
-                                                                            <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
-                                                                        ) : (
-                                                                            <>
-                                                                                {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                                                {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                                                            </>
-                                                                        )}
-                                                                    </div>
-                                                                    
-                                                                    {activeMenuId === msg.id && (
-                                                                        <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
-                                                                            <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
-                                                                            <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-500' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
-                                                                            {isMe && !msg.isUnsent && (
-                                                                                <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 transition-colors ${darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'}`}>Unsend</button>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <p className={`text-[8px] font-black mt-1.5 opacity-40 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
-                                                                    <span>{formatTime(msg.createdAt)}</span>
-                                                                    {isMe && !msg.isUnsent && (
-                                                                        <><span>•</span><span className={statusText === 'Seen' ? 'text-blue-500' : ''}>{statusText}</span></>
-                                                                    )}
-                                                                </p>
-                                                            </div>
-                                                        </SwipeableMessage>
-                                                    )
+                                                        <MessageBubble
+                                                            key={msg.id}
+                                                            msg={msg}
+                                                            isMe={isMe}
+                                                            isMobile={true}
+                                                            darkMode={darkMode}
+                                                            myPic={myPic}
+                                                            otherPic={otherPic}
+                                                            senderName={effectiveActiveChatUser?.name}
+                                                            statusText={statusText}
+                                                            formatTime={formatTime}
+                                                            setLightboxUrl={setLightboxUrl}
+                                                            setReplyingTo={setReplyingTo}
+                                                            togglePinMessage={togglePinMessage}
+                                                            unsendMessage={unsendMessage}
+                                                            activeMenuId={activeMenuId}
+                                                            setActiveMenuId={setActiveMenuId}
+                                                            menuPosition={menuPosition}
+                                                            setMenuPosition={setMenuPosition}
+                                                        />
+                                                    );
                                                 })}
                                                 <div ref={scrollRef}/>
                                             </div>
                                             
-                                            <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`} onClick={() => setActiveMenuId(null)}>
-                                                {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : effectiveActiveChatUser.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                                                {attachment && (
-                                                    <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
-                                                        <div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">
-                                                            {attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}
-                                                            <span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span>
-                                                        </div>
-                                                        <button onClick={() => {setAttachment(null); bubbleFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
+                                            <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
+                                               {replyingTo && (
+                                                <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
+                                                        <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+                                                            {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
+                                                        </span>
                                                     </div>
-                                                )}
-                                                <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
+                                                    <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
+                                                </div>
+                                            )}
+                                                <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
                                                     <input type="file" ref={bubbleFileRef} onChange={handleFileSelect} className="hidden" />
-                                                    <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
-                                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2 text-sm outline-none rounded-full ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-900'}`} />
-                                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-blue-600 disabled:opacity-30 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
+                                                    <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2.5 text-sm outline-none rounded-full shadow-inner font-medium border ${darkMode ? 'bg-slate-900/50 border-white/10 text-white placeholder-slate-500' : 'bg-white/60 border-white/60 text-blue-900 placeholder-blue-900/40'}`} />
+                                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-white bg-blue-600 rounded-full shadow-md disabled:opacity-50 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5" />}</button>
                                                 </form>
                                             </div>
                                         </>
@@ -2055,56 +2094,58 @@ return (
                         </div>
                     </div>
                 )}
+
             </>
         ) : (
             // --- DESKTOP VIEW BUBBLES ---
             <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
                 <div className="pointer-events-auto relative">
-                    <button onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }} className={`group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden ${darkMode ? 'bg-blue-600' : 'bg-blue-600'}`}>
+                    <button onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }} className="group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden bg-blue-600 border-2 border-white">
                         <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
                     </button>
                     {conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-20 animate-bounce border-none">{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0)}</span>}
                 </div>
                 {openBubbles.map((chat) => {
-                    const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
-                    const chatPic = chat.profilePic || conversations.find(c => c.chatId.includes(chat.id))?.profilePics?.[chat.id];
+                    const unread = chat[`unread_${auth.currentUser?.uid}`] || 0;
+                    const chatPic = chat.profilePic || conversations.find(c => c.chatId?.includes(chat.id))?.profilePics?.[chat.id];
                     return (
                     <div key={chat.id} className="pointer-events-auto relative group flex items-center gap-3">
-                        <span className="absolute right-full mr-3 px-3 py-1.5 rounded-xl bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">{chat.name}</span>
+                        <span className={`absolute right-full mr-3 px-3 py-1.5 rounded-xl backdrop-blur-md border text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/60 text-blue-900'}`}>{chat.name}</span>
                         <div className="relative">
-                            <button onClick={() => { openChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); markConversationAsRead(chat.id); }} className="w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl overflow-hidden transition-all hover:scale-110 active:scale-95">
-                                {chatPic ? (<img src={chatPic} alt="pfp" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
+                            <button onClick={() => { openChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); markConversationAsRead(chat.id); }} className={`w-12 h-12 md:w-14 md:h-14 rounded-full shadow-xl border-2 overflow-hidden transition-all hover:scale-110 active:scale-95 ${darkMode ? 'border-white/10 bg-slate-800' : 'border-white/60 bg-white/60'}`}>
+                                {chatPic ? (<img src={chatPic} alt="pfp" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
                             </button>
                             {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm z-20 animate-bounce border-none">{unread}</span>}
-                            <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className="absolute -top-1 -left-1 w-5 h-5 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border-none"><XMarkIcon className="w-3 h-3 text-slate-600 dark:text-slate-300" /></button>
+                            <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className={`absolute -top-1 -left-1 w-5 h-5 backdrop-blur-md border rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/60 text-slate-500'}`}><XMarkIcon className="w-3 h-3" /></button>
                         </div>
                     </div>
                 )})}
                 {isDesktopInboxVisible && !activeChat && (
                     <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
-                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                            <div className={`p-5 flex justify-between items-center ${darkMode ? 'bg-slate-900 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
-                                <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-900'}`}>Chats</h3>
-                                <button onClick={() => setIsDesktopInboxVisible(false)} className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg"><XMarkIcon className="w-5 h-5 opacity-50"/></button>
+                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10' : 'bg-white/80 border-white/60'}`}>
+                            <div className={`p-5 flex justify-between items-center border-b ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+                                <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-blue-900'}`}>Chats</h3>
+                                <button onClick={() => setIsDesktopInboxVisible(false)} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><XMarkIcon className="w-5 h-5"/></button>
                             </div>
-                            <div className="p-3 pb-0">
-                                <div className={`flex items-center p-1.5 rounded-xl border ${darkMode ? 'bg-slate-800 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
-                                    <MagnifyingGlassIcon className="w-4 h-4 ml-2 text-slate-400" />
-                                    <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search..." className="bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold" />
+                            <div className={`p-3 pb-0 ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
+                                <div className={`flex items-center p-1.5 rounded-xl border shadow-inner ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                    <MagnifyingGlassIcon className={`w-4 h-4 ml-2 ${darkMode ? 'text-slate-400' : 'text-blue-400'}`} />
+                                    <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold ${darkMode ? 'text-white placeholder-slate-500' : 'text-blue-900 placeholder-blue-300'}`} />
                                 </div>
                             </div>
-                            <div className="flex-1 overflow-y-auto p-2 hide-scrollbar">
+                            <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
                                 {filteredChats.map(c => {
-                                    const otherId = c.participants.find(p => p !== auth.currentUser.uid);
+                                    const otherId = c.participants?.find(p => p !== auth.currentUser?.uid);
+                                    if (!otherId) return null;
                                     const name = c.names?.[otherId] || "User";
                                     const otherPic = c.profilePics?.[otherId];
                                     const unread = c[`unread_${auth.currentUser.uid}`] || 0;
                                     return (
-                                        <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}>
-                                            <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 flex items-center justify-center">{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                        <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-900'}`}>
+                                            <div className={`w-11 h-11 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
                                             <div className="flex-1 text-left overflow-hidden">
-                                                <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className="text-[9px] opacity-40">{formatTime(c.lastTimestamp)}</span></div>
-                                                <div className="flex justify-between items-center"><p className="text-[11px] truncate opacity-60">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
+                                                <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className={`text-[9px] font-bold opacity-60 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{formatTime(c.lastTimestamp)}</span></div>
+                                                <div className="flex justify-between items-center"><p className="text-[11px] truncate font-medium opacity-70">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
                                             </div>
                                         </button>
                                     )
@@ -2115,28 +2156,30 @@ return (
                 )}
                 {!isChatMinimized && activeChat && activeTab !== "Support" && (
                     <div className="fixed z-[210] pointer-events-auto bottom-6 right-24">
-                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10' : 'bg-white/80 border-white/60'}`}>
                             
-                            <div className={`p-4 flex justify-between items-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0`}>
+                            {/* Desktop Chat Header */}
+                            <div className={`p-4 flex justify-between items-center border-b shrink-0 shadow-sm ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
                                 <div className="flex items-center gap-3">
-                                    <div className="w-9 h-9 rounded-full bg-white/20 overflow-hidden border border-white/20">{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover" alt="pfp"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
+                                    <div className={`w-9 h-9 rounded-full shadow-inner overflow-hidden border ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover" alt="pfp"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
                                     <div>
-                                        <span className="font-black text-xs uppercase block">{activeChat.name}</span>
-                                        <span className="text-[9px] opacity-90 font-bold flex items-center gap-1 mt-0.5">
+                                        <span className={`font-black text-xs uppercase block ${darkMode ? 'text-white' : 'text-blue-900'}`}>{activeChat.name}</span>
+                                        <span className={`text-[9px] opacity-80 font-bold flex items-center gap-1 mt-0.5 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                             {(() => {
-                                                const status = formatLastSeen(conversations.find(c => c.chatId.includes(activeChat.id))?.lastTimestamp);
-                                                return <><span className={`w-1.5 h-1.5 rounded-full ${status.isOnline ? 'bg-green-400' : 'bg-slate-300'}`}></span> {status.text}</>;
+                                                const status = formatLastSeen(conversations.find(c => c.chatId?.includes(activeChat.id))?.lastTimestamp);
+                                                return <><span className={`w-1.5 h-1.5 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
                                             })()}
                                         </span>
                                     </div>
                                 </div>
-                                <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className="p-1.5 hover:bg-white/20 rounded-lg"><ChevronDownIcon className="w-4 h-4"/></button><button onClick={closeChat} className="p-1.5 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-4 h-4"/></button></div>
+                                <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><ChevronDownIcon className="w-4 h-4"/></button><button onClick={closeChat} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><XMarkIcon className="w-4 h-4"/></button></div>
                             </div>
                             
-                            <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/50' : 'bg-slate-50'}`} onClick={() => setActiveMenuId(null)}>
+                            {/* Desktop Chat Messages */}
+                            <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`} onClick={() => setActiveMenuId(null)}>
                                 {messages.map((msg, index) => {
                                     const isMe = msg.senderId === auth.currentUser.uid;
-                                    const myPic = profileImage || employerData?.profilePic || null;
+                                    const myPic = profileImage || applicantData?.profilePic || null;
                                     const otherPic = activeChat?.profilePic || getAvatarUrl(activeChat) || null;
 
                                     const currentConv = conversations.find(c => c.participants?.includes(auth.currentUser.uid) && c.participants?.includes(activeChat.id));
@@ -2151,72 +2194,50 @@ return (
                                         else statusText = "Sent";
                                     }
 
-                                    if(msg.type === 'system') return <div key={msg.id} className="text-center text-[9px] font-black uppercase tracking-widest opacity-30 my-2">{msg.text}</div>;
-                                    
                                     return (
-                                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                                            {msg.replyTo && <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] opacity-60 flex items-center gap-2 max-w-[250px] ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}><ArrowUturnLeftIcon className="w-3 h-3"/><span className="truncate">{msg.replyTo.type === 'image' ? 'Image' : msg.replyTo.type === 'video' ? 'Video' : msg.replyTo.text}</span></div>}
-                                            <div className={`flex items-end gap-2 max-w-[85%] relative ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                                <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[8px] font-black uppercase"> 
-                                                    {isMe ? (myPic ? <img src={myPic} className="w-full h-full object-cover" /> : "M") : (otherPic ? <img src={otherPic} className="w-full h-full object-cover" /> : activeChat.name.charAt(0))} 
-                                                </div>
-                                                <div className="relative group/bubble flex flex-col gap-1">
-                                                    {msg.isPinned && <span className={`text-[9px] font-bold text-yellow-500 uppercase tracking-wider mb-0.5 ${isMe ? 'text-right' : 'text-left'}`}>📌 Pinned</span>}
-                                                    {msg.isUnsent ? (
-                                                        <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>Message unsent</div>
-                                                    ) : (
-                                                        <>
-                                                            {msg.fileUrl && <div className={`overflow-hidden rounded-2xl ${msg.fileType === 'image' || msg.fileType === 'video' ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-black/5')}`}>{msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-40 object-cover rounded-2xl cursor-pointer hover:opacity-90 relative z-10" />}{msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-40 rounded-2xl" />}{msg.fileType === 'file' && <div className="p-3 text-[11px] font-bold underline truncate flex items-center gap-2"><DocumentIcon className="w-4 h-4"/>{msg.fileName}</div>}</div>}
-                                                            {msg.text && <div className={`px-3 py-2.5 rounded-2xl text-[12.5px] shadow-sm leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}><p className="whitespace-pre-wrap">{msg.text}</p></div>}
-                                                        </>
-                                                    )}
-                                                </div>
-
-                                                <div className={`hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity gap-1 mb-2 items-center`}>
-                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType })} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-blue-400 bg-slate-800 hover:bg-slate-700' : 'text-blue-500 bg-white hover:bg-slate-100'}`}><ArrowUturnLeftIcon className="w-3.5 h-3.5"/></button>
-                                                    <div className="relative">
-                                                        <button onClick={(e) => {e.stopPropagation(); setActiveMenuId(activeMenuId === msg.id ? null : msg.id)}} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700' : 'text-slate-500 bg-white hover:bg-slate-100'}`}><EllipsisVerticalIcon className="w-3.5 h-3.5"/></button>
-                                                    </div>
-                                                </div>
-
-                                                {activeMenuId === msg.id && (
-                                                    <div className={`absolute z-50 bottom-full mb-2 ${isMe ? 'right-8' : 'left-8'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
-                                                        <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
-                                                        <button onClick={(e) => {e.stopPropagation(); togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-500' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
-                                                        {isMe && !msg.isUnsent && (
-                                                            <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 transition-colors ${darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'}`}>Unsend</button>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <p className={`text-[8px] font-black mt-1.5 opacity-40 flex items-center gap-1 ${isMe ? 'justify-end mr-10' : 'justify-start ml-10'}`}>
-                                                <span>{formatTime(msg.createdAt)}</span>
-                                                {isMe && !msg.isUnsent && (
-                                                    <><span>•</span><span className={statusText === 'Seen' ? 'text-blue-500' : ''}>{statusText}</span></>
-                                                )}
-                                            </p>
-                                        </div>
-                                    )
+                                        <MessageBubble
+                                            key={msg.id}
+                                            msg={msg}
+                                            isMe={isMe}
+                                            isMobile={false}
+                                            darkMode={darkMode}
+                                            myPic={myPic}
+                                            otherPic={otherPic}
+                                            senderName={activeChat?.name}
+                                            statusText={statusText}
+                                            formatTime={formatTime}
+                                            setLightboxUrl={setLightboxUrl}
+                                            setReplyingTo={setReplyingTo}
+                                            togglePinMessage={togglePinMessage}
+                                            unsendMessage={unsendMessage}
+                                            activeMenuId={activeMenuId}
+                                            setActiveMenuId={setActiveMenuId}
+                                            menuPosition={menuPosition}
+                                            setMenuPosition={setMenuPosition}
+                                        />
+                                    );
                                 })}
                                 <div ref={scrollRef}/>
                             </div>
                             
-                            <div className={`p-3 shrink-0 ${darkMode ? 'bg-slate-900' : 'bg-white'}`} onClick={() => setActiveMenuId(null)}>
-                                {replyingTo && <div className="mb-2 flex justify-between items-center p-2.5 bg-blue-500/10 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold"><div className="flex flex-col"><span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : activeChat.name}</span><span className="truncate max-w-[200px] opacity-70">{replyingTo.text}</span></div><button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-blue-500"/></button></div>}
-                                {attachment && (
-                                    <div className="mb-3 relative inline-block animate-in zoom-in duration-200">
-                                        <div className="p-2 pr-8 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-3">
-                                            {attachment.type.startsWith('image/') ? <PhotoIcon className="w-5 h-5 text-blue-500"/> : <DocumentIcon className="w-5 h-5 text-blue-500"/>}
-                                            <span className="text-xs font-bold text-blue-500 truncate max-w-[200px]">{attachment.name}</span>
-                                        </div>
-                                        <button onClick={() => {setAttachment(null); chatFileRef.current.value = "";}} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600"><XMarkIcon className="w-3 h-3"/></button>
+                            {/* Desktop Chat Input */}
+                            <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
+                                {replyingTo && (
+                                <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                                    <div className="flex flex-col">
+                                        <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
+                                        <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+                                            {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
+                                        </span>
                                     </div>
-                                )}
-                                <form onSubmit={handleSendMessageWrapper} className={`flex gap-2 items-center`}>
+                                    <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
+                                </div>
+                            )}
+                                <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
                                     <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
-                                    <button type="button" onClick={() => chatFileRef.current?.click()} className={`p-2 rounded-xl ${darkMode ? 'hover:bg-white/5 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}><PaperClipIcon className="w-5 h-5"/></button>
-                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2 text-sm outline-none rounded-full ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-900'}`} />
-                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-blue-600 disabled:opacity-30 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-6 h-6" />}</button>
+                                    <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2.5 text-sm outline-none rounded-full shadow-inner font-medium border ${darkMode ? 'bg-slate-900/50 border-white/10 text-white placeholder-slate-500' : 'bg-white/60 border-white/60 text-blue-900 placeholder-blue-900/40'}`} />
+                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-white bg-blue-600 rounded-full shadow-md disabled:opacity-50 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5" />}</button>
                                 </form>
                             </div>
                         </div>
@@ -2224,6 +2245,23 @@ return (
                 )}
             </div>
         ))}
+
+        {/* GLOBAL CONFIRMATION MODAL */}
+        {confirmDialog.isOpen && (
+            <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={closeConfirm}>
+                <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm p-6 md:p-8 rounded-[2.5rem] shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center text-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/60 text-slate-900'}`}>
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${confirmDialog.isDestructive ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                        {confirmDialog.isDestructive ? <TrashIcon className="w-8 h-8"/> : <CheckCircleIcon className="w-8 h-8"/>}
+                    </div>
+                    <h3 className="text-xl font-black mb-2 tracking-tight">{confirmDialog.title}</h3>
+                    <p className={`text-sm font-medium mb-8 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{confirmDialog.message}</p>
+                    <div className="flex gap-3 w-full">
+                        <button onClick={closeConfirm} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Cancel</button>
+                        <button onClick={() => { confirmDialog.onConfirm(); closeConfirm(); }} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg text-white ${confirmDialog.isDestructive ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'}`}>{confirmDialog.confirmText}</button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 }

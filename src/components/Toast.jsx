@@ -8,11 +8,11 @@ export default function Toast({ message, type = "error", onClose }) {
     return () => clearTimeout(timer);
   }, [onClose]);
 
-  const bgColor = type === "error" ? "bg-red-500/90" : "bg-blue-900/90";
-  const icon = type === "error" ? "⚠️" : "ℹ️";
+  const bgColor = type === "error" ? "bg-red-500/90" : type === "success" ? "bg-green-600/90" : "bg-blue-900/90";
+  const icon = type === "error" ? "⚠️" : type === "success" ? "✅" : "ℹ️";
 
   return (
-    <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in slide-in-from-top-4 duration-300">
+    <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
       <div className={`${bgColor} backdrop-blur-xl text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/20 min-w-[300px]`}>
         <span className="text-xl">{icon}</span>
         <div className="flex-1">
@@ -21,7 +21,7 @@ export default function Toast({ message, type = "error", onClose }) {
           </p>
           <p className="text-sm font-bold leading-tight">{message}</p>
         </div>
-        <button onClick={onClose} className="text-white/50 hover:text-white font-black text-xs uppercase">Dismiss</button>
+        <button onClick={onClose} className="text-white/50 hover:text-white font-black text-xs uppercase transition-colors">Dismiss</button>
       </div>
     </div>
   );

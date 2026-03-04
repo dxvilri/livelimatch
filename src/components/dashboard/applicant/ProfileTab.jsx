@@ -366,7 +366,11 @@ export default function ProfileTab({
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-3">
-                                <p className={`text-[10px] font-black uppercase tracking-widest ${theme.contentSub}`}>Resume Image (Optional)</p>
+                                <p className={`text-[10px] font-black uppercase tracking-widest ${theme.contentSub}`}>
+                                    <span> Resume Image </span>
+    
+                                    </p>
+                
                                 
                                 {isEditingProfile ? (
                                     <div className="space-y-4">

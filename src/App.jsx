@@ -1,17 +1,17 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext'; // <-- ADDED
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ApplicantDashboard from './pages/ApplicantDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
-import AdminDashboard from './pages/AdminDashboard'; // <--- IMPORT THIS
+import AdminDashboard from './pages/AdminDashboard'; 
 
 function App() {
   const auth = useAuth();
-  const ADMIN_EMAIL = "admin@livelimatch.com"; // MUST MATCH LOGIN.JS
+  const ADMIN_EMAIL = "admin@livelimatch.com";
 
-  // AUTH PROVIDER ERROR STATE
   if (!auth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
@@ -26,7 +26,6 @@ function App() {
 
   const { user, userData, loading } = auth;
 
-  // GLOBAL LOADING SCREEN
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans relative overflow-hidden">
@@ -47,7 +46,6 @@ function App() {
     );
   }
 
-  // Helper component for Syncing State (to keep code clean)
   const SyncingScreen = () => (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
         <div className="text-center bg-white p-10 rounded-[2.5rem] shadow-2xl border border-white">
@@ -59,70 +57,60 @@ function App() {
   );
 
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* PUBLIC ROUTES */}
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        
-        {/* --- ADMIN ROUTE --- 
-            We do NOT check userData here, only the email, 
-            because the Admin might not have a database profile.
-        */}
-        <Route 
-          path="/admin-dashboard" 
-          element={
-            user && user.email === ADMIN_EMAIL 
-              ? <AdminDashboard /> 
-              : <Navigate to="/login" replace />
-          } 
-        />
+    // <-- WRAPPED WITH TOAST PROVIDER
+    <ToastProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            
+            <Route 
+              path="/admin-dashboard" 
+              element={
+                user && user.email === ADMIN_EMAIL 
+                  ? <AdminDashboard /> 
+                  : <Navigate to="/login" replace />
+              } 
+            />
 
-        {/* --- EMPLOYER ROUTE --- */}
-        <Route 
-          path="/employer-dashboard" 
-          element={
-            user ? (
-              // If logged in, check if profile is loaded
-              userData ? (
-                 // If profile loaded, check role
-                 userData.role === 'employer' ? <EmployerDashboard /> : <Navigate to="/applicant-dashboard" />
-              ) : <SyncingScreen /> // If no profile yet, show sync screen
-            ) : <Navigate to="/login" replace />
-          } 
-        />
+            <Route 
+              path="/employer-dashboard" 
+              element={
+                user ? (
+                  userData ? (
+                     userData.role === 'employer' ? <EmployerDashboard /> : <Navigate to="/applicant-dashboard" />
+                  ) : <SyncingScreen /> 
+                ) : <Navigate to="/login" replace />
+              } 
+            />
 
-        {/* --- APPLICANT ROUTE --- */}
-        <Route 
-          path="/applicant-dashboard" 
-          element={
-            user ? (
-              userData ? (
-                 userData.role === 'applicant' ? <ApplicantDashboard /> : <Navigate to="/employer-dashboard" />
-              ) : <SyncingScreen />
-            ) : <Navigate to="/login" replace />
-          } 
-        />
+            <Route 
+              path="/applicant-dashboard" 
+              element={
+                user ? (
+                  userData ? (
+                     userData.role === 'applicant' ? <ApplicantDashboard /> : <Navigate to="/employer-dashboard" />
+                  ) : <SyncingScreen />
+                ) : <Navigate to="/login" replace />
+              } 
+            />
 
-        {/* --- LEGACY/FALLBACK ROUTE --- 
-            Kept for backward compatibility if any link still points to /dashboard 
-        */}
-        <Route 
-          path="/dashboard" 
-          element={
-             user ? (
-               userData ? (
-                 userData.role === 'employer' ? <Navigate to="/employer-dashboard" /> : <Navigate to="/applicant-dashboard" />
-               ) : <SyncingScreen />
-             ) : <Navigate to="/login" replace />
-          } 
-        />
+            <Route 
+              path="/dashboard" 
+              element={
+                 user ? (
+                   userData ? (
+                     userData.role === 'employer' ? <Navigate to="/employer-dashboard" /> : <Navigate to="/applicant-dashboard" />
+                   ) : <SyncingScreen />
+                 ) : <Navigate to="/login" replace />
+              } 
+            />
 
-        {/* CATCH ALL */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+    </ToastProvider>
   );
 }
 

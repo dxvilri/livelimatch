@@ -1,66 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { MagnifyingGlassIcon, ChatBubbleLeftRightIcon, ChevronLeftIcon, EllipsisHorizontalIcon, ChevronDownIcon, XMarkIcon, PaperClipIcon, PaperAirplaneIcon, ArrowUturnLeftIcon, PhotoIcon, DocumentIcon, ChatBubbleOvalLeftEllipsisIcon, TrashIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline";
-
-// --- STRICT HELPER: Mobile ONLY Swipe & Hold ---
-const SwipeableMessage = ({ isMe, isMobile, onReply, onLongPress, children }) => {
-    const [touchStartPos, setTouchStartPos] = useState(null);
-    const [offset, setOffset] = useState(0);
-    const pressTimer = useRef(null);
-    const isSwiping = useRef(false);
-
-    if (!isMobile) {
-        return <div className="relative w-full">{children}</div>;
-    }
-
-    const onTouchStart = (e) => {
-        const touch = e.targetTouches[0];
-        const clientY = touch.clientY; // Capture the Y position
-        setTouchStartPos({ x: touch.clientX, y: clientY });
-        isSwiping.current = false;
-        pressTimer.current = setTimeout(() => {
-            if (!isSwiping.current) onLongPress(clientY); // Pass it down
-        }, 400); 
-    };
-
-    const onTouchMove = (e) => {
-        if (!touchStartPos) return;
-        const touch = e.targetTouches[0];
-        const diffX = touch.clientX - touchStartPos.x;
-        const diffY = touch.clientY - touchStartPos.y;
-
-        if (Math.abs(diffX) > 10 || Math.abs(diffY) > 10) {
-            isSwiping.current = true;
-            clearTimeout(pressTimer.current);
-        }
-
-        if (Math.abs(diffX) > Math.abs(diffY)) {
-            if (!isMe && diffX > 0) setOffset(Math.min(diffX, 60)); 
-            if (isMe && diffX < 0) setOffset(Math.max(diffX, -60)); 
-        }
-    };
-
-    const onTouchEnd = () => {
-        clearTimeout(pressTimer.current);
-        if (Math.abs(offset) > 40) onReply();
-        setOffset(0);
-        setTouchStartPos(null);
-    };
-
-    return (
-        <div 
-            onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
-            style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.3s ease-out' : 'none' }}
-            className="relative touch-pan-y w-full"
-        >
-             {offset !== 0 && (
-                <div className={`absolute top-1/2 -translate-y-1/2 ${isMe ? 'right-full mr-4' : 'left-full ml-4'} opacity-50`}>
-                    <ArrowUturnLeftIcon className="w-5 h-5 text-slate-400"/>
-                </div>
-            )}
-            {children}
-        </div>
-    );
-};
+import MessageBubble from "../../MessageBubble";
 
 export default function MessagesTab({ 
     chatStatus, unsendMessage, deleteChat, togglePinMessage, myProfileImage,
@@ -69,21 +9,18 @@ export default function MessagesTab({
     const [activeMenuId, setActiveMenuId] = useState(null); 
     const [menuPosition, setMenuPosition] = useState('top');
 
-    // --- NATIVE LOCAL STATE FOR CHAT INPUT ---
     const [newMessage, setNewMessage] = useState("");
     const [attachment, setAttachment] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
     const [replyingTo, setReplyingTo] = useState(null);
     const chatFileRef = useRef(null);
     
-    // Force context menus & chat options to close when changing chats
     useEffect(() => {
         setIsChatOptionsOpen(false);
         setActiveMenuId(null);
         setReplyingTo(null);
     }, [activeChat?.id, setIsChatOptionsOpen]);
 
-    // --- NATIVE SEND HANDLER ---
     const handleSend = async (e) => {
         e.preventDefault();
         if ((!newMessage.trim() && !attachment) || isUploading) return;
@@ -103,24 +40,15 @@ export default function MessagesTab({
     };
 
     const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] text-white' : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] text-slate-800'}`;
-    const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== currentUser?.uid); if (adminUser && otherId === adminUser.id) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
     
-    const MessageAvatar = ({ isMe }) => { 
-        let pic = null;
-        if (isMe) {
-            pic = myProfileImage || currentUser?.photoURL || currentUser?.profilePic || null; 
-            if (!pic) pic = conversations.find(c => c.participants.includes(currentUser.uid))?.profilePics?.[currentUser.uid];
-        } else {
-            if (activeChat) pic = getAvatarUrl(activeChat) || activeChat.profilePic || conversations.find(c => c.chatId.includes(activeChat.id))?.profilePics?.[activeChat.id];
-        }
-        const initial = isMe ? "M" : (activeChat?.name?.charAt(0) || "U");
-        return ( 
-            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 shadow-sm border border-black/5 dark:border-white/10 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[10px] font-black uppercase"> 
-                {pic ? <img src={pic} alt="User" className="w-full h-full object-cover" /> : initial} 
-            </div> 
-        ); 
-    };
-
+    // Safely check for participants to avoid white screen crashes
+    const filteredChats = conversations.filter(c => { 
+        const otherId = c.participants?.find(p => p !== currentUser?.uid); 
+        if (!otherId || (adminUser && otherId === adminUser.id)) return false; 
+        const name = c.names?.[otherId] || "User"; 
+        return name.toLowerCase().includes(chatSearch.toLowerCase()); 
+    });
+    
     return (
         <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6 animate-content ${isMobile ? (activeChat ? 'h-screen pb-0' : 'h-[calc(100vh-14rem)] pb-2') : 'h-[calc(100vh-10rem)]'}`}>
             {/* LEFT COLUMN: CONVERSATION LIST */}
@@ -138,10 +66,11 @@ export default function MessagesTab({
                 <div className="flex-1 overflow-y-auto no-scrollbar p-2 space-y-1">
                     {filteredChats.length > 0 ? (
                         filteredChats.map(c => {
-                            const otherId = c.participants.find(p => p !== currentUser.uid);
+                            const otherId = c.participants?.find(p => p !== currentUser?.uid);
+                            if (!otherId) return null; // Safe guard
                             const name = c.names?.[otherId] || "User"; 
                             const otherPic = c.profilePics?.[otherId];
-                            const unread = c[`unread_${currentUser.uid}`] || 0;
+                            const unread = c[`unread_${currentUser?.uid}`] || 0;
                             const isActive = activeChat?.id === otherId;
 
                             return (
@@ -207,12 +136,12 @@ export default function MessagesTab({
                             </div>
                         </div>
 
-                        {/* Messages Area */}
-                        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 no-scrollbar" onClick={() => {setIsChatOptionsOpen(false); setActiveMenuId(null);}}>
+                        {/* Messages Area utilizing the universal MessageBubble component */}
+                        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 no-scrollbar" onClick={() => {setIsChatOptionsOpen(false); setActiveMenuId(null);}}>
                             {messages.map((msg, index) => {
-                                const isMe = msg.senderId === currentUser.uid;
-                                const isSystem = msg.type === 'system';
-                                const isMedia = msg.fileType === 'image' || msg.fileType === 'video';
+                                const isMe = msg.senderId === currentUser?.uid;
+                                const myPic = myProfileImage || currentUser?.photoURL || currentUser?.profilePic || null; 
+                                const otherPic = activeChat?.profilePic || getAvatarUrl(activeChat) || null;
                                 
                                 const currentConv = conversations.find(c => c.participants?.includes(currentUser?.uid) && c.participants?.includes(activeChat?.id));
                                 const unreadByOther = currentConv ? (currentConv[`unread_${activeChat?.id}`] || 0) : 0;
@@ -225,98 +154,28 @@ export default function MessagesTab({
                                     else statusText = "Sent";
                                 }
 
-                                if(isSystem) return <div key={msg.id} className="text-center text-[10px] font-bold uppercase tracking-widest opacity-30 my-4">{msg.text}</div>;
-                                
                                 return (
-                                    <SwipeableMessage 
-                                        key={msg.id} 
-                                        isMe={isMe} 
-                                        isMobile={isMobile} 
-                                        onReply={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} 
-                                        onLongPress={(clientY) => { 
-                                            setMenuPosition(clientY < 250 ? 'bottom' : 'top'); 
-                                            setActiveMenuId(msg.id); 
-                                        }}
-                                    >
-                                        <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group/msg relative w-full`}>
-                                            
-                                            {msg.replyTo && (
-                                                <div className={`mb-1 px-4 py-2 rounded-2xl text-xs opacity-60 flex items-center gap-2 max-w-xs ${isMe ? 'bg-blue-600/20 text-blue-200' : 'bg-slate-500/20 text-slate-400'}`}>
-                                                    <ArrowUturnLeftIcon className="w-3 h-3"/>
-                                                    <span className="truncate">
-                                                        {msg.replyTo.isUnsent ? "Message unsent" : (msg.replyTo.fileType === 'image' ? 'Image' : msg.replyTo.fileType === 'video' ? 'Video' : msg.replyTo.text)}
-                                                    </span>
-                                                </div>
-                                            )}
-                                            
-                                            <div className={`flex flex-row items-end gap-2 max-w-full relative ${isMe ? 'flex-row-reverse' : ''}`}>
-                                                <MessageAvatar isMe={isMe} />
-                                                
-                                                <div className="flex flex-col gap-1 relative max-w-[75%]">
-                                                    {msg.isPinned && <span className={`text-[10px] font-bold text-yellow-500 uppercase tracking-wider mb-1 ${isMe ? 'text-right mr-2' : 'ml-2'}`}>📌 Pinned</span>}
-                                                    {msg.isUnsent ? (
-                                                        <div className={`p-3 rounded-[1.5rem] shadow-sm text-sm italic border ${isMe ? 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-br-none' : 'bg-transparent text-slate-400 border-slate-300 dark:border-slate-600 rounded-bl-none'}`}>
-                                                            Message unsent
-                                                        </div>
-                                                    ) : (
-                                                        <>
-                                                            {msg.fileUrl && (
-                                                                <div className={`overflow-hidden rounded-2xl ${isMedia ? 'bg-transparent' : (isMe ? 'bg-blue-600' : darkMode ? 'bg-slate-800' : 'bg-white border border-slate-200')}`}>
-                                                                    {msg.fileType === 'image' && <img src={msg.fileUrl} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.fileUrl); }} className="max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity rounded-2xl" alt="attachment" />}
-                                                                    {msg.fileType === 'video' && <video src={msg.fileUrl} controls className="max-w-full max-h-60 rounded-2xl" />}
-                                                                    {msg.fileType === 'file' && <a href={msg.fileUrl} target="_blank" rel="noreferrer" className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${!isMe && 'bg-black/5'}`}><DocumentIcon className="w-6 h-6"/><span className="underline font-bold truncate">{msg.fileName}</span></a>}
-                                                                </div>
-                                                            )}
-                                                            {msg.text && (
-                                                                <div className={`p-4 rounded-[1.5rem] shadow-sm text-sm ${isMe ? 'bg-blue-600 text-white rounded-br-none' : darkMode ? 'bg-slate-800 text-white rounded-bl-none' : 'bg-white text-slate-900 rounded-bl-none border border-black/5'}`}>
-                                                                    <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                                                                </div>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                </div>
-
-                                               {!isMobile && (
-                                                <div className="hidden md:flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity mb-2">
-                                                    <button onClick={() => setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent })} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-blue-400 bg-slate-800 hover:bg-slate-700' : 'text-blue-500 bg-white hover:bg-slate-100'}`} title="Reply">
-                                                        <ArrowUturnLeftIcon className="w-3.5 h-3.5"/>
-                                                    </button>
-                                                    <div className="relative">
-                                                        <button onClick={(e) => {
-                                                            e.stopPropagation(); 
-                                                            const rect = e.currentTarget.getBoundingClientRect();
-                                                            setMenuPosition(rect.top < 250 ? 'bottom' : 'top');
-                                                            setActiveMenuId(activeMenuId === msg.id ? null : msg.id);
-                                                        }} className={`p-1.5 rounded-full shadow-sm transition-colors ${darkMode ? 'text-slate-400 bg-slate-800 hover:bg-slate-700' : 'text-slate-500 bg-white hover:bg-slate-100'}`} title="More">
-                                                            <EllipsisVerticalIcon className="w-3.5 h-3.5"/>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {activeMenuId === msg.id && (
-                                                <div className={`absolute z-50 ${menuPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'} ${isMe ? 'right-12' : 'left-12'} w-40 shadow-xl rounded-xl border overflow-hidden text-xs font-bold animate-in zoom-in-95 ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
-                                                    <button onClick={(e) => {e.stopPropagation(); setReplyingTo({ id: msg.id, text: msg.text, senderId: msg.senderId, fileType: msg.fileType, isUnsent: msg.isUnsent }); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>Reply to</button>
-                                                    <button onClick={(e) => {e.stopPropagation(); if(togglePinMessage) togglePinMessage(msg.id, msg.isPinned); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 border-b transition-colors ${darkMode ? 'border-white/5 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'} ${msg.isPinned ? 'text-yellow-600 dark:text-yellow-400' : ''}`}>{msg.isPinned ? "Unpin message" : "Pin message"}</button>
-                                                    {isMe && !msg.isUnsent && (
-                                                        <button onClick={(e) => {e.stopPropagation(); if(unsendMessage) unsendMessage(msg.id); setActiveMenuId(null)}} className={`w-full text-left px-4 py-3 transition-colors ${darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'}`}>Unsend message</button>
-                                                    )}
-                                                </div>
-                                            )}
-                                            </div>
-                                            
-                                            <p className={`text-[9px] font-bold mt-1.5 opacity-40 select-none flex items-center gap-1.5 ${isMe ? 'justify-end mr-12' : 'justify-start ml-12'}`}>
-                                                <span>{formatTime(msg.createdAt)}</span>
-                                                {isMe && !msg.isUnsent && (
-                                                    <>
-                                                        <span>•</span>
-                                                        <span className={statusText === 'Seen' ? 'text-blue-500 font-black' : ''}>{statusText}</span>
-                                                    </>
-                                                )}
-                                            </p>
-                                        </div>
-                                    </SwipeableMessage>
-                                )
+                                    <MessageBubble
+                                        key={msg.id}
+                                        msg={msg}
+                                        isMe={isMe}
+                                        isMobile={isMobile}
+                                        darkMode={darkMode}
+                                        myPic={myPic}
+                                        otherPic={otherPic}
+                                        senderName={activeChat?.name}
+                                        statusText={statusText}
+                                        formatTime={formatTime}
+                                        setLightboxUrl={setLightboxUrl}
+                                        setReplyingTo={setReplyingTo}
+                                        togglePinMessage={togglePinMessage}
+                                        unsendMessage={unsendMessage}
+                                        activeMenuId={activeMenuId}
+                                        setActiveMenuId={setActiveMenuId}
+                                        menuPosition={menuPosition}
+                                        setMenuPosition={setMenuPosition}
+                                    />
+                                );
                             })}
                             <div ref={scrollRef}/>
                         </div>
