@@ -28,7 +28,8 @@ import {
   SparklesIcon, EnvelopeIcon, PhoneIcon, 
   MegaphoneIcon, TagIcon, StarIcon as StarIconOutline,
   QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, LockClosedIcon, BookmarkIcon,
-  Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon, ArrowDownTrayIcon, TrashIcon
+  Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon, ArrowDownTrayIcon, TrashIcon,
+  BuildingStorefrontIcon, ShoppingBagIcon
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
@@ -44,6 +45,7 @@ import AnnouncementsTab from "../components/dashboard/applicant/AnnouncementsTab
 import RateEmployerModal from "../components/dashboard/applicant/RateEmployerModal";
 import MessageBubble from "../components/MessageBubble";
 import { BOT_FAQ, getBotAutoReply } from "../utils/applicantConstants";
+import LiveliMarketTab from "../components/dashboard/applicant/LiveliMarketTab";
 
 // --- CONSTANTS ---
 const PUROK_LIST = [ "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary" ];
@@ -834,6 +836,9 @@ export default function ApplicantDashboard() {
            </div>
            <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
                 <button onClick={() => { isVerified && setActiveTab("Ratings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Ratings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><StarIconOutline className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Ratings</span></button>
+                <button onClick={() => { setActiveTab("LiveliMarket"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'LiveliMarket' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><BuildingStorefrontIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">LiveliMarket</span></button>
+                <button onClick={() => { setActiveTab("Pasabuy"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Pasabuy' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><ShoppingBagIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Pasabuy</span></button>
+                <button onClick={() => { setActiveTab("Trainings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Trainings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><AcademicCapIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Trainings</span></button>
                 <button onClick={() => { setActiveTab("Announcements"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Announcements' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><MegaphoneIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Announcements</span></button>
                 <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><QuestionMarkCircleIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Support</span></button>
            </nav>
@@ -859,9 +864,19 @@ export default function ApplicantDashboard() {
                         {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6"/>}
                         {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6"/>}
                         {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6"/>}
+                        
+                        {/* --- NEW ICONS ADDED HERE --- */}
+                        {activeTab === "LiveliMarket" && <BuildingStorefrontIcon className="w-6 h-6"/>}
+                        {activeTab === "Pasabuy" && <ShoppingBagIcon className="w-6 h-6"/>}
+                        {activeTab === "Trainings" && <AcademicCapIcon className="w-6 h-6"/>}
                     </div>
                     <div>
-                        <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{activeTab === "Support" ? "Help & Support" : activeTab === "FindJobs" ? "Find Jobs" : activeTab}</h2>
+                        <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>
+                            {activeTab === "Support" ? "Help & Support" : 
+                             activeTab === "FindJobs" ? "Find Jobs" : 
+                             activeTab === "LiveliMarket" ? "LiveliMarket" :
+                             activeTab}
+                        </h2>
                         <p className={`text-[10px] font-bold uppercase tracking-widest opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>Applicant Workspace</p>
                     </div>
                 </div>
@@ -1067,6 +1082,16 @@ export default function ApplicantDashboard() {
             <AnnouncementsTab announcements={announcements} darkMode={darkMode} />
         )}
 
+{isVerified && activeTab === "LiveliMarket" && (
+            <LiveliMarketTab 
+                darkMode={darkMode} 
+                onChatClick={(providerId) => {
+                    // This jumps the user directly to your chat system
+                    setActiveTab("Messages");
+                    // If your MessagesTab accepts an initial user to chat with, you can pass it here!
+                }} 
+            />
+        )}
       </main>
 
       {/* MOBILE BOTTOM NAV */}

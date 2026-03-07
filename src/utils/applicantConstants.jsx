@@ -44,6 +44,24 @@ export const BOT_FAQ = [
         keywords: ["save", "bookmark", "later", "favorite"], 
         question: "How to save a job?", 
         answer: "Click the Bookmark icon on any job card. You can view all your saved jobs later in the 'Saved' tab." 
+    },
+    {
+        id: 6,
+        keywords: ["services", "local", "business", "plumber", "repair", "store"],
+        question: "What is the Local Services tab?",
+        answer: "The Local Services tab is a directory of businesses and skilled workers inside Barangay Cawayan Bogtong. You can use it to hire your neighbors for repairs, tailoring, food orders, and more."
+    },
+    {
+        id: 7,
+        keywords: ["pasabuy", "errand", "buy", "delivery", "padala"],
+        question: "How does Pasabuy work?",
+        answer: "In the Pasabuy tab, you can request someone to run an errand for you (like buying supplies from the market) for a small fee. You can also accept other people's Pasabuy requests to earn extra income!"
+    },
+    {
+        id: 8,
+        keywords: ["training", "seminar", "tesda", "learn", "certificate"],
+        question: "How do I join Livelihood Trainings?",
+        answer: "Check the 'Trainings' tab for upcoming barangay-sponsored seminars (like TESDA courses). You can click 'Enroll' to secure your slot directly through the app."
     }
 ];
 
