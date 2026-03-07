@@ -29,7 +29,7 @@ import {
   MegaphoneIcon, TagIcon, StarIcon as StarIconOutline,
   QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, LockClosedIcon, BookmarkIcon,
   Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon, ArrowDownTrayIcon, TrashIcon,
-  BuildingStorefrontIcon, ShoppingBagIcon
+  BuildingStorefrontIcon, ShoppingBagIcon, 
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
@@ -41,7 +41,7 @@ import MessagesTab from "../components/dashboard/applicant/MessagesTab";
 import ProfileTab from "../components/dashboard/applicant/ProfileTab";
 import RatingsTab from "../components/dashboard/applicant/RatingsTab";
 import SupportTab from "../components/dashboard/applicant/SupportTab";
-import AnnouncementsTab from "../components/dashboard/applicant/AnnouncementsTab";
+import TrainingsTab from "../components/dashboard/applicant/TrainingsTab";
 import RateEmployerModal from "../components/dashboard/applicant/RateEmployerModal";
 import MessageBubble from "../components/MessageBubble";
 import { BOT_FAQ, getBotAutoReply } from "../utils/applicantConstants";
@@ -460,7 +460,12 @@ export default function ApplicantDashboard() {
       }, true, "Delete");
   };
 
-  const handleViewAnnouncement = (annId) => { setActiveTab("Announcements"); setIsNotifOpen(false); setLastReadAnnouncementId(String(annId)); localStorage.setItem("lastReadAnnounceApp", String(annId)); };
+  const handleViewAnnouncement = (annId) => { 
+  setActiveTab("Trainings"); 
+  setIsNotifOpen(false); 
+  setLastReadAnnouncementId(String(annId)); 
+  localStorage.setItem("lastReadAnnounceApp", String(annId)); 
+};
   
   const getJobStyle = (type) => { 
       const found = JOB_TYPES.find(j => j.id === type); 
@@ -805,7 +810,7 @@ export default function ApplicantDashboard() {
                              <div className="p-2 space-y-1">
                                 {hasNewAnnouncement && displayAnnouncement && (
                                     <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold text-red-500 bg-red-500/10">
-                                        <div className="flex flex-col"><span className="text-[10px] uppercase opacity-70">Announcement</span><span className="truncate">{displayAnnouncement.title}</span></div>
+                                        <div className="flex flex-col"><span className="text-[10px] uppercase opacity-70">New Training</span><span className="truncate">{displayAnnouncement.title}</span></div>
                                         <span className="bg-red-500 w-2 h-2 rounded-full shrink-0"></span>
                                     </button>
                                 )}
@@ -837,9 +842,7 @@ export default function ApplicantDashboard() {
            <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
                 <button onClick={() => { isVerified && setActiveTab("Ratings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Ratings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><StarIconOutline className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Ratings</span></button>
                 <button onClick={() => { setActiveTab("LiveliMarket"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'LiveliMarket' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><BuildingStorefrontIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">LiveliMarket</span></button>
-                <button onClick={() => { setActiveTab("Pasabuy"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Pasabuy' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><ShoppingBagIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Pasabuy</span></button>
                 <button onClick={() => { setActiveTab("Trainings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Trainings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><AcademicCapIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Trainings</span></button>
-                <button onClick={() => { setActiveTab("Announcements"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Announcements' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><MegaphoneIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Announcements</span></button>
                 <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><QuestionMarkCircleIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Support</span></button>
            </nav>
            <div className="p-4 space-y-3">
@@ -863,18 +866,15 @@ export default function ApplicantDashboard() {
                         {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6"/>}
                         {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6"/>}
                         {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6"/>}
-                        {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6"/>}
-                        
-                        {/* --- NEW ICONS ADDED HERE --- */}
-                        {activeTab === "LiveliMarket" && <BuildingStorefrontIcon className="w-6 h-6"/>}
-                        {activeTab === "Pasabuy" && <ShoppingBagIcon className="w-6 h-6"/>}
                         {activeTab === "Trainings" && <AcademicCapIcon className="w-6 h-6"/>}
+                        {activeTab === "LiveliMarket" && <BuildingStorefrontIcon className="w-6 h-6"/>}
                     </div>
                     <div>
                         <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>
                             {activeTab === "Support" ? "Help & Support" : 
                              activeTab === "FindJobs" ? "Find Jobs" : 
                              activeTab === "LiveliMarket" ? "LiveliMarket" :
+                             activeTab === "Trainings" ? "Trainings & Seminars" :
                              activeTab}
                         </h2>
                         <p className={`text-[10px] font-bold uppercase tracking-widest opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>Applicant Workspace</p>
@@ -1078,9 +1078,9 @@ export default function ApplicantDashboard() {
             />
         )}
 
-        {activeTab === "Announcements" && (
-            <AnnouncementsTab announcements={announcements} darkMode={darkMode} />
-        )}
+        {activeTab === "Trainings" && (
+    <TrainingsTab darkMode={darkMode} />
+)}
 
 {isVerified && activeTab === "LiveliMarket" && (
             <LiveliMarketTab 

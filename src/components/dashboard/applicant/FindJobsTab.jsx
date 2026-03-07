@@ -318,13 +318,13 @@ export default function FindJobsTab({
                             <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className={`flex-1 flex items-center justify-between gap-3 px-2 py-1 rounded-xl transition-all overflow-hidden text-left relative z-10`}>
                                 <div className="flex items-center gap-3 min-w-0">
                                     <div className={`p-2 rounded-lg shrink-0 relative z-20 ${darkMode ? 'bg-blue-500/10 text-blue-400' : 'bg-white/20 text-white backdrop-blur-sm'}`}>
-                                        <MegaphoneIcon className="w-5 h-5 -rotate-12 group-hover:rotate-0 transition-transform duration-300"/>
+                                        <AcademicCapIcon className="w-5 h-5 -rotate-12 group-hover:rotate-0 transition-transform duration-300"/>
                                     </div>
                                     <div className="flex flex-col overflow-hidden min-w-0 animate-in fade-in slide-in-from-right-16 duration-500 ease-out relative z-20" key={displayAnnouncement.id}>
                                         <div className="flex items-center gap-1.5 mb-0.5">
                                             <span className={`text-[10px] font-black uppercase tracking-widest leading-none whitespace-nowrap drop-shadow-sm ${darkMode ? 'text-slate-400' : 'text-blue-100'}`}>
-                                                Heads Up
-                                            </span>
+                                            Heads Up! New Training & Seminar
+                                        </span>
                                         </div>
                                         <span className={`text-sm font-black truncate leading-tight drop-shadow-md ${darkMode ? 'text-slate-200' : 'text-white'}`}>
                                             {displayAnnouncement.title}
