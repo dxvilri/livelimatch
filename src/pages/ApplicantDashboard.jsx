@@ -1069,6 +1069,28 @@ export default function ApplicantDashboard() {
 
       </main>
 
+      {/* MOBILE BOTTOM NAV */}
+      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${(isFullScreenPage) ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/80 border-white/10' : 'bg-white/60 border-white/60'}`}>
+        <button onClick={() => setActiveTab("FindJobs")}>
+            <BriefcaseIcon className={`w-6 h-6 ${activeTab === 'FindJobs' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
+        </button>
+        <button onClick={() => setActiveTab("Saved")}>
+            <BookmarkIcon className={`w-6 h-6 ${activeTab === 'Saved' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
+        </button>
+        <button onClick={() => setActiveTab("Applications")}>
+            <div className="relative">
+                <PaperAirplaneIcon className={`w-6 h-6 ${activeTab === 'Applications' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
+                {hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>}
+            </div>
+        </button>
+        <button onClick={() => setActiveTab("Messages")}>
+            <div className="relative">
+                <ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
+                {unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] font-bold px-1 rounded-full min-w-[16px] text-center border-none">{unreadMsgCount}</span>}
+            </div>
+        </button>
+      </nav>
+
       {/* --- OVERLAYS: MODALS & BUBBLES --- */}
       
       {/* GLOBAL CONFIRMATION MODAL */}

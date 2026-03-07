@@ -1086,7 +1086,8 @@ return (
                 handleViewAnnouncement={handleViewAnnouncement}
                 setActiveTab={setActiveTab}
                 getAvatarUrl={getAvatarUrl}
-                onImmediateHire={handleImmediateHire} 
+                onImmediateHire={handleImmediateHire}
+                employerData={employerData} 
             />
         )}
 

@@ -366,10 +366,10 @@ export default function ProfileTab({
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-3">
-                                <p className={`text-[10px] font-black uppercase tracking-widest ${theme.contentSub}`}>
-                                    <span> Resume Image </span>
-    
-                                    </p>
+                                <p className={`text-[10px] font-black uppercase tracking-widest flex items-center justify-between ${theme.contentSub}`}>
+                                    <span>Resume Image</span>
+                                    {isEditingProfile && <span className="text-red-500 font-bold">* Required</span>}
+                                </p>
                 
                                 
                                 {isEditingProfile ? (

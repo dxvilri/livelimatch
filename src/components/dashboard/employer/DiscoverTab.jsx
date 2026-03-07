@@ -17,7 +17,7 @@ export default function DiscoverTab({
     isCategoryDropdownOpen, setIsCategoryDropdownOpen, selectedTalent, setSelectedTalent,
     handleStartChatFromExternal, darkMode, JOB_CATEGORIES, PUROK_LIST,
     displayAnnouncement, handleViewAnnouncement, setActiveTab, getAvatarUrl,
-    onImmediateHire
+    onImmediateHire, employerData
 }) {
 
     const [applicantReviews, setApplicantReviews] = useState([]);
@@ -174,16 +174,11 @@ export default function DiscoverTab({
     });
 
     const isFiltering = (talentSearch?.length > 0) || (talentSitioFilter?.length > 0) || (talentCategoryFilter?.length > 0);
-    const employerCategories = [...new Set(myPostedJobs.map(job => job.category).filter(Boolean))];
-    const employerSitios = [...new Set(myPostedJobs.map(job => job.sitio).filter(Boolean))];
 
+    // Suggest applicants with the exact same location as the employer's profile
     const suggestedTalents = filteredTalents.filter(user => {
-        const matchCategory = user.category && employerCategories.includes(user.category);
-        const matchLocation = user.sitio && employerSitios.includes(user.sitio);
-        return matchCategory || matchLocation;
+        return user.sitio && employerData?.sitio && user.sitio === employerData.sitio;
     });
-    
-    const recentTalents = filteredTalents.filter(user => !suggestedTalents.includes(user));
 
     const renderCandidateCard = (user, isHorizontal = false) => {
         const pic = getAvatarUrl(user);
@@ -444,12 +439,15 @@ export default function DiscoverTab({
                     <div className="w-full">
                         <div className="flex items-center justify-between mb-4 pl-2 pr-2">
                             <h2 className={`text-sm font-black uppercase tracking-widest opacity-50 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                                Recently Joined
+                                All Candidates
                             </h2>
                         </div>
                         <div ref={recentRef} onMouseDown={(e) => handleMouseDown(e, recentRef)} onMouseLeave={(e) => handleMouseLeave(e, recentRef)} onMouseUp={(e) => handleMouseUp(e, recentRef)} onMouseMove={(e) => handleMouseMove(e, recentRef)} className="flex overflow-x-auto gap-3 md:gap-4 pt-6 pb-10 -mt-6 hide-scrollbar snap-x md:snap-none snap-mandatory w-full px-2 cursor-grab">
-                            {recentTalents.length > 0 ? recentTalents.map(user => renderCandidateCard(user, true)) : (
-                                <div className="w-full text-center py-20"><SparklesIcon className="w-12 h-12 mx-auto text-slate-300 mb-4" /><p className="opacity-50 font-black uppercase text-xs tracking-[0.3em] select-none cursor-default">No talents available right now</p></div>
+                            {filteredTalents.length > 0 ? filteredTalents.map(user => renderCandidateCard(user, true)) : (
+                                <div className="w-full text-center py-20">
+                                    <SparklesIcon className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                                    <p className="opacity-50 font-black uppercase text-xs tracking-[0.3em] select-none cursor-default">No candidates available right now</p>
+                                </div>
                             )}
                         </div>
                     </div>
