@@ -148,9 +148,11 @@ export default function LiveliMarketTab({ darkMode, onChatClick }) {
         }
 
         let sellerName = auth.currentUser.displayName || "Local Seller";
+        
         try {
-            const userDocRef = doc(db, 'applicants', auth.currentUser.uid); 
-            const userDocSnap = await getDoc(userDocRef);
+            // 1. Check if the user is an Applicant
+            let userDocRef = doc(db, 'applicants', auth.currentUser.uid); 
+            let userDocSnap = await getDoc(userDocRef);
             
             if (userDocSnap.exists()) {
                 const userData = userDocSnap.data();
@@ -158,6 +160,19 @@ export default function LiveliMarketTab({ darkMode, onChatClick }) {
                     sellerName = `${userData.firstName} ${userData.lastName}`;
                 } else if (userData.name) {
                     sellerName = userData.name;
+                }
+            } else {
+                // 2. If not an applicant, check if the user is an Employer
+                userDocRef = doc(db, 'employers', auth.currentUser.uid);
+                userDocSnap = await getDoc(userDocRef);
+                
+                if (userDocSnap.exists()) {
+                    const userData = userDocSnap.data();
+                    if (userData.firstName && userData.lastName) {
+                        sellerName = `${userData.firstName} ${userData.lastName}`;
+                    } else if (userData.name) {
+                        sellerName = userData.name;
+                    }
                 }
             }
         } catch (nameError) {

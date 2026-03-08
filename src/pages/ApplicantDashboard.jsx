@@ -790,11 +790,11 @@ export default function ApplicantDashboard() {
             </div>
             </div>
            <div className="hidden lg:flex items-center gap-24">
-                {['FindJobs', 'Saved', 'Applications', 'Messages'].map(tab => (
+                {['FindJobs', 'LiveliMarket', 'Trainings', 'Messages'].map(tab => (
                     <button key={tab} onClick={() => isVerified && setActiveTab(tab)} className={`${activeTab === tab ? activeGlassNavBtn(darkMode) : glassNavBtn(darkMode)} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                         {tab === 'FindJobs' && <BriefcaseIcon className="w-7 h-7 relative z-10" />}
-                        {tab === 'Saved' && <BookmarkIcon className="w-7 h-7 relative z-10" />}
-                        {tab === 'Applications' && <div className="relative"><PaperAirplaneIcon className="w-7 h-7 relative z-10" />{hasUnreadUpdates && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse z-20"/>}</div>}
+                        {tab === 'LiveliMarket' && <BuildingStorefrontIcon className="w-7 h-7 relative z-10" />}
+                        {tab === 'Trainings' && <AcademicCapIcon className="w-7 h-7 relative z-10" />}
                         {tab === 'Messages' && <div className="relative"><ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" />{unreadMsgCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[9px] flex items-center justify-center rounded-full font-bold">{unreadMsgCount}</span>}</div>}
                     </button>
                 ))}
@@ -841,8 +841,14 @@ export default function ApplicantDashboard() {
            </div>
            <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
                 <button onClick={() => { isVerified && setActiveTab("Ratings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Ratings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><StarIconOutline className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Ratings</span></button>
-                <button onClick={() => { setActiveTab("LiveliMarket"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'LiveliMarket' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><BuildingStorefrontIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">LiveliMarket</span></button>
-                <button onClick={() => { setActiveTab("Trainings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Trainings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><AcademicCapIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Trainings</span></button>
+                <button onClick={() => { isVerified && setActiveTab("Saved"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Saved' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><BookmarkIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Saved Jobs</span></button>
+                <button onClick={() => { isVerified && setActiveTab("Applications"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Applications' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
+                    <div className="relative">
+                        <PaperAirplaneIcon className="w-6 h-6"/>
+                        {hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse z-20"/>}
+                    </div>
+                    <span className="font-bold text-xs uppercase tracking-widest">Applications</span>
+                </button>
                 <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><QuestionMarkCircleIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Support</span></button>
            </nav>
            <div className="p-4 space-y-3">
@@ -875,6 +881,8 @@ export default function ApplicantDashboard() {
                              activeTab === "FindJobs" ? "Find Jobs" : 
                              activeTab === "LiveliMarket" ? "LiveliMarket" :
                              activeTab === "Trainings" ? "Trainings & Seminars" :
+                             activeTab === "Saved" ? "Saved Jobs" :
+                             activeTab === "Applications" ? "Applications" :
                              activeTab}
                         </h2>
                         <p className={`text-[10px] font-bold uppercase tracking-widest opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>Applicant Workspace</p>
@@ -1082,13 +1090,11 @@ export default function ApplicantDashboard() {
             <TrainingsTab darkMode={darkMode} programs={programs} />
         )}
         
-{isVerified && activeTab === "LiveliMarket" && (
+        {isVerified && activeTab === "LiveliMarket" && (
             <LiveliMarketTab 
                 darkMode={darkMode} 
                 onChatClick={(providerId) => {
-                    // This jumps the user directly to your chat system
                     setActiveTab("Messages");
-                    // If your MessagesTab accepts an initial user to chat with, you can pass it here!
                 }} 
             />
         )}
@@ -1096,19 +1102,16 @@ export default function ApplicantDashboard() {
 
       {/* MOBILE BOTTOM NAV */}
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${(isFullScreenPage) ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/80 border-white/10' : 'bg-white/60 border-white/60'}`}>
-        <button onClick={() => setActiveTab("FindJobs")}>
+        <button onClick={() => isVerified && setActiveTab("FindJobs")} className={`${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
             <BriefcaseIcon className={`w-6 h-6 ${activeTab === 'FindJobs' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
         </button>
-        <button onClick={() => setActiveTab("Saved")}>
-            <BookmarkIcon className={`w-6 h-6 ${activeTab === 'Saved' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
+        <button onClick={() => isVerified && setActiveTab("LiveliMarket")} className={`${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+            <BuildingStorefrontIcon className={`w-6 h-6 ${activeTab === 'LiveliMarket' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
         </button>
-        <button onClick={() => setActiveTab("Applications")}>
-            <div className="relative">
-                <PaperAirplaneIcon className={`w-6 h-6 ${activeTab === 'Applications' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
-                {hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>}
-            </div>
+        <button onClick={() => isVerified && setActiveTab("Trainings")} className={`${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+            <AcademicCapIcon className={`w-6 h-6 ${activeTab === 'Trainings' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
         </button>
-        <button onClick={() => setActiveTab("Messages")}>
+        <button onClick={() => isVerified && setActiveTab("Messages")} className={`${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
             <div className="relative">
                 <ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
                 {unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] font-bold px-1 rounded-full min-w-[16px] text-center border-none">{unreadMsgCount}</span>}
@@ -1661,7 +1664,7 @@ export default function ApplicantDashboard() {
                                         <div className={`px-5 py-3 border-b ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/30 border-white/60'}`}><div className={`flex items-center p-2 rounded-xl border shadow-inner ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}><MagnifyingGlassIcon className={`w-4 h-4 ml-2 ${darkMode ? 'text-slate-400' : 'text-blue-400'}`} /><input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold ${darkMode ? 'text-white placeholder-slate-500' : 'text-blue-900 placeholder-blue-300'}`} /></div></div>
                                         <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
                                             {bubbleFilteredChats.map(c => {
-                                                const otherId = c.participants?.find(p => p !== auth.currentUser.uid);
+                                                const otherId = c.participants.find(p => p !== auth.currentUser.uid);
                                                 if (!otherId) return null;
                                                 const name = c.names?.[otherId] || "User";
                                                 const otherPic = c.profilePics?.[otherId];

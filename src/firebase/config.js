@@ -8,7 +8,8 @@ const firebaseConfig = {
   apiKey: "AIzaSyCd_kPUmunO_roBsdElnstoRa1vN68q1G8",
   authDomain: "livelimatch-portal.web.app", 
   projectId: "livelimatch-1c945",
-  storageBucket: "livelimatch-1c945.firebasestorage.app",
+  // ---> CHANGE THIS BACK TO FIREBASESTORAGE.APP <---
+  storageBucket: "livelimatch-1c945.firebasestorage.app", 
   messagingSenderId: "39074464846",
   appId: "1:39074464846:web:05b4ab616cc0fccf01af1f",
   measurementId: "G-8W0S22TDXP"
