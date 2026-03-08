@@ -1,23 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
-  MagnifyingGlassIcon, 
-  AcademicCapIcon, 
-  CalendarDaysIcon, 
-  MapPinIcon, 
-  UserGroupIcon, 
-  ChevronDownIcon,
-  TagIcon,
-  SparklesIcon,
-  CheckBadgeIcon,
-  InformationCircleIcon
+  MagnifyingGlassIcon, AcademicCapIcon, CalendarDaysIcon, 
+  MapPinIcon, UserGroupIcon, ChevronDownIcon, TagIcon,
+  SparklesIcon, CheckBadgeIcon, InformationCircleIcon
 } from "@heroicons/react/24/outline";
 import { useToast } from '../../../context/ToastContext';
-import { getLivelihoodPrograms } from '../../../firebase/communityServices';
+import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { db, auth } from '../../../firebase/config';
 
-export default function TrainingsTab({ darkMode }) {
+export default function TrainingsTab({ darkMode, programs = [] }) {
   const { showToast } = useToast();
-  const [programs, setPrograms] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [enrollingId, setEnrollingId] = useState(null);
   
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -32,20 +25,36 @@ export default function TrainingsTab({ darkMode }) {
     { name: "Livelihood", icon: <UserGroupIcon className="w-5 h-5" /> }
   ];
 
-  useEffect(() => {
-    const fetchPrograms = async () => {
-      setLoading(true);
-      try {
-        const data = await getLivelihoodPrograms();
-        setPrograms(data);
-      } catch (error) {
-        console.error("Error fetching programs:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchPrograms();
-  }, []);
+  const handleEnrollToggle = async (program) => {
+    if (!auth.currentUser) return showToast("You must be logged in to register.", "error");
+    
+    const userId = auth.currentUser.uid;
+    const isEnrolled = program.enrolledUsers?.includes(userId);
+    const totalSlots = program.slots || 30;
+    const currentEnrolled = program.enrolledUsers?.length || 0;
+
+    if (!isEnrolled && currentEnrolled >= totalSlots) {
+        return showToast("This program is already full.", "error");
+    }
+
+    setEnrollingId(program.id);
+    try {
+        const progRef = doc(db, "livelihood_programs", program.id);
+        if (isEnrolled) {
+            await updateDoc(progRef, { enrolledUsers: arrayRemove(userId) });
+            showToast("Registration cancelled. Slot freed up.", "info");
+        } else {
+            await updateDoc(progRef, { enrolledUsers: arrayUnion(userId) });
+            showToast("Successfully registered for training!", "success");
+        }
+        // Notice we don't refetch data here anymore! The parent's real-time listener 
+        // will instantly detect the database change and update the UI automatically.
+    } catch (error) {
+        showToast("Error updating registration.", "error");
+    } finally {
+        setEnrollingId(null);
+    }
+  };
 
   const filteredPrograms = programs.filter(p => {
     const matchesSearch = p.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -113,32 +122,29 @@ export default function TrainingsTab({ darkMode }) {
           </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className={`animate-spin rounded-full h-12 w-12 border-b-2 border-t-2 ${darkMode ? 'border-blue-400' : 'border-blue-800'}`}></div>
-        </div>
-      ) : filteredPrograms.length > 0 ? (
+      {filteredPrograms.length > 0 ? (
         <div className="animate-fade-in">
             <h2 className={`text-xl font-black mb-6 flex items-center gap-3 ${darkMode ? 'text-white' : 'text-blue-900'}`}>
                 <AcademicCapIcon className="w-6 h-6 text-blue-500" /> Upcoming Programs
             </h2>
             
-            {/* Horizontal Scroll matching other tabs */}
-            <div className="flex overflow-x-auto gap-6 pb-8 pt-2 hide-scrollbar snap-x px-2 -mx-2">
+            {/* Restored horizontal scrolling container */}
+            <div className="flex overflow-x-auto gap-4 md:gap-5 pb-10 pt-2 hide-scrollbar snap-x snap-mandatory px-2 -mx-2">
                 {filteredPrograms.map((program) => {
                     const totalSlots = program.slots || 30;
                     const enrolled = program.enrolledUsers?.length || 0;
                     const percentFull = (enrolled / totalSlots) * 100;
+                    const isEnrolled = program.enrolledUsers?.includes(auth.currentUser?.uid);
 
                     return (
                         <div 
                             key={program.id} 
-                            className={`relative flex-none w-[300px] sm:w-[350px] h-[500px] p-6 rounded-[2.5rem] flex flex-col group transition-all duration-300 snap-start shrink-0 hover:-translate-y-1
+                            /* Restored the exact w-[320px] and shrink-0 to prevent stretching and enable sideways scrolling */
+                            className={`relative w-[85vw] sm:w-[320px] h-[480px] shrink-0 snap-start p-6 rounded-[2.5rem] flex flex-col group transition-all duration-300 hover:-translate-y-1 overflow-hidden
                               ${darkMode 
                                   ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border border-white/10 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)]' 
                                   : 'bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200 border border-white/60 ring-1 ring-inset ring-white/40 shadow-[0_20px_50px_-10px_rgba(37,99,235,0.2)]'}`}
                         >
-                            {/* Partner Badge */}
                             <div className="flex justify-between items-start mb-4 shrink-0">
                                 <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${darkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-white text-blue-600 shadow-sm border border-blue-100'}`}>
                                     {program.category || "General"}
@@ -152,7 +158,6 @@ export default function TrainingsTab({ darkMode }) {
                                 {program.title}
                             </h3>
 
-                            {/* Details List */}
                             <div className="space-y-3 mb-6 shrink-0">
                                 <div className="flex items-center gap-3">
                                     <CalendarDaysIcon className={`w-5 h-5 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`} />
@@ -170,15 +175,14 @@ export default function TrainingsTab({ darkMode }) {
                                 </div>
                             </div>
 
-                            {/* Scrollable Description */}
                             <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar mb-6 pr-1">
-                                <p className={`text-xs font-medium whitespace-pre-wrap leading-relaxed ${darkMode ? 'text-slate-400' : 'text-blue-800/80'}`}>
+                                <p className={`text-xs font-medium whitespace-pre-wrap break-words leading-relaxed ${darkMode ? 'text-slate-400' : 'text-blue-800/80'}`}>
                                     {program.description}
                                 </p>
                             </div>
 
-                            {/* Slots Progress Bar */}
-                            <div className="mb-6 shrink-0">
+                            {/* Pushes the footer to the bottom with mt-auto */}
+                            <div className="mb-6 shrink-0 mt-auto">
                                 <div className="flex justify-between items-end mb-2">
                                     <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-blue-800/60'}`}>Enrollment Status</p>
                                     <p className="text-[10px] font-black tracking-widest text-blue-600">{enrolled} / {totalSlots} Slots</p>
@@ -192,15 +196,22 @@ export default function TrainingsTab({ darkMode }) {
                             </div>
 
                             <button 
-                                onClick={() => showToast("Registration features coming soon!", "info")}
-                                disabled={percentFull >= 100}
+                                onClick={() => handleEnrollToggle(program)}
+                                disabled={enrollingId === program.id || (!isEnrolled && percentFull >= 100)}
                                 className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 shadow-lg flex justify-center items-center gap-2
-                                  ${percentFull >= 100 
-                                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
-                                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/30'}`}
+                                  ${isEnrolled 
+                                      ? (darkMode ? 'bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-500 hover:text-white border border-red-200')
+                                      : (!isEnrolled && percentFull >= 100)
+                                          ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
+                                          : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/30'}`}
                             >
-                                <AcademicCapIcon className="w-5 h-5" />
-                                Register for Training
+                                {enrollingId === program.id ? (
+                                    <div className="w-5 h-5 border-2 rounded-full animate-spin border-t-transparent border-current"></div>
+                                ) : isEnrolled ? (
+                                    <>Cancel Registration</>
+                                ) : (
+                                    <><AcademicCapIcon className="w-5 h-5" /> Register for Training</>
+                                )}
                             </button>
                         </div>
                     );

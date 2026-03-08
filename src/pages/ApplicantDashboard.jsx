@@ -111,7 +111,7 @@ export default function ApplicantDashboard() {
   const [availableJobs, setAvailableJobs] = useState([]);
   const [myApplications, setMyApplications] = useState([]);
   const [savedJobs, setSavedJobs] = useState([]);
-  const [announcements, setAnnouncements] = useState([]);
+  const [programs, setPrograms] = useState([]); 
   
   // --- FILTERS ---
   const [jobSearch, setJobSearch] = useState("");
@@ -228,16 +228,16 @@ export default function ApplicantDashboard() {
       return matchesSearch && matchesLoc && matchesCategory;
   });
 
-  const displayAnnouncement = announcements[currentAnnounceIndex];
+  const displayProgram = programs[currentAnnounceIndex];
   const unreadMsgCount = conversations.reduce((acc, curr) => { 
       const otherId = curr.participants?.find(p => p !== auth.currentUser?.uid); 
       if (!otherId || (adminUser && otherId === adminUser.id)) return acc; 
       return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0); 
   }, 0);
-  const latestAnnouncement = announcements.length > 0 ? announcements[0] : null;
-  const hasNewAnnouncement = latestAnnouncement && String(latestAnnouncement.id) !== lastReadAnnouncementId;
+  const latestProgram = programs.length > 0 ? programs[0] : null;
+  const hasNewProgram = latestProgram && String(latestProgram.id) !== lastReadAnnouncementId;
   const hasUnreadUpdates = myApplications.some(app => app.isReadByApplicant === false && app.status !== 'pending');
-  const totalNotifications = (hasUnreadUpdates ? 1 : 0) + (hasNewAnnouncement ? 1 : 0);
+  const totalNotifications = (hasUnreadUpdates ? 1 : 0) + (hasNewProgram ? 1 : 0);
   
   const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (!otherId || (adminUser && otherId === adminUser.id)) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
   const bubbleFilteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (!otherId || (adminUser && otherId === adminUser.id)) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(bubbleSearch.toLowerCase()); });
@@ -303,11 +303,11 @@ export default function ApplicantDashboard() {
   }, [activeTab, setActiveChat, setIsBubbleVisible, setOpenBubbles]);
 
   useEffect(() => {
-    if (announcements.length > 1) {
-        const interval = setInterval(() => setCurrentAnnounceIndex(prev => (prev + 1) % announcements.length), 5000); 
+    if (programs.length > 1) {
+        const interval = setInterval(() => setCurrentAnnounceIndex(prev => (prev + 1) % programs.length), 5000); 
         return () => clearInterval(interval);
     }
-  }, [announcements.length]);
+  }, [programs.length]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -368,8 +368,8 @@ export default function ApplicantDashboard() {
     const qSaved = query(collection(db, "saved_jobs"), where("userId", "==", auth.currentUser.uid));
     const unsubSaved = onSnapshot(qSaved, (snap) => setSavedJobs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     
-    const qAnnouncements = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
-    const unsubAnnouncements = onSnapshot(qAnnouncements, (snap) => setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const qPrograms = query(collection(db, "livelihood_programs"), orderBy("createdAt", "desc"));
+    const unsubPrograms = onSnapshot(qPrograms, (snap) => setPrograms(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     
     const ticketsQuery = query(collection(db, "support_tickets"), where("userId", "==", auth.currentUser.uid));
     const unsubTickets = onSnapshot(ticketsQuery, (snapshot) => {
@@ -383,8 +383,8 @@ export default function ApplicantDashboard() {
         unsubProfile(); 
         unsubApps(); 
         unsubSaved(); 
-        unsubAnnouncements(); 
-        unsubTickets(); 
+        unsubPrograms(); 
+        unsubTickets();
         // --- Set Offline Status on cleanup ---
         setDoc(userRef, { isOnline: false, lastSeen: serverTimestamp() }, { merge: true }).catch(console.error);
     };
@@ -808,9 +808,9 @@ export default function ApplicantDashboard() {
                         <div className={`fixed top-24 left-1/2 -translate-x-1/2 md:absolute md:top-12 md:left-auto md:right-0 md:translate-x-0 w-[90vw] md:w-80 rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 z-[100] ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/90 border-white/60 backdrop-blur-xl'}`}>
                              <div className={`p-3 border-b font-black text-xs uppercase opacity-50 ${darkMode ? 'border-white/10' : 'border-slate-200 text-slate-500'}`}>Notifications</div>
                              <div className="p-2 space-y-1">
-                                {hasNewAnnouncement && displayAnnouncement && (
-                                    <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold text-red-500 bg-red-500/10">
-                                        <div className="flex flex-col"><span className="text-[10px] uppercase opacity-70">New Training</span><span className="truncate">{displayAnnouncement.title}</span></div>
+                                {hasNewProgram && displayProgram && (
+                                    <button onClick={() => handleViewAnnouncement(displayProgram.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold text-red-500 bg-red-500/10">
+                                        <div className="flex flex-col"><span className="text-[10px] uppercase opacity-70">New Training</span><span className="truncate">{displayProgram.title}</span></div>
                                         <span className="bg-red-500 w-2 h-2 rounded-full shrink-0"></span>
                                     </button>
                                 )}
@@ -905,7 +905,7 @@ export default function ApplicantDashboard() {
                 onToggleSave={handleToggleSaveJob}
                 onApply={handleApplyToJob}
                 handleViewAnnouncement={handleViewAnnouncement}
-                displayAnnouncement={displayAnnouncement}
+                displayAnnouncement={displayProgram}
                 darkMode={darkMode}
                 setActiveTab={setActiveTab}
                 PUROK_LIST={PUROK_LIST}
@@ -1078,10 +1078,10 @@ export default function ApplicantDashboard() {
             />
         )}
 
-        {activeTab === "Trainings" && (
-    <TrainingsTab darkMode={darkMode} />
-)}
-
+        {isVerified && activeTab === "Trainings" && (
+            <TrainingsTab darkMode={darkMode} programs={programs} />
+        )}
+        
 {isVerified && activeTab === "LiveliMarket" && (
             <LiveliMarketTab 
                 darkMode={darkMode} 

@@ -117,7 +117,7 @@ export default function AdminDashboard() {
   const [applicants, setApplicants] = useState([]);
   const [employers, setEmployers] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const [announcements, setAnnouncements] = useState([]);
+  const [programs, setPrograms] = useState([]); // Replaced announcements
   const [tickets, setTickets] = useState([]); 
   
   // Filtered States
@@ -129,11 +129,14 @@ export default function AdminDashboard() {
   const [replyText, setReplyText] = useState("");
   const chatEndRef = useRef(null);
 
-  // Announcement Form
-  const [announceTitle, setAnnounceTitle] = useState("");
-  const [announceBody, setAnnounceBody] = useState("");
-  const [announceFiles, setAnnounceFiles] = useState([]);
-  const [isPostingAnn, setIsPostingAnn] = useState(false);
+  // Trainings Form State
+  const [progTitle, setProgTitle] = useState("");
+  const [progCategory, setProgCategory] = useState("TESDA");
+  const [progSlots, setProgSlots] = useState("");
+  const [progDate, setProgDate] = useState("");
+  const [progVenue, setProgVenue] = useState("");
+  const [progDesc, setProgDesc] = useState("");
+  const [isPostingProg, setIsPostingProg] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -154,11 +157,11 @@ export default function AdminDashboard() {
         setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    const unsubAnnouncements = onSnapshot(query(collection(db, "announcements"), orderBy("createdAt", "desc")), (snap) => {
-        setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubPrograms = onSnapshot(query(collection(db, "livelihood_programs"), orderBy("createdAt", "desc")), (snap) => {
+        setPrograms(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => { unsubApplicants(); unsubEmployers(); unsubJobs(); unsubTickets(); unsubAnnouncements(); };
+    return () => { unsubApplicants(); unsubEmployers(); unsubJobs(); unsubTickets(); unsubPrograms(); };
   }, []);
 
   // --- DERIVED STATE ---
@@ -251,13 +254,10 @@ export default function AdminDashboard() {
     if(confirm("Permanently delete this job?")) await deleteDoc(doc(db, "jobs", jobId));
   };
 
-  const handleDeleteAnnouncement = async (annId) => {
-    if(confirm("Are you sure you want to delete this announcement?")) {
-        try {
-            await deleteDoc(doc(db, "announcements", annId));
-        } catch(err) {
-            alert("Error deleting: " + err.message);
-        }
+  const handleDeleteProgram = async (progId) => {
+    if(confirm("Are you sure you want to delete this training program?")) {
+        try { await deleteDoc(doc(db, "livelihood_programs", progId)); } 
+        catch(err) { alert("Error deleting: " + err.message); }
     }
   };
 
@@ -274,53 +274,29 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- ANNOUNCEMENT MEDIA LOGIC ---
-  const handleAnnounceFileChange = (e) => {
-    const selected = Array.from(e.target.files);
-    if (announceFiles.length + selected.length > 3) {
-      alert("You can only upload a maximum of 3 files.");
-      return;
-    }
-    setAnnounceFiles([...announceFiles, ...selected]);
-  };
-
-  const removeAnnounceFile = (index) => {
-    setAnnounceFiles(announceFiles.filter((_, i) => i !== index));
-  };
-
-  const handlePostAnnouncement = async (e) => {
+  const handlePostProgram = async (e) => {
     e.preventDefault();
-    setIsPostingAnn(true);
+    setIsPostingProg(true);
     try {
-        const uploadedUrls = [];
-        
-        for (let i = 0; i < announceFiles.length; i++) {
-            const file = announceFiles[i];
-            const fileExtension = file.name.split('.').pop();
-            const uniqueName = `announcements/${Date.now()}_${i}.${fileExtension}`;
-            const fileRef = ref(storage, uniqueName);
-            await uploadBytes(fileRef, file);
-            const url = await getDownloadURL(fileRef);
-            uploadedUrls.push({ url, type: file.type, name: file.name });
-        }
-
-        await addDoc(collection(db, "announcements"), {
-            title: announceTitle,
-            body: announceBody,
-            media: uploadedUrls,
-            date: new Date().toLocaleDateString(),
+        await addDoc(collection(db, "livelihood_programs"), {
+            title: progTitle,
+            category: progCategory,
+            slots: parseInt(progSlots) || 0,
+            date: progDate,
+            venue: progVenue,
+            description: progDesc,
+            enrolledUsers: [],
             createdAt: serverTimestamp(),
             author: "Admin"
         });
         
-        setAnnounceTitle("");
-        setAnnounceBody("");
-        setAnnounceFiles([]);
-        alert("Announcement Posted!");
+        setProgTitle(""); setProgCategory("TESDA"); setProgSlots(""); 
+        setProgDate(""); setProgVenue(""); setProgDesc("");
+        alert("Training Program Published!");
     } catch (err) {
-        alert("Error posting announcement: " + err.message);
+        alert("Error posting program: " + err.message);
     }
-    setIsPostingAnn(false);
+    setIsPostingProg(false);
   };
 
   const handleSendReply = async (e) => {
@@ -454,10 +430,10 @@ export default function AdminDashboard() {
             />
             
              <NavBtn 
-                active={activeTab==="Announcements"} 
-                onClick={()=>{setActiveTab("Announcements"); setIsSidebarOpen(false)}} 
-                icon={<MegaphoneIcon className="w-6 h-6"/>} 
-                label="Announcements" 
+                active={activeTab==="Trainings"} 
+                onClick={()=>{setActiveTab("Trainings"); setIsSidebarOpen(false)}} 
+                icon={<AcademicCapIcon className="w-6 h-6"/>} 
+                label="Trainings" 
                 open={isSidebarOpen} 
                 dark={darkMode}
             />
@@ -534,7 +510,7 @@ export default function AdminDashboard() {
                 <div className={`p-2 rounded-xl hidden md:block ${darkMode ? 'bg-white/5' : 'bg-blue-50'}`}>
                     {activeTab === "Overview" && <HomeIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Verifications" && <CheckBadgeIcon className="w-6 h-6 text-blue-500"/>}
-                    {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6 text-blue-500"/>}
+                    {activeTab === "Trainings" && <AcademicCapIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Help" && <ChatBubbleLeftRightIcon className="w-6 h-6 text-blue-500"/>}
                     {(activeTab === "Applicants" || activeTab === "Employers") && <UsersIcon className="w-6 h-6 text-blue-500"/>}
                     {activeTab === "Jobs" && <BriefcaseIcon className="w-6 h-6 text-blue-500"/>}
@@ -749,132 +725,157 @@ export default function AdminDashboard() {
             </div>
         )}
 
-        {/* TAB CONTENT: ANNOUNCEMENTS */}
-        {activeTab === "Announcements" && (
-             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className={`lg:col-span-1 p-6 rounded-3xl ${glassPanel} h-fit`}>
-                    <div className="flex items-center gap-3 mb-6">
-                        <MegaphoneIcon className="w-6 h-6 text-pink-500"/>
-                        <h3 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>New Announcement</h3>
+        {/* TAB CONTENT: TRAININGS */}
+        {activeTab === "Trainings" && (
+             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                
+                {/* POST FORM (Left Column) */}
+                <div className={`xl:col-span-1 p-6 md:p-8 rounded-[2.5rem] ${glassPanel} h-fit relative overflow-hidden group`}>
+                    
+                    {/* Decorative Background Accent */}
+                    <div className={`absolute -right-10 -top-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none transition-all duration-700 group-hover:bg-blue-500/20`}></div>
+
+                    {/* Form Header */}
+                    <div className="flex items-center gap-4 mb-8 relative z-10">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/30 text-white">
+                            <AcademicCapIcon className="w-6 h-6"/>
+                        </div>
+                        <div>
+                            <h3 className={`font-black text-xl tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>Post Training</h3>
+                            <p className={`text-[10px] font-bold uppercase tracking-widest opacity-50 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Create New Program</p>
+                        </div>
                     </div>
-                    <form onSubmit={handlePostAnnouncement} className="space-y-4">
+
+                    <form onSubmit={handlePostProgram} className="space-y-5 relative z-10">
+                        {/* Title Input */}
                         <div>
-                            <label className={`text-xs font-bold uppercase opacity-50 ml-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Title</label>
-                            <input 
-                                value={announceTitle}
-                                onChange={(e)=>setAnnounceTitle(e.target.value)}
-                                required
-                                className={`w-full p-4 rounded-xl mt-1 border outline-none font-bold ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-pink-500 text-white' : 'bg-white/50 border-white/40 focus:border-pink-500 text-slate-800'}`} 
-                                placeholder="What's happening?"
-                            />
-                        </div>
-                        <div>
-                            <label className={`text-xs font-bold uppercase opacity-50 ml-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Details</label>
-                            <textarea 
-                                value={announceBody}
-                                onChange={(e)=>setAnnounceBody(e.target.value)}
-                                required
-                                rows="6"
-                                className={`w-full p-4 rounded-xl mt-1 border outline-none text-sm ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-pink-500 text-white' : 'bg-white/50 border-white/40 focus:border-pink-500 text-slate-800'}`} 
-                                placeholder="Type your announcement here..."
-                            ></textarea>
-                        </div>
-                        
-                        {/* MULTIPLE MEDIA UPLOAD */}
-                        <div className={`p-3 rounded-xl border ${darkMode ? 'border-white/10 bg-slate-800/50' : 'border-black/5 bg-white/50'}`}>
-                            <label className={`flex justify-between items-center text-xs font-bold uppercase opacity-60 mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
-                                <span>Attach Media (Optional)</span>
-                                <span>{announceFiles.length}/3</span>
-                            </label>
-                            <input 
-                                type="file" 
-                                accept="image/*,video/*,application/pdf"
-                                multiple
-                                onChange={handleAnnounceFileChange}
-                                className={`w-full text-xs outline-none transition-all font-medium 
-                                ${darkMode ? 'text-slate-300' : 'text-slate-700'}
-                                file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-black file:uppercase file:tracking-widest file:transition-colors file:cursor-pointer
-                                ${darkMode ? 'file:bg-pink-500/20 file:text-pink-400 hover:file:bg-pink-500/30' : 'file:bg-pink-100 file:text-pink-600 hover:file:bg-pink-200'}`} 
-                            />
-                            {announceFiles.length > 0 && (
-                                <div className="mt-2 space-y-1.5">
-                                    {announceFiles.map((f, i) => (
-                                        <div key={i} className={`flex justify-between items-center px-3 py-2 rounded-lg border ${darkMode ? 'border-white/10 bg-black/20 text-slate-300' : 'border-black/5 bg-white text-slate-600'}`}>
-                                            <span className="text-[10px] font-bold truncate pr-4">{f.name}</span>
-                                            <button type="button" onClick={()=>removeAnnounceFile(i)} className="text-red-400 hover:text-red-600"><XMarkIcon className="w-4 h-4"/></button>
-                                        </div>
-                                    ))}
+                            <label className={`text-[10px] font-black uppercase tracking-widest opacity-60 ml-1 mb-1.5 block ${darkMode ? 'text-white' : 'text-slate-800'}`}>Program Title <span className="text-blue-500">*</span></label>
+                            <div className={`flex items-center p-1.5 rounded-2xl border shadow-inner transition-all focus-within:ring-2 focus-within:ring-blue-500/30 ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                <div className={`p-2 rounded-xl ${darkMode ? 'bg-slate-800 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
+                                    <AcademicCapIcon className="w-4 h-4"/>
                                 </div>
-                            )}
+                                <input value={progTitle} onChange={(e)=>setProgTitle(e.target.value)} required className={`w-full bg-transparent border-none outline-none text-sm font-bold px-3 ${darkMode ? 'text-white placeholder-slate-500' : 'text-slate-800 placeholder-slate-400'}`} placeholder="e.g. Basic Computer Literacy" />
+                            </div>
                         </div>
 
-                        <button disabled={isPostingAnn} type="submit" className="w-full py-3 rounded-xl bg-pink-500 text-white font-black uppercase tracking-widest shadow-lg shadow-pink-500/30 hover:bg-pink-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-                            {isPostingAnn ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><PaperAirplaneIcon className="w-5 h-5"/> Post</>}
-                        </button>
+                        {/* Category & Slots Row */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className={`text-[10px] font-black uppercase tracking-widest opacity-60 ml-1 mb-1.5 block ${darkMode ? 'text-white' : 'text-slate-800'}`}>Category</label>
+                                <div className={`flex items-center p-1.5 rounded-2xl border shadow-inner transition-all focus-within:ring-2 focus-within:ring-blue-500/30 ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                     <div className={`p-2 rounded-xl ${darkMode ? 'bg-slate-800 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
+                                        <TagIcon className="w-4 h-4"/>
+                                    </div>
+                                    <select value={progCategory} onChange={(e)=>setProgCategory(e.target.value)} className={`w-full bg-transparent border-none outline-none text-xs font-bold px-2 cursor-pointer ${darkMode ? 'text-white' : 'text-slate-800'}`}>
+                                        <option className={darkMode ? 'bg-slate-800' : ''}>TESDA</option>
+                                        <option className={darkMode ? 'bg-slate-800' : ''}>Vocational</option>
+                                        <option className={darkMode ? 'bg-slate-800' : ''}>IT & Digital</option>
+                                        <option className={darkMode ? 'bg-slate-800' : ''}>Livelihood</option>
+                                        <option className={darkMode ? 'bg-slate-800' : ''}>General</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className={`text-[10px] font-black uppercase tracking-widest opacity-60 ml-1 mb-1.5 block ${darkMode ? 'text-white' : 'text-slate-800'}`}>Slots <span className="text-blue-500">*</span></label>
+                                <div className={`flex items-center p-1.5 rounded-2xl border shadow-inner transition-all focus-within:ring-2 focus-within:ring-blue-500/30 ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                     <div className={`p-2 rounded-xl ${darkMode ? 'bg-slate-800 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
+                                        <UsersIcon className="w-4 h-4"/>
+                                    </div>
+                                    <input type="number" min="1" value={progSlots} onChange={(e)=>setProgSlots(e.target.value)} required className={`w-full bg-transparent border-none outline-none text-sm font-bold px-3 ${darkMode ? 'text-white placeholder-slate-500' : 'text-slate-800 placeholder-slate-400'}`} placeholder="e.g. 30" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Date & Venue Row */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className={`text-[10px] font-black uppercase tracking-widest opacity-60 ml-1 mb-1.5 block ${darkMode ? 'text-white' : 'text-slate-800'}`}>Date & Time <span className="text-blue-500">*</span></label>
+                                <div className={`flex items-center p-1.5 rounded-2xl border shadow-inner transition-all focus-within:ring-2 focus-within:ring-blue-500/30 ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                     <div className={`p-2 rounded-xl ${darkMode ? 'bg-slate-800 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
+                                        <CalendarDaysIcon className="w-4 h-4"/>
+                                    </div>
+                                    <input value={progDate} onChange={(e)=>setProgDate(e.target.value)} required className={`w-full bg-transparent border-none outline-none text-[11px] font-bold px-2 ${darkMode ? 'text-white placeholder-slate-500' : 'text-slate-800 placeholder-slate-400'}`} placeholder="Oct 15 | 8AM" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className={`text-[10px] font-black uppercase tracking-widest opacity-60 ml-1 mb-1.5 block ${darkMode ? 'text-white' : 'text-slate-800'}`}>Venue <span className="text-blue-500">*</span></label>
+                                <div className={`flex items-center p-1.5 rounded-2xl border shadow-inner transition-all focus-within:ring-2 focus-within:ring-blue-500/30 ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                     <div className={`p-2 rounded-xl ${darkMode ? 'bg-slate-800 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
+                                        <MapPinIcon className="w-4 h-4"/>
+                                    </div>
+                                    <input value={progVenue} onChange={(e)=>setProgVenue(e.target.value)} required className={`w-full bg-transparent border-none outline-none text-[11px] font-bold px-2 ${darkMode ? 'text-white placeholder-slate-500' : 'text-slate-800 placeholder-slate-400'}`} placeholder="Barangay Hall" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Description Box */}
+                        <div>
+                            <label className={`text-[10px] font-black uppercase tracking-widest opacity-60 ml-1 mb-1.5 block ${darkMode ? 'text-white' : 'text-slate-800'}`}>Description <span className="text-blue-500">*</span></label>
+                            <div className={`p-1.5 rounded-2xl border shadow-inner transition-all focus-within:ring-2 focus-within:ring-blue-500/30 ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                <textarea value={progDesc} onChange={(e)=>setProgDesc(e.target.value)} required rows="4" className={`w-full bg-transparent border-none outline-none text-sm font-medium p-3 resize-none ${darkMode ? 'text-white placeholder-slate-500' : 'text-slate-800 placeholder-slate-400'}`} placeholder="Details about what residents will learn..."></textarea>
+                            </div>
+                        </div>
+
+                        {/* Action Button */}
+                        <div className="pt-2">
+                            <button disabled={isPostingProg} type="submit" className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50 ${darkMode ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20' : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-700 hover:to-cyan-700 shadow-xl shadow-blue-500/30'}`}>
+                                {isPostingProg ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><PaperAirplaneIcon className="w-5 h-5"/> Publish Training</>}
+                            </button>
+                        </div>
                     </form>
                 </div>
 
-                <div className="lg:col-span-2 space-y-4">
-                    <h3 className={`font-bold text-xl px-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Recent Announcements</h3>
-                    {announcements.length === 0 ? (
-                        <div className={`p-12 rounded-3xl border-dashed border-2 flex flex-col items-center justify-center ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
-                            <MegaphoneIcon className={`w-12 h-12 mb-2 ${darkMode ? 'text-white opacity-20' : 'text-black opacity-20'}`}/>
-                            <p className={`font-bold ${darkMode ? 'text-white opacity-40' : 'text-black opacity-40'}`}>No announcements yet.</p>
-                        </div>
-                    ) : (
-                        announcements.map(ann => (
-                            <div key={ann.id} className={`p-6 rounded-2xl relative overflow-hidden group ${glassCard}`}>
-                                <div className="absolute top-0 left-0 w-1 h-full bg-pink-500"></div>
-                                <div className="flex justify-between items-start mb-2 pl-2">
-                                    <div className="flex-1 pr-4">
-                                        <h4 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>{ann.title}</h4>
-                                    </div>
-                                    
-                                    <div className="flex items-center gap-3">
-                                        <span className={`text-[10px] font-bold opacity-40 uppercase px-2 py-1 rounded ${darkMode ? 'bg-white/5 text-white' : 'bg-black/5 text-slate-800'}`}>{ann.date}</span>
-                                        <button 
-                                            onClick={() => handleDeleteAnnouncement(ann.id)}
-                                            className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all shadow-sm"
-                                            title="Delete Announcement"
-                                        >
-                                            <TrashIcon className="w-5 h-5"/>
-                                        </button>
-                                    </div>
-                                </div>
-                                <p className={`text-sm opacity-70 pl-2 leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-white' : 'text-slate-800'}`}>{ann.body}</p>
-                                
-                                {/* ATTACHMENTS VIEW */}
-                                {ann.media && ann.media.length > 0 && (
-                                    <div className="mt-4 pl-2 flex gap-3 overflow-x-auto no-scrollbar pb-2">
-                                        {ann.media.map((file, i) => (
-                                            <div 
-                                                key={i} 
-                                                onClick={() => setSelectedProof([file.url])} 
-                                                className={`shrink-0 w-24 h-24 rounded-xl overflow-hidden cursor-pointer relative group border ${darkMode ? 'border-white/10 bg-slate-800' : 'border-black/5 bg-slate-100'}`}
-                                            >
-                                                {file.type.startsWith('image/') ? (
-                                                    <img src={file.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
-                                                ) : file.type.startsWith('video/') ? (
-                                                    <div className="w-full h-full flex flex-col items-center justify-center text-blue-500 bg-blue-500/10">
-                                                        <span className="text-2xl">▶</span>
-                                                        <span className="text-[8px] font-black uppercase mt-1">Video</span>
-                                                    </div>
-                                                ) : (
-                                                    <div className="w-full h-full flex flex-col items-center justify-center text-rose-500 bg-rose-500/10 p-2 text-center">
-                                                        <DocumentIcon className="w-6 h-6 mb-1"/>
-                                                        <span className="text-[8px] font-black uppercase line-clamp-2">PDF/Doc</span>
-                                                    </div>
-                                                )}
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                    <EyeIcon className="w-6 h-6 text-white"/>
+                {/* PROGRAM LIST (Right Column) */}
+                <div className="xl:col-span-2 space-y-4">
+                    <h3 className={`font-bold text-xl px-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Active Programs</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {programs.length === 0 ? (
+                            <div className={`col-span-full p-12 rounded-3xl border-dashed border-2 flex flex-col items-center justify-center ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
+                                <AcademicCapIcon className={`w-12 h-12 mb-2 ${darkMode ? 'text-white opacity-20' : 'text-black opacity-20'}`}/>
+                                <p className={`font-bold ${darkMode ? 'text-white opacity-40' : 'text-black opacity-40'}`}>No active programs.</p>
+                            </div>
+                        ) : (
+                            programs.map(prog => {
+                                const enrolledCount = prog.enrolledUsers?.length || 0;
+                                const percentFull = (enrolledCount / (prog.slots || 1)) * 100;
+                                return (
+                                    <div key={prog.id} className={`p-6 rounded-2xl relative overflow-hidden group ${glassCard} flex flex-col justify-between`}>
+                                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                                        <div>
+                                            <div className="flex justify-between items-start mb-3">
+                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${darkMode ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
+                                                    {prog.category}
+                                                </span>
+                                                <button onClick={() => handleDeleteProgram(prog.id)} className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all shadow-sm" title="Delete Program">
+                                                    <TrashIcon className="w-4 h-4"/>
+                                                </button>
+                                            </div>
+                                            <h4 className={`font-black text-lg leading-tight mb-3 ${darkMode ? 'text-white' : 'text-slate-800'}`}>{prog.title}</h4>
+                                            
+                                            <div className="space-y-2 mb-4">
+                                                <div className={`flex items-center gap-2 text-xs font-bold ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                                                    <CalendarDaysIcon className="w-4 h-4" /> <span>{prog.date}</span>
+                                                </div>
+                                                <div className={`flex items-center gap-2 text-xs font-bold ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                                                    <MapPinIcon className="w-4 h-4" /> <span className="truncate">{prog.venue}</span>
                                                 </div>
                                             </div>
-                                        ))}
+                                        </div>
+
+                                        <div className="border-t pt-4 border-slate-500/10">
+                                            <div className="flex justify-between items-end mb-2">
+                                                <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Enrollment</p>
+                                                <p className="text-[10px] font-black tracking-widest text-blue-500">{enrolledCount} / {prog.slots}</p>
+                                            </div>
+                                            <div className={`h-1.5 w-full rounded-full overflow-hidden ${darkMode ? 'bg-slate-700' : 'bg-blue-100'}`}>
+                                                <div className={`h-full transition-all ${percentFull >= 100 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(percentFull, 100)}%` }}></div>
+                                            </div>
+                                        </div>
                                     </div>
-                                )}
-                            </div>
-                        ))
-                    )}
+                                )
+                            })
+                        )}
+                    </div>
                 </div>
              </div>
         )}
@@ -954,7 +955,7 @@ export default function AdminDashboard() {
         )}
 
         {/* TAB CONTENT: LISTS */}
-        {(activeTab !== "Overview" && activeTab !== "Verifications" && activeTab !== "Announcements" && activeTab !== "Help") && (
+        {(activeTab !== "Overview" && activeTab !== "Verifications" && activeTab !== "Trainings" && activeTab !== "Help") && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 <div className={`p-2 rounded-2xl flex flex-col md:flex-row items-center justify-between ${glassPanel} gap-4 md:gap-0`}>
                     <div className="flex items-center gap-3 px-4 flex-1 w-full md:w-auto">
