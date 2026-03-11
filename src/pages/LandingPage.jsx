@@ -9,15 +9,15 @@ import {
   signOut
 } from "firebase/auth";
 import { auth, db, storage } from "../firebase/config";
-import { collection, query, where, getDocs, doc, getDoc, setDoc, addDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc, setDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { EnvelopeIcon, PhoneIcon, ArrowRightOnRectangleIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
+import { EnvelopeIcon, PhoneIcon, ArrowRightOnRectangleIcon, EyeIcon, EyeSlashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import Toast from "../components/Toast"; 
 
 export default function LandingPage() {
   const navigate = useNavigate();
 
-  // --- 1. MOUNT / UNMOUNT CLEANUP (THE FIX) ---
+  // --- 1. MOUNT / UNMOUNT CLEANUP ---
   useEffect(() => {
     // Force Light Mode
     document.documentElement.classList.remove('dark');
@@ -40,6 +40,59 @@ export default function LandingPage() {
 
   const [toast, setToast] = useState({ show: false, message: "", type: "error" });
   const triggerToast = (message, type = "error") => setToast({ show: true, message, type });
+
+  // --- LEGAL / INFO MODALS STATE ---
+  const [activeModal, setActiveModal] = useState(null); // 'privacy', 'terms', 'help', or null
+
+  // Prevent background scrolling when a legal modal is open
+  useEffect(() => {
+      if (activeModal) document.body.style.overflow = "hidden";
+      else document.body.style.overflow = "";
+      return () => { document.body.style.overflow = ""; };
+  }, [activeModal]);
+
+  // --- CONTACT ADMIN STATES ---
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactMessage, setContactMessage] = useState("");
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+
+  const handleSendContactMessage = async (e) => {
+    e.preventDefault();
+    if (!contactName.trim() || !contactEmail.trim() || !contactMessage.trim()) {
+      return triggerToast("Please fill out all fields.", "error");
+    }
+    
+    setIsSendingMessage(true);
+    try {
+      // Save directly to the support_tickets collection so Admin sees it
+      await addDoc(collection(db, "support_tickets"), {
+        ticketId: Math.floor(1000 + Math.random() * 9000).toString(),
+        user: `${contactName} (Guest)`,
+        userId: "guest",
+        guestEmail: contactEmail, // Save email so admin can reply
+        type: "Guest Inquiry",
+        status: "new",
+        lastUpdated: serverTimestamp(),
+        messages: [{
+            sender: 'user',
+            text: contactMessage,
+            timestamp: new Date()
+        }]
+      });
+
+      triggerToast("Message sent successfully! We will email you back shortly.", "info");
+      setContactName("");
+      setContactEmail("");
+      setContactMessage("");
+      setActiveModal(null); // Close the modal after sending
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to send message. Please try again.", "error");
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
 
   // --- AUTH MODE STATE ('login' or 'register') ---
   const [authMode, setAuthMode] = useState("login");
@@ -75,10 +128,9 @@ export default function LandingPage() {
     setRegisterOtp("");
   }, [authMode, loginMethod]);
 
-  // --- 2. UNIQUE RECAPTCHA INITIALIZATION (THE FIX) ---
+  // --- 2. UNIQUE RECAPTCHA INITIALIZATION ---
   const initRecaptcha = () => {
     if (!window.recaptchaVerifier) {
-      // Ensure the container is perfectly empty before Firebase touches it
       const container = document.getElementById("recaptcha-landing-page");
       if (container) container.innerHTML = "";
 
@@ -408,7 +460,7 @@ export default function LandingPage() {
       {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ show: false, message: "", type: "error" })} />}
 
       {/* HEADER */}
-      <header className="w-full h-20 fixed top-0 left-0 z-50 flex items-center transition-all duration-300 border-b backdrop-blur-md border-blue-200/50 bg-white/50">
+      <header className="w-full h-20 fixed top-0 left-0 z-40 flex items-center transition-all duration-300 border-b backdrop-blur-md border-blue-200/50 bg-white/50">
         <div className="max-w-7xl mx-auto w-full px-6 flex justify-between items-center">
           <h1 className="text-xl sm:text-2xl font-black tracking-tighter shrink-0 cursor-pointer" onClick={() => navigate("/")}>
             LIVELI<span className="text-blue-600">MATCH</span>
@@ -443,26 +495,25 @@ export default function LandingPage() {
                   Simple, secure, and built specifically for our community's livelihood.
                 </p>
 
-                {/* MOBILE ONLY BUTTONS */}
+                {/* MOBILE ONLY BUTTONS (Navigates to dedicated pages) */}
                 <div className="flex flex-col sm:flex-row items-center gap-4 pt-4 justify-center lg:hidden">
-                  <button onClick={() => navigate("/register")} className="w-full sm:w-auto px-10 py-5 rounded-2xl font-black text-sm uppercase tracking-widest hover:-translate-y-1 transition-all active:scale-95 bg-blue-600 text-white shadow-xl shadow-blue-600/30 hover:bg-blue-700">
+                  <button onClick={() => navigate('/register')} className="w-full sm:w-auto px-10 py-5 rounded-2xl font-black text-sm uppercase tracking-widest hover:-translate-y-1 transition-all active:scale-95 bg-blue-600 text-white shadow-xl shadow-blue-600/30 hover:bg-blue-700">
                     Get Started!
                   </button>
-                  <button onClick={() => navigate("/login")} className="w-full sm:w-auto px-10 py-5 border rounded-2xl font-black text-sm uppercase tracking-widest hover:-translate-y-1 transition-all bg-white/60 text-blue-900 border-white/60 hover:border-blue-400 hover:bg-white/90 shadow-sm">
+                  <button onClick={() => navigate('/login')} className="w-full sm:w-auto px-10 py-5 border rounded-2xl font-black text-sm uppercase tracking-widest hover:-translate-y-1 transition-all bg-white/60 text-blue-900 border-white/60 hover:border-blue-400 hover:bg-white/90 shadow-sm">
                     Resume Session
                   </button>
                 </div>
               </div>
 
-              {/* Right Side: DESKTOP AUTH MODAL (FIXED SIZE) */}
-              <div className="lg:col-span-5 relative hidden lg:flex justify-center items-center">
-                 <div className="absolute inset-0 rounded-[4rem] blur-2xl -rotate-6 transition-opacity duration-500 bg-gradient-to-tr from-blue-200/50 to-purple-200/50"></div>
+              {/* Right Side: DESKTOP AUTH MODAL (HIDDEN ON MOBILE) */}
+              <div className="lg:col-span-5 relative hidden lg:flex justify-center items-center pb-24 lg:pb-0">
+                 <div className="hidden lg:block absolute inset-0 rounded-[4rem] blur-2xl -rotate-6 transition-opacity duration-500 bg-gradient-to-tr from-blue-200/50 to-purple-200/50"></div>
                  
-                 {/* SHARED GLASS CARD CONTAINER - FIXED SIZE */}
-                 <div className="relative w-full max-w-sm flex flex-col p-6 md:p-8 rounded-[2rem] shadow-2xl border backdrop-blur-xl transition-all duration-300 h-[480px] overflow-hidden bg-white/60 border-white/60 shadow-[0_20px_50px_-10px_rgba(37,99,235,0.15)]">
+                 <div className="relative w-full max-w-sm flex flex-col p-6 md:p-8 rounded-[2rem] shadow-2xl border backdrop-blur-xl transition-all duration-300 lg:h-[480px] overflow-hidden bg-white/60 border-white/60 shadow-[0_20px_50px_-10px_rgba(37,99,235,0.15)]">
                     
                     {/* SCROLLABLE INNER CONTENT */}
-                    <div className="h-full overflow-y-auto overflow-x-hidden pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-900/10">
+                    <div className="h-full lg:overflow-y-auto overflow-x-hidden pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-900/10">
 
                         {/* --- LOGIN MODE --- */}
                         {authMode === 'login' && (
@@ -506,7 +557,7 @@ export default function LandingPage() {
                               </div>
                             )}
 
-                            <div className="mt-auto text-center border-t pt-4 border-white/50">
+                            <div className="mt-auto text-center border-t pt-4 lg:pt-4 pt-8 border-white/50">
                               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">New here? <span onClick={() => setAuthMode('register')} className="ml-2 cursor-pointer hover:underline text-blue-700">Create an account</span></p>
                             </div>
                           </div>
@@ -560,7 +611,7 @@ export default function LandingPage() {
 
                             {registerStep === 5 && (<form onSubmit={handleFinalRegisterSubmit} className="space-y-3"><div><label className={labelStyle}>Select Purok *</label><div className="flex flex-wrap gap-2">{PUROK_LIST.map((sName) => (<button type="button" key={sName} onClick={() => setRegisterData({ ...registerData, sitio: sName })} className={`px-3 py-2.5 rounded-xl border transition-all font-black text-[9px] uppercase tracking-widest flex-grow text-center ${registerData.sitio === sName ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white/60 border-white/60 text-blue-900 hover:bg-white/90'}`}>{sName}</button>))}</div></div><div className="p-3 rounded-2xl border transition-colors bg-white/60 border-white/60 shadow-inner"><label className="text-[10px] font-black uppercase tracking-widest flex justify-between mb-1 text-blue-800"><span>Proof of Residency *</span><span className="text-blue-600">{proofFiles.length}/3</span></label><input type="file" accept="image/*,application/pdf" multiple onChange={handleFileChange} className="w-full px-2 py-1.5 border rounded-xl text-xs outline-none transition-all font-medium bg-white/50 border-white/60 text-blue-900 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:transition-colors file:bg-blue-600 file:text-white hover:file:bg-blue-700" />{proofFiles.length > 0 && (<div className="mt-2 space-y-1.5">{proofFiles.map((file, idx) => (<div key={idx} className="flex justify-between items-center px-2.5 py-1.5 rounded-lg border bg-white border-slate-200 shadow-sm"><span className="text-[10px] font-bold truncate pr-4 text-slate-600">{file.name}</span><button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-500"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button></div>))}</div>)}</div>{registerRole === "employer" && (<div className="space-y-2 pt-1"><div onClick={() => setHasBusiness(!hasBusiness)} className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${hasBusiness ? 'border-blue-400 bg-blue-50' : 'border-white/60 bg-white/60'}`}><div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors ${hasBusiness ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{hasBusiness && <span className="text-white text-[10px] font-bold">✓</span>}</div><span className={`text-[10px] font-black uppercase tracking-widest ${hasBusiness ? 'text-blue-800' : 'text-slate-500'}`}>I have a registered business</span></div>{hasBusiness && <input name="businessName" required placeholder="Company Name" className={`${inputStyle} py-3 text-xs`} onChange={handleRegisterInputChange} />}</div>)}<div className="pt-2"><button disabled={loading || !registerData.sitio || proofFiles.length === 0} type="submit" className="w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed flex justify-center items-center gap-3 bg-blue-600 text-white">{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Complete"}</button></div></form>)}
 
-                            <div className="mt-auto text-center border-t pt-4 border-white/50">
+                            <div className="mt-auto text-center border-t pt-4 lg:pt-4 pt-8 border-white/50">
                               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Already have an account? <span onClick={() => setAuthMode('login')} className="ml-2 cursor-pointer hover:underline text-blue-700">Sign In</span></p>
                             </div>
                           </div>
@@ -606,15 +657,138 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="text-center md:text-left">
             <p className="text-xl font-black tracking-tighter leading-none">LIVELI<span className="text-blue-600">MATCH</span></p>
-            <p className="text-[8px] font-bold uppercase tracking-widest mt-2 opacity-60 text-blue-900">© 2026 Barangay Cawayan Bogtong Livelihood Portal</p>
+            <p className="text-[8px] font-bold uppercase tracking-widest mt-2 opacity-60 text-blue-900">© {new Date().getFullYear()} Barangay Cawayan Bogtong Livelihood Portal</p>
           </div>
           <div className="flex gap-6 sm:gap-10">
-            <button className="text-[10px] font-black uppercase tracking-widest transition-colors text-slate-500 hover:text-blue-900">Privacy Policy</button>
-            <button className="text-[10px] font-black uppercase tracking-widest transition-colors text-slate-500 hover:text-blue-900">Terms of Use</button>
-            <button className="text-[10px] font-black uppercase tracking-widest transition-colors text-slate-500 hover:text-blue-900">Help Center</button>
+            <button onClick={() => setActiveModal('privacy')} className="text-[10px] font-black uppercase tracking-widest transition-colors text-slate-500 hover:text-blue-900">Privacy Policy</button>
+            <button onClick={() => setActiveModal('terms')} className="text-[10px] font-black uppercase tracking-widest transition-colors text-slate-500 hover:text-blue-900">Terms of Use</button>
+            <button onClick={() => setActiveModal('help')} className="text-[10px] font-black uppercase tracking-widest transition-colors text-slate-500 hover:text-blue-900">Help Center</button>
           </div>
         </div>
       </footer>
+
+      {/* --- LEGAL MODALS OVERLAYS --- */}
+      {activeModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-blue-950/40 animate-in fade-in duration-300" onClick={() => setActiveModal(null)}>
+          <div 
+            className="relative w-full max-w-2xl bg-white/90 border border-white shadow-2xl rounded-[2.5rem] p-6 sm:p-10 max-h-[85vh] overflow-y-auto hide-scrollbar animate-in zoom-in-95 duration-300"
+            onClick={e => e.stopPropagation()}
+          >
+            <button onClick={() => setActiveModal(null)} className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 rounded-full hover:bg-slate-200 transition-colors text-slate-500 hover:text-slate-800">
+                <XMarkIcon className="w-6 h-6"/>
+            </button>
+            
+            {activeModal === 'privacy' && (
+              <div className="text-blue-950 space-y-5">
+                <h2 className="text-3xl font-black tracking-tight mb-2">Privacy Policy</h2>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 opacity-80">Last Updated: {new Date().getFullYear()}</p>
+                <div className="space-y-4 text-sm font-medium leading-relaxed opacity-90 pb-4">
+                  <p>Welcome to Livelimatch. We respect your privacy and are committed to protecting your personal data, especially as a resident of Barangay Cawayan Bogtong.</p>
+                  <h3 className="text-lg font-black pt-2">1. Information We Collect</h3>
+                  <p>When you register, we collect your full name, contact information (email/phone), your designated Purok within Barangay Cawayan Bogtong, and uploaded proof of residency (e.g., ID or Brgy Clearance).</p>
+                  <h3 className="text-lg font-black pt-2">2. How We Use Your Data</h3>
+                  <p>Your data is used strictly for:</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Verifying that you are a legitimate resident of Barangay Cawayan Bogtong.</li>
+                    <li>Connecting Job Seekers with local Employers.</li>
+                    <li>Facilitating the LiveliMarket local marketplace.</li>
+                  </ul>
+                  <h3 className="text-lg font-black pt-2">3. Data Security</h3>
+                  <p>Your proof of residency documents are securely stored in our encrypted database and are only accessible by authorized Barangay Administrators for verification purposes. They are never shared publicly.</p>
+                  <h3 className="text-lg font-black pt-2">4. Your Rights</h3>
+                  <p>You have the right to request the deletion of your account and personal data at any time by contacting our administrators or using the help center ticket system.</p>
+                </div>
+              </div>
+            )}
+
+            {activeModal === 'terms' && (
+              <div className="text-blue-950 space-y-5">
+                <h2 className="text-3xl font-black tracking-tight mb-2">Terms of Use</h2>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 opacity-80">Effective Date: {new Date().getFullYear()}</p>
+                <div className="space-y-4 text-sm font-medium leading-relaxed opacity-90 pb-4">
+                  <p>By using Livelimatch, you agree to these terms designed to keep our local community safe.</p>
+                  <h3 className="text-lg font-black pt-2">1. Eligibility</h3>
+                  <p>This platform is strictly restricted to the residents of <strong>Barangay Cawayan Bogtong</strong>. Any attempt by non-residents to bypass verification will result in permanent suspension.</p>
+                  <h3 className="text-lg font-black pt-2">2. User Conduct</h3>
+                  <p>Users must maintain respectful and professional behavior when posting jobs, applying, or chatting. The LiveliMarket is for legitimate local livelihood products only. Posting illegal, harmful, or misleading content is strictly prohibited.</p>
+                  <h3 className="text-lg font-black pt-2">3. Admin Rights</h3>
+                  <p>The Barangay Administrators reserve the right to reject, suspend, or terminate any account that violates community guidelines, posts fraudulent job listings, or engages in inappropriate behavior in the chat.</p>
+                  <h3 className="text-lg font-black pt-2">4. Liability</h3>
+                  <p>Livelimatch serves as a bridge between individuals. The platform and its administrators are not legally responsible for employment disputes, unpaid wages, or transactions made in LiveliMarket. Users must practice standard caution.</p>
+                </div>
+              </div>
+            )}
+
+            {activeModal === 'help' && (
+              <div className="text-blue-950 space-y-5 pb-4">
+                <h2 className="text-3xl font-black tracking-tight mb-2">Help Center</h2>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 opacity-80">Support & Guidance</p>
+                
+                <div className="space-y-6 text-sm font-medium leading-relaxed opacity-90 pt-2">
+                  <div className="bg-blue-50 border border-blue-200 p-5 rounded-2xl">
+                    <h3 className="text-lg font-black text-blue-900 mb-2">How to get Verified?</h3>
+                    <ol className="list-decimal pl-4 space-y-2 text-blue-800">
+                      <li>Create an account and fill out your personal information.</li>
+                      <li>Upload a clear photo of your <strong>Barangay Clearance</strong>, valid ID with Cawayan Bogtong address, or Cedula.</li>
+                      <li>Wait 1-3 business days for our Admin to review and approve your account.</li>
+                    </ol>
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-black pt-2">Forgot Password?</h3>
+                    <p>If you signed up with an email, you can reset your password using the Firebase authentication prompt, or you can log in securely using your phone number via OTP (One-Time Password) without needing a password.</p>
+                  </div>
+                </div>
+
+                {/* --- CONTACT ADMIN FORM --- */}
+                <div className="bg-white/60 border border-white shadow-inner p-5 rounded-2xl mt-6">
+                  <h3 className="text-lg font-black text-blue-900 mb-3 flex items-center gap-2">
+                    <EnvelopeIcon className="w-5 h-5" /> Contact Admin
+                  </h3>
+                  <p className="text-xs text-blue-800/80 mb-4 font-medium">Use this form to report bugs, malicious users, or request assistance if you cannot log in.</p>
+                  
+                  <form onSubmit={handleSendContactMessage} className="space-y-3">
+                    <input 
+                      required 
+                      placeholder="Your Name" 
+                      value={contactName} 
+                      onChange={e => setContactName(e.target.value)} 
+                      className={inputStyle} 
+                    />
+                    <input 
+                      type="email" 
+                      required 
+                      placeholder="Your Email" 
+                      value={contactEmail} 
+                      onChange={e => setContactEmail(e.target.value)} 
+                      className={inputStyle} 
+                    />
+                    <textarea 
+                      required 
+                      rows="3" 
+                      placeholder="Describe your issue, report, or concern..." 
+                      value={contactMessage} 
+                      onChange={e => setContactMessage(e.target.value)} 
+                      className={`${inputStyle} resize-none`} 
+                    />
+                    <button 
+                      disabled={isSendingMessage} 
+                      type="submit" 
+                      className="w-full py-3.5 rounded-xl font-black uppercase tracking-[0.2em] text-[10px] bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center"
+                    >
+                      {isSendingMessage ? (
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        "Send Message"
+                      )}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes blob {
