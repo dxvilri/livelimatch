@@ -6,7 +6,7 @@ import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config";
 import { createPortal } from "react-dom";
 import {
-  collection, query, where, onSnapshot, orderBy,
+  collection, query, where, onSnapshot,
   addDoc, serverTimestamp, setDoc, doc, updateDoc, increment, deleteDoc, 
   getDoc, getDocs, arrayUnion
 } from "firebase/firestore";
@@ -28,8 +28,7 @@ import {
   SparklesIcon, EnvelopeIcon, PhoneIcon, 
   MegaphoneIcon, TagIcon, StarIcon as StarIconOutline,
   QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, LockClosedIcon, BookmarkIcon,
-  Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon, ArrowDownTrayIcon, TrashIcon,
-  BuildingStorefrontIcon, ShoppingBagIcon, 
+  Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon, ArrowDownTrayIcon, TrashIcon
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
@@ -41,11 +40,9 @@ import MessagesTab from "../components/dashboard/applicant/MessagesTab";
 import ProfileTab from "../components/dashboard/applicant/ProfileTab";
 import RatingsTab from "../components/dashboard/applicant/RatingsTab";
 import SupportTab from "../components/dashboard/applicant/SupportTab";
-import TrainingsTab from "../components/dashboard/applicant/TrainingsTab";
 import RateEmployerModal from "../components/dashboard/applicant/RateEmployerModal";
 import MessageBubble from "../components/MessageBubble";
 import { BOT_FAQ, getBotAutoReply } from "../utils/applicantConstants";
-import LiveliMarketTab from "../components/dashboard/applicant/LiveliMarketTab";
 
 // --- CONSTANTS ---
 const PUROK_LIST = [ "Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary" ];
@@ -111,7 +108,7 @@ export default function ApplicantDashboard() {
   const [availableJobs, setAvailableJobs] = useState([]);
   const [myApplications, setMyApplications] = useState([]);
   const [savedJobs, setSavedJobs] = useState([]);
-  const [programs, setPrograms] = useState([]); 
+  const [announcements, setAnnouncements] = useState([]); 
   
   // --- FILTERS ---
   const [jobSearch, setJobSearch] = useState("");
@@ -228,16 +225,16 @@ export default function ApplicantDashboard() {
       return matchesSearch && matchesLoc && matchesCategory;
   });
 
-  const displayProgram = programs[currentAnnounceIndex];
+  const displayAnnouncement = announcements[currentAnnounceIndex];
   const unreadMsgCount = conversations.reduce((acc, curr) => { 
       const otherId = curr.participants?.find(p => p !== auth.currentUser?.uid); 
       if (!otherId || (adminUser && otherId === adminUser.id)) return acc; 
       return acc + (curr[`unread_${auth.currentUser?.uid}`] || 0); 
   }, 0);
-  const latestProgram = programs.length > 0 ? programs[0] : null;
-  const hasNewProgram = latestProgram && String(latestProgram.id) !== lastReadAnnouncementId;
+  const latestAnnouncement = announcements.length > 0 ? announcements[0] : null;
+  const hasNewAnnouncement = latestAnnouncement && latestAnnouncement.id !== lastReadAnnouncementId;
   const hasUnreadUpdates = myApplications.some(app => app.isReadByApplicant === false && app.status !== 'pending');
-  const totalNotifications = (hasUnreadUpdates ? 1 : 0) + (hasNewProgram ? 1 : 0);
+  const totalNotifications = (hasUnreadUpdates ? 1 : 0) + (hasNewAnnouncement ? 1 : 0);
   
   const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (!otherId || (adminUser && otherId === adminUser.id)) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
   const bubbleFilteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (!otherId || (adminUser && otherId === adminUser.id)) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(bubbleSearch.toLowerCase()); });
@@ -303,11 +300,11 @@ export default function ApplicantDashboard() {
   }, [activeTab, setActiveChat, setIsBubbleVisible, setOpenBubbles]);
 
   useEffect(() => {
-    if (programs.length > 1) {
-        const interval = setInterval(() => setCurrentAnnounceIndex(prev => (prev + 1) % programs.length), 5000); 
+    if (announcements.length > 1) {
+        const interval = setInterval(() => setCurrentAnnounceIndex(prev => (prev + 1) % announcements.length), 5000); 
         return () => clearInterval(interval);
     }
-  }, [programs.length]);
+  }, [announcements.length]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -368,8 +365,8 @@ export default function ApplicantDashboard() {
     const qSaved = query(collection(db, "saved_jobs"), where("userId", "==", auth.currentUser.uid));
     const unsubSaved = onSnapshot(qSaved, (snap) => setSavedJobs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     
-    const qPrograms = query(collection(db, "livelihood_programs"), orderBy("createdAt", "desc"));
-    const unsubPrograms = onSnapshot(qPrograms, (snap) => setPrograms(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const qAnnouncements = query(collection(db, "announcements"));
+    const unsubAnnouncements = onSnapshot(qAnnouncements, (snap) => setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     
     const ticketsQuery = query(collection(db, "support_tickets"), where("userId", "==", auth.currentUser.uid));
     const unsubTickets = onSnapshot(ticketsQuery, (snapshot) => {
@@ -383,7 +380,7 @@ export default function ApplicantDashboard() {
         unsubProfile(); 
         unsubApps(); 
         unsubSaved(); 
-        unsubPrograms(); 
+        unsubAnnouncements(); 
         unsubTickets();
         // --- Set Offline Status on cleanup ---
         setDoc(userRef, { isOnline: false, lastSeen: serverTimestamp() }, { merge: true }).catch(console.error);
@@ -460,18 +457,8 @@ export default function ApplicantDashboard() {
       }, true, "Delete");
   };
 
-  const handleViewAnnouncement = (annId) => { 
-  setActiveTab("Trainings"); 
-  setIsNotifOpen(false); 
-  setLastReadAnnouncementId(String(annId)); 
-  localStorage.setItem("lastReadAnnounceApp", String(annId)); 
-};
-  
-  const getJobStyle = (type) => { 
-      const found = JOB_TYPES.find(j => j.id === type); 
-      if (found) return found; 
-      return { icon: <BoltIcon className="w-6 h-6"/>, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' }; 
-  };
+  const handleViewAnnouncement = (annId) => { setActiveTab("Announcements"); setIsNotifOpen(false); setLastReadAnnouncementId(annId); localStorage.setItem("lastReadAnnounceApp", annId); };
+  const getJobStyle = (type) => { const found = JOB_TYPES.find(j => j.id === type); if (found) return found; return { icon: <BoltIcon className="w-6 h-6"/>, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' }; };
 
   const handleSubmitEmployerRating = async (ratingData) => {
     if (!auth.currentUser || !selectedEmployerToRate) return;
@@ -790,12 +777,12 @@ export default function ApplicantDashboard() {
             </div>
             </div>
            <div className="hidden lg:flex items-center gap-24">
-                {['FindJobs', 'LiveliMarket', 'Trainings', 'Messages'].map(tab => (
+                {['FindJobs', 'Saved', 'Applications', 'Messages'].map(tab => (
                     <button key={tab} onClick={() => isVerified && setActiveTab(tab)} className={`${activeTab === tab ? activeGlassNavBtn(darkMode) : glassNavBtn(darkMode)} ${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
                         {tab === 'FindJobs' && <BriefcaseIcon className="w-7 h-7 relative z-10" />}
-                        {tab === 'LiveliMarket' && <BuildingStorefrontIcon className="w-7 h-7 relative z-10" />}
-                        {tab === 'Trainings' && <AcademicCapIcon className="w-7 h-7 relative z-10" />}
-                        {tab === 'Messages' && <div className="relative"><ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" />{unreadMsgCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[9px] flex items-center justify-center rounded-full font-bold">{unreadMsgCount}</span>}</div>}
+                        {tab === 'Saved' && <BookmarkIcon className="w-7 h-7 relative z-10" />}
+                        {tab === 'Applications' && <div className="relative"><PaperAirplaneIcon className="w-7 h-7 relative z-10" />{hasUnreadUpdates && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full animate-pulse z-20"></span>}</div>}
+                        {tab === 'Messages' && <div className="relative"><ChatBubbleLeftRightIcon className="w-7 h-7 relative z-10" />{unreadMsgCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[9px] flex items-center justify-center rounded-full font-bold border-none">{unreadMsgCount}</span>}</div>}
                     </button>
                 ))}
            </div>
@@ -808,10 +795,10 @@ export default function ApplicantDashboard() {
                         <div className={`fixed top-24 left-1/2 -translate-x-1/2 md:absolute md:top-12 md:left-auto md:right-0 md:translate-x-0 w-[90vw] md:w-80 rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 z-[100] ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/90 border-white/60 backdrop-blur-xl'}`}>
                              <div className={`p-3 border-b font-black text-xs uppercase opacity-50 ${darkMode ? 'border-white/10' : 'border-slate-200 text-slate-500'}`}>Notifications</div>
                              <div className="p-2 space-y-1">
-                                {hasNewProgram && displayProgram && (
-                                    <button onClick={() => handleViewAnnouncement(displayProgram.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold text-red-500 bg-red-500/10">
-                                        <div className="flex flex-col"><span className="text-[10px] uppercase opacity-70">New Training</span><span className="truncate">{displayProgram.title}</span></div>
-                                        <span className="bg-red-500 w-2 h-2 rounded-full shrink-0"></span>
+                                {hasNewAnnouncement && displayAnnouncement && (
+                                    <button onClick={() => handleViewAnnouncement(displayAnnouncement.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold text-pink-500 bg-pink-500/10">
+                                        <div className="flex flex-col"><span className="text-[10px] uppercase opacity-70">Announcement</span><span className="truncate">{displayAnnouncement.title}</span></div>
+                                        <span className="bg-pink-500 w-2 h-2 rounded-full shrink-0"></span>
                                     </button>
                                 )}
                                 {hasUnreadUpdates && <button onClick={() => { setActiveTab("Applications"); setIsNotifOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold text-red-500 bg-red-500/10"><span>Update on Application</span><span className="bg-red-500 w-2 h-2 rounded-full"></span></button>}
@@ -841,14 +828,7 @@ export default function ApplicantDashboard() {
            </div>
            <nav className="flex-1 px-4 space-y-3 py-4 overflow-y-auto no-scrollbar">
                 <button onClick={() => { isVerified && setActiveTab("Ratings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Ratings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><StarIconOutline className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Ratings</span></button>
-                <button onClick={() => { isVerified && setActiveTab("Saved"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Saved' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><BookmarkIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Saved Jobs</span></button>
-                <button onClick={() => { isVerified && setActiveTab("Applications"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Applications' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
-                    <div className="relative">
-                        <PaperAirplaneIcon className="w-6 h-6"/>
-                        {hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse z-20"/>}
-                    </div>
-                    <span className="font-bold text-xs uppercase tracking-widest">Applications</span>
-                </button>
+                <button onClick={() => { setActiveTab("Announcements"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Announcements' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><MegaphoneIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Announcements</span></button>
                 <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><QuestionMarkCircleIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Support</span></button>
            </nav>
            <div className="p-4 space-y-3">
@@ -872,15 +852,11 @@ export default function ApplicantDashboard() {
                         {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6"/>}
                         {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6"/>}
                         {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6"/>}
-                        {activeTab === "Trainings" && <AcademicCapIcon className="w-6 h-6"/>}
-                        {activeTab === "LiveliMarket" && <BuildingStorefrontIcon className="w-6 h-6"/>}
                     </div>
                     <div>
                         <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>
                             {activeTab === "Support" ? "Help & Support" : 
                              activeTab === "FindJobs" ? "Find Jobs" : 
-                             activeTab === "LiveliMarket" ? "LiveliMarket" :
-                             activeTab === "Trainings" ? "Trainings & Seminars" :
                              activeTab === "Saved" ? "Saved Jobs" :
                              activeTab === "Applications" ? "Applications" :
                              activeTab}
@@ -913,7 +889,7 @@ export default function ApplicantDashboard() {
                 onToggleSave={handleToggleSaveJob}
                 onApply={handleApplyToJob}
                 handleViewAnnouncement={handleViewAnnouncement}
-                displayAnnouncement={displayProgram}
+                displayAnnouncement={displayAnnouncement}
                 darkMode={darkMode}
                 setActiveTab={setActiveTab}
                 PUROK_LIST={PUROK_LIST}
@@ -1085,33 +1061,23 @@ export default function ApplicantDashboard() {
                 BOT_FAQ={BOT_FAQ}
             />
         )}
-
-        {isVerified && activeTab === "Trainings" && (
-            <TrainingsTab darkMode={darkMode} programs={programs} />
-        )}
-        
-        {isVerified && activeTab === "LiveliMarket" && (
-            <LiveliMarketTab 
-                darkMode={darkMode} 
-                onChatClick={(providerId) => {
-                    setActiveTab("Messages");
-                }} 
-            />
-        )}
       </main>
 
       {/* MOBILE BOTTOM NAV */}
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t px-6 py-3 flex justify-around items-center z-[80] transition-transform duration-300 backdrop-blur-xl ${(isFullScreenPage) ? 'translate-y-full' : 'translate-y-0'} ${darkMode ? 'bg-slate-900/80 border-white/10' : 'bg-white/60 border-white/60'}`}>
-        <button onClick={() => isVerified && setActiveTab("FindJobs")} className={`${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+        <button onClick={() => setActiveTab("FindJobs")}>
             <BriefcaseIcon className={`w-6 h-6 ${activeTab === 'FindJobs' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
         </button>
-        <button onClick={() => isVerified && setActiveTab("LiveliMarket")} className={`${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
-            <BuildingStorefrontIcon className={`w-6 h-6 ${activeTab === 'LiveliMarket' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
+        <button onClick={() => setActiveTab("Saved")}>
+            <BookmarkIcon className={`w-6 h-6 ${activeTab === 'Saved' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
         </button>
-        <button onClick={() => isVerified && setActiveTab("Trainings")} className={`${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
-            <AcademicCapIcon className={`w-6 h-6 ${activeTab === 'Trainings' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
+        <button onClick={() => setActiveTab("Applications")}>
+            <div className="relative">
+                <PaperAirplaneIcon className={`w-6 h-6 ${activeTab === 'Applications' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
+                {hasUnreadUpdates && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>}
+            </div>
         </button>
-        <button onClick={() => isVerified && setActiveTab("Messages")} className={`${!isVerified && 'opacity-50 cursor-not-allowed'}`}>
+        <button onClick={() => setActiveTab("Messages")}>
             <div className="relative">
                 <ChatBubbleLeftRightIcon className={`w-6 h-6 ${activeTab === 'Messages' ? 'text-blue-600' : (darkMode ? 'text-slate-500' : 'text-blue-900/60')}`} />
                 {unreadMsgCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] font-bold px-1 rounded-full min-w-[16px] text-center border-none">{unreadMsgCount}</span>}

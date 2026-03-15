@@ -3,13 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext"; 
 import { signOut } from "firebase/auth";
-import { auth, db, storage } from "../firebase/config"; 
+import { auth, db } from "../firebase/config"; 
 import { createPortal } from "react-dom";
 import { 
   collection, query, where, onSnapshot, orderBy,
   addDoc, serverTimestamp, setDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, increment, arrayUnion
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 import { useChat } from "../hooks/useChat"; 
 
@@ -27,9 +27,9 @@ import {
   ChevronDownIcon,
   ChatBubbleOvalLeftEllipsisIcon, PhoneIcon,
   BellIcon, QuestionMarkCircleIcon, IdentificationIcon, LockClosedIcon,
-  CpuChipIcon, TagIcon, StarIcon as StarIconOutline,
+  MegaphoneIcon, CpuChipIcon, TagIcon, StarIcon as StarIconOutline,
   Cog8ToothIcon, HomeIcon, UserGroupIcon, WrenchScrewdriverIcon, BookmarkIcon, Bars3BottomRightIcon,
-  EllipsisVerticalIcon, ArrowDownTrayIcon, BuildingStorefrontIcon
+  EllipsisVerticalIcon, ArrowDownTrayIcon
 } from "@heroicons/react/24/outline";
 
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
@@ -41,12 +41,9 @@ import MessagesTab from "../components/dashboard/employer/MessagesTab";
 import ProfileTab from "../components/dashboard/employer/ProfileTab";
 import RatingsTab from "../components/dashboard/employer/RatingsTab";
 import SupportTab from "../components/dashboard/employer/SupportTab";
+import AnnouncementsTab from "../components/dashboard/employer/AnnouncementsTab";
 import RateApplicantModal from "../components/dashboard/employer/RateApplicantModal";
 import MessageBubble from "../components/MessageBubble";
-
-// Import General Tabs
-import TrainingsTab from "../components/dashboard/applicant/TrainingsTab";
-import LiveliMarketTab from "../components/dashboard/applicant/LiveliMarketTab";
 
 import { PUROK_LIST, JOB_CATEGORIES, ADMIN_EMAIL, JOB_TYPES, BOT_FAQ } from "../utils/employerConstants";
 
@@ -91,6 +88,7 @@ export default function EmployerDashboard() {
   const [loading, setLoading] = useState(false); 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  // --- CUSTOM CONFIRMATION MODAL STATE ---
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: "", message: "", onConfirm: null, isDestructive: false, confirmText: "Confirm" });
   
   const requestConfirm = (title, message, onConfirm, isDestructive = false, confirmText = "Confirm") => {
@@ -143,11 +141,23 @@ export default function EmployerDashboard() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [adminUser, setAdminUser] = useState(null);
     
-  const [programs, setPrograms] = useState([]); 
+  const [announcements, setAnnouncements] = useState([]);
+  const [lastReadAnnouncementId, setLastReadAnnouncementId] = useState(localStorage.getItem("lastReadAnnounce")); 
   const [myPostedJobs, setMyPostedJobs] = useState([]); 
   const [receivedApplications, setReceivedApplications] = useState([]); 
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentAnnounceIndex, setCurrentAnnounceIndex] = useState(0);
 
+  useEffect(() => {
+    if (announcements.length > 1) {
+        const interval = setInterval(() => {
+            setCurrentAnnounceIndex(prev => (prev + 1) % announcements.length);
+        }, 5000); 
+        return () => clearInterval(interval);
+    }
+  }, [announcements.length]);
+
+  const displayAnnouncement = announcements[currentAnnounceIndex];
   const [isRatingApplicantModalOpen, setIsRatingApplicantModalOpen] = useState(false);
   const [selectedApplicantToRate, setSelectedApplicantToRate] = useState(null);
       
@@ -398,12 +408,11 @@ export default function EmployerDashboard() {
       setReceivedApplications(appsData);
     });
 
-    const qPrograms = query(collection(db, "livelihood_programs"), orderBy("createdAt", "desc"));
-    const unsubPrograms = onSnapshot(qPrograms, (snap) => {
-       setPrograms(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const qAnnouncements = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
+    const unsubAnnouncements = onSnapshot(qAnnouncements, (snap) => {
+       setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-
-    return () => { unsubJobs(); unsubApps(); unsubPrograms(); };
+    return () => { unsubJobs(); unsubApps(); unsubAnnouncements(); };
   }, [auth.currentUser]);
 
   const handleImmediateHire = (talent) => {
@@ -486,6 +495,7 @@ export default function EmployerDashboard() {
     } else {
         setIsUploading(true);
         try {
+            const storage = getStorage(auth.app);
             const storageRef = ref(storage, `chat_attachments/${chatId}/${Date.now()}_${attachment.name}`);
             const uploadTask = await uploadBytes(storageRef, attachment);
             const fileUrl = await getDownloadURL(uploadTask.ref);
@@ -538,6 +548,7 @@ export default function EmployerDashboard() {
       try {
           let imageUrl = null;
           if (supportAttachment) {
+             const storage = getStorage(auth.app);
              const storageRef = ref(storage, `support_attachments/${auth.currentUser.uid}/${Date.now()}_${supportAttachment.name}`);
              const uploadTask = await uploadBytes(storageRef, supportAttachment);
              imageUrl = await getDownloadURL(uploadTask.ref);
@@ -607,6 +618,7 @@ export default function EmployerDashboard() {
 
         if (isEditingImage && fileInputRef.current?.files[0]) {
             const file = fileInputRef.current.files[0];
+            const storage = getStorage(auth.app);
             const storageRef = ref(storage, `profile_pics/${auth.currentUser.uid}_${Date.now()}`); 
             const uploadTask = await uploadBytes(storageRef, file);
             updatedProfilePicUrl = await getDownloadURL(uploadTask.ref);
@@ -741,6 +753,11 @@ export default function EmployerDashboard() {
     } catch (error) { showToast("Failed to submit rating.", "error"); } finally { setLoading(false); }
   };
   
+  const handleViewAnnouncement = (annId) => {
+     setActiveTab("Announcements"); setIsNotifOpen(false); setLastReadAnnouncementId(annId);
+     localStorage.setItem("lastReadAnnounce", annId);
+  };
+
   const handleTouchStart = (e) => { setIsDragging(true); const touch = e.touches[0]; dragOffset.current = { x: touch.clientX - bubblePos.x, y: touch.clientY - bubblePos.y }; };
   const handleTouchMove = (e) => { if (!isDragging) return; const touch = e.touches[0]; const bubbleSize = 56; let newX = touch.clientX - dragOffset.current.x; let newY = touch.clientY - dragOffset.current.y; newY = Math.max(0, Math.min(newY, window.innerHeight - 80)); newX = Math.max(0, Math.min(newX, window.innerWidth - bubbleSize)); setBubblePos({ x: newX, y: newY }); };
   const handleTouchEnd = () => { setIsDragging(false); const trashX = window.innerWidth / 2; const trashY = window.innerHeight - 80; const dist = Math.hypot((bubblePos.x + 28) - trashX, (bubblePos.y + 28) - trashY); if (dist < 60) { setIsBubbleVisible(false); setOpenBubbles([]); return; } if (bubblePos.x < window.innerWidth / 2) setBubblePos(prev => ({ ...prev, x: 0 })); else setBubblePos(prev => ({ ...prev, x: window.innerWidth - 56 })); };
@@ -752,7 +769,9 @@ export default function EmployerDashboard() {
 
   const displayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
   const newAppCount = receivedApplications.filter(a => a.status === 'pending' && !a.isViewed).length;
-  const totalNotifications = newAppCount;
+  const latestAnnouncement = announcements.length > 0 ? announcements[0] : null;
+  const hasNewAnnouncement = latestAnnouncement && latestAnnouncement.id !== lastReadAnnouncementId;
+  const totalNotifications = newAppCount + (hasNewAnnouncement ? 1 : 0);
   
   const unreadMsgCount = conversations.reduce((acc, curr) => {
     const otherId = curr.participants?.find(p => p !== auth.currentUser?.uid);
@@ -891,6 +910,12 @@ return (
                         <div className={`fixed top-24 left-1/2 -translate-x-1/2 w-[90vw] md:absolute md:translate-x-0 md:top-12 md:right-0 md:w-80 md:left-auto rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 z-[100] ${darkMode ? 'bg-slate-800 border-white/10' : 'bg-white/90 border-white/60 backdrop-blur-xl'}`}>
                              <div className={`p-3 border-b font-black text-xs uppercase tracking-widest opacity-50 ${darkMode ? 'border-white/10' : 'border-slate-200 text-slate-500'}`}>Notifications</div>
                              <div className="p-2 space-y-1">
+                                 {latestAnnouncement && (
+                                     <button onClick={() => handleViewAnnouncement(latestAnnouncement.id)} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${hasNewAnnouncement ? 'text-pink-500 bg-pink-500/10' : 'opacity-50'}`}>
+                                          <div className="flex flex-col overflow-hidden mr-2"><span className="text-[10px] uppercase tracking-wider opacity-70">Announcement</span><span className="truncate">{latestAnnouncement.title}</span></div>
+                                          {hasNewAnnouncement && <span className="bg-pink-500 w-2 h-2 rounded-full shrink-0"></span>}
+                                     </button>
+                                 )}
                                  <button onClick={() => { setActiveTab("Applicants"); setIsNotifOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-sm font-bold ${newAppCount > 0 ? 'text-red-500 bg-red-500/10' : 'opacity-50'}`}>
                                     <span>New Applicants</span><span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full">{newAppCount}</span>
                                 </button>
@@ -934,14 +959,9 @@ return (
             <span className="font-bold text-xs uppercase tracking-widest">Ratings</span>
             </button>
 
-            <button onClick={() => { setActiveTab("LiveliMarket"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'LiveliMarket' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
-            <BuildingStorefrontIcon className="w-6 h-6" />
-            <span className="font-bold text-xs uppercase tracking-widest">LiveliMarket</span>
-            </button>
-
-            <button onClick={() => { setActiveTab("Trainings"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Trainings' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
-            <AcademicCapIcon className="w-6 h-6" />
-            <span className="font-bold text-xs uppercase tracking-widest">Trainings</span>
+            <button onClick={() => { setActiveTab("Announcements"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Announcements' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
+            <MegaphoneIcon className="w-6 h-6" />
+            <span className="font-bold text-xs uppercase tracking-widest">Announcements</span>
             </button>
 
             <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}>
@@ -977,17 +997,10 @@ return (
                     {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6"/>}
                     {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6"/>}
                     {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6"/>}
-                    {activeTab === "LiveliMarket" && <BuildingStorefrontIcon className="w-6 h-6"/>}
-                    {activeTab === "Trainings" && <AcademicCapIcon className="w-6 h-6"/>}
+                    {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6"/>}
                 </div>
                 <div>
-                    <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>
-                      {activeTab === "Profile" ? "Profile" : 
-                       activeTab === "Support" ? "Help & Support" : 
-                       activeTab === "LiveliMarket" ? "LiveliMarket" :
-                       activeTab === "Trainings" ? "Trainings & Seminars" :
-                       activeTab}
-                    </h2>
+                    <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>{activeTab === "Profile" ? "Profile" : activeTab === "Support" ? "Help & Support" : activeTab}</h2>
                     <p className={`text-[10px] font-bold uppercase tracking-widest opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-800'}`}>Employer Workspace</p>
                 </div>
             </div>
@@ -1043,6 +1056,10 @@ return (
             />
         )}
 
+        {activeTab === "Announcements" && (
+            <AnnouncementsTab announcements={announcements} darkMode={darkMode} />
+        )}
+
         {isVerified && activeTab === "Discover" && (
             <DiscoverTab 
                 discoverTalents={discoverTalents}
@@ -1065,6 +1082,8 @@ return (
                 darkMode={darkMode}
                 JOB_CATEGORIES={JOB_CATEGORIES}
                 PUROK_LIST={PUROK_LIST}
+                displayAnnouncement={displayAnnouncement}
+                handleViewAnnouncement={handleViewAnnouncement}
                 setActiveTab={setActiveTab}
                 getAvatarUrl={getAvatarUrl}
                 onImmediateHire={handleImmediateHire}
@@ -1164,18 +1183,6 @@ return (
             />
         )}
 
-        {isVerified && activeTab === "Trainings" && (
-            <TrainingsTab darkMode={darkMode} programs={programs} />
-        )}
-
-        {isVerified && activeTab === "LiveliMarket" && (
-            <LiveliMarketTab 
-                darkMode={darkMode} 
-                onChatClick={() => {
-                    setActiveTab("Messages");
-                }} 
-            />
-        )}
         
       </main>
 
@@ -2239,23 +2246,6 @@ return (
                 )}
             </div>
         ))}
-
-        {/* GLOBAL CONFIRMATION MODAL */}
-        {confirmDialog.isOpen && (
-            <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={closeConfirm}>
-                <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm p-6 md:p-8 rounded-[2.5rem] shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center text-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/60 text-slate-900'}`}>
-                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${confirmDialog.isDestructive ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                        {confirmDialog.isDestructive ? <TrashIcon className="w-8 h-8"/> : <CheckCircleIcon className="w-8 h-8"/>}
-                    </div>
-                    <h3 className="text-xl font-black mb-2 tracking-tight">{confirmDialog.title}</h3>
-                    <p className={`text-sm font-medium mb-8 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{confirmDialog.message}</p>
-                    <div className="flex gap-3 w-full">
-                        <button onClick={closeConfirm} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Cancel</button>
-                        <button onClick={() => { confirmDialog.onConfirm(); closeConfirm(); }} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg text-white ${confirmDialog.isDestructive ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'}`}>{confirmDialog.confirmText}</button>
-                    </div>
-                </div>
-            </div>
-        )}
     </div>
   );
 }
