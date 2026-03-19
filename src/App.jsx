@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
-import { ToastProvider } from './context/ToastContext'; // <-- ADDED
+import { ToastProvider } from './context/ToastContext'; 
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -57,7 +57,6 @@ function App() {
   );
 
   return (
-    // <-- WRAPPED WITH TOAST PROVIDER
     <ToastProvider>
         <BrowserRouter>
           <Routes>
@@ -74,34 +73,41 @@ function App() {
               } 
             />
 
+            {/* Employer Route: Checks if roles array includes 'employer' AND workspace is set to 'employer' */}
             <Route 
               path="/employer-dashboard" 
               element={
                 user ? (
                   userData ? (
-                     userData.role === 'employer' ? <EmployerDashboard /> : <Navigate to="/applicant-dashboard" />
+                     (userData.roles.includes('employer') && userData.activeWorkspace === 'employer') 
+                     ? <EmployerDashboard /> 
+                     : <Navigate to="/applicant-dashboard" />
                   ) : <SyncingScreen /> 
                 ) : <Navigate to="/login" replace />
               } 
             />
 
+            {/* Applicant Route: Checks if roles array includes 'applicant' AND workspace is set to 'applicant' */}
             <Route 
               path="/applicant-dashboard" 
               element={
                 user ? (
                   userData ? (
-                     userData.role === 'applicant' ? <ApplicantDashboard /> : <Navigate to="/employer-dashboard" />
+                     (userData.roles.includes('applicant') && userData.activeWorkspace === 'applicant') 
+                     ? <ApplicantDashboard /> 
+                     : <Navigate to="/employer-dashboard" />
                   ) : <SyncingScreen />
                 ) : <Navigate to="/login" replace />
               } 
             />
 
+            {/* Dynamic Dashboard Redirect based on activeWorkspace */}
             <Route 
               path="/dashboard" 
               element={
                  user ? (
                    userData ? (
-                     userData.role === 'employer' ? <Navigate to="/employer-dashboard" /> : <Navigate to="/applicant-dashboard" />
+                     <Navigate to={`/${userData.activeWorkspace}-dashboard`} replace />
                    ) : <SyncingScreen />
                  ) : <Navigate to="/login" replace />
               } 

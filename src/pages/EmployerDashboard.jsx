@@ -328,7 +328,8 @@ export default function EmployerDashboard() {
         const q = query(collection(db, "applicants"));
         const unsub = onSnapshot(q, (querySnapshot) => {
             const talents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const validTalents = talents.filter(t => t.firstName || t.lastName);
+            // Filter out the current user's UID so they don't see themselves as a candidate
+            const validTalents = talents.filter(t => (t.firstName || t.lastName) && t.id !== auth.currentUser?.uid);
             setDiscoverTalents(validTalents);
         });
         return () => unsub();
@@ -355,8 +356,12 @@ export default function EmployerDashboard() {
    }, [activeTab]);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const userRef = doc(db, "employers", auth.currentUser.uid);
+    if (!auth.currentUser || !userData) return;
+    
+    // DYNAMIC COLLECTION: Find where the user actually lives in the DB
+    const collectionName = (userData.roles && userData.roles[0] === 'applicant') ? 'applicants' : 'employers';
+    const userRef = doc(db, collectionName, auth.currentUser.uid);
+    
     const setOnline = async () => { try { await setDoc(userRef, { isOnline: true }, { merge: true }); } catch(e) {} };
     setOnline();
     
@@ -382,9 +387,10 @@ export default function EmployerDashboard() {
             contact: data.contact || userData?.contact || data.email || userData?.email || "", 
             sitio: data.sitio || data.location || "", 
             title: data.title || "Employer", 
-            aboutMe: data.aboutMe || "",
+            aboutMe: data.aboutMe || data.bio || "", // Added fallback to bio
             workExperience: parsedExperience,
             education: parsedEducation,
+            // If they are a verified applicant, carry over that verification!
             verificationStatus: data.verificationStatus || "pending" 
         }));
       }
@@ -626,7 +632,10 @@ export default function EmployerDashboard() {
 
         const cleanExperience = (employerData.workExperience || []).filter(e => e.trim() !== "");
 
-        await setDoc(doc(db, "employers", auth.currentUser.uid), {
+        // DYNAMIC COLLECTION SAVE
+        const collectionName = (userData.roles && userData.roles[0] === 'applicant') ? 'applicants' : 'employers';
+
+        await setDoc(doc(db, collectionName, auth.currentUser.uid), {
             title: employerData.title || "Employer", 
             aboutMe: employerData.aboutMe || "",
             workExperience: cleanExperience, 
@@ -765,6 +774,20 @@ export default function EmployerDashboard() {
   const handleLogout = async () => { 
       await signOut(auth); 
       navigate("/"); 
+  };
+
+  // --- WORKSPACE SWITCHER LOGIC ---
+  const handleSwitchWorkspace = async (newWorkspace) => {
+      if (!auth.currentUser || !userData) return;
+      try {
+          const collectionName = (userData.roles && userData.roles[0] === 'applicant') ? 'applicants' : 'employers';
+          const userRef = doc(db, collectionName, auth.currentUser.uid);
+          
+          await updateDoc(userRef, { activeWorkspace: newWorkspace });
+          window.location.reload(); 
+      } catch (error) {
+          showToast("Failed to switch workspace.", "error");
+      }
   };
 
   const displayName = `${employerData.firstName} ${employerData.lastName}`.trim() || "Employer";
@@ -971,6 +994,18 @@ return (
         </nav>
 
         <div className="p-4 space-y-3">
+            
+            {/* --- WORKSPACE SWITCHER BUTTON --- */}
+            {userData?.roles?.includes('applicant') && (
+                <button 
+                    onClick={() => handleSwitchWorkspace('applicant')} 
+                    className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                >
+                    <ArrowUturnLeftIcon className="w-6 h-6" />
+                    <span className="text-xs font-bold">Switch to Applicant</span>
+                </button>
+            )}
+
             <button onClick={() => setDarkMode(!darkMode)} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100 text-slate-700'}`}>
             {darkMode ? <SunIcon className="w-6 h-6 text-amber-400" /> : <MoonIcon className="w-6 h-6 text-slate-600" />}
             <span className="text-xs font-bold">Switch Theme</span>

@@ -27,7 +27,18 @@ export const AuthProvider = ({ children }) => {
           }
 
           if (docSnap.exists()) {
-            setUserData(docSnap.data());
+            const data = docSnap.data();
+            
+            // NORMALIZATION FOR DUAL ROLES (Solution 3)
+            // If the DB has the new array format, use it. Otherwise, fallback to the old single string.
+            const userRoles = data.roles || (data.role ? [data.role] : []);
+            const currentWorkspace = data.activeWorkspace || data.role;
+
+            setUserData({
+              ...data,
+              roles: userRoles,
+              activeWorkspace: currentWorkspace
+            });
           } else {
             // User exists in Auth but not in any Firestore collection
             setUserData(null); 

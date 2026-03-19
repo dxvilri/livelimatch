@@ -28,9 +28,10 @@ import {
   SparklesIcon, EnvelopeIcon, PhoneIcon, 
   MegaphoneIcon, TagIcon, StarIcon as StarIconOutline,
   QuestionMarkCircleIcon, BellIcon, ChevronDownIcon, ChatBubbleOvalLeftEllipsisIcon, LockClosedIcon, BookmarkIcon,
-  Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon, ArrowDownTrayIcon, TrashIcon
+  Cog8ToothIcon, WrenchScrewdriverIcon, HomeIcon, UserGroupIcon, ArrowDownTrayIcon, TrashIcon, ArrowPathIcon
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
+
 
 // --- SUB-COMPONENTS ---
 import FindJobsTab from "../components/dashboard/applicant/FindJobsTab";
@@ -211,6 +212,46 @@ export default function ApplicantDashboard() {
     localStorage.setItem("theme", darkMode ? "dark" : "light");
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  // --- WORKSPACE SWITCHER LOGIC (WITH 5 MIN COOLDOWN) ---
+  const [isSwitching, setIsSwitching] = useState(false);
+
+  const handleSwitchToEmployer = async () => {
+      if (!auth.currentUser) return;
+      setIsSwitching(true);
+      
+      try {
+          const userRef = doc(db, "applicants", auth.currentUser.uid);
+          const userSnap = await getDoc(userRef);
+
+          if (userSnap.exists()) {
+              const data = userSnap.data();
+              
+              if (data.lastWorkspaceSwitch) {
+                  const lastSwitchTime = data.lastWorkspaceSwitch.toDate().getTime();
+                  const diffMinutes = (Date.now() - lastSwitchTime) / (1000 * 60);
+
+                  if (diffMinutes < 5) {
+                      const timeLeft = Math.ceil(5 - diffMinutes);
+                      showToast(`Please wait ${timeLeft} more minute(s) before switching workspaces again.`, "error");
+                      setIsSwitching(false);
+                      return; 
+                  }
+              }
+
+              await updateDoc(userRef, {
+                  activeWorkspace: "employer",
+                  lastWorkspaceSwitch: serverTimestamp() 
+              });
+
+              window.location.reload();
+          }
+      } catch (error) {
+          console.error("Switch error:", error);
+          showToast("Failed to switch workspace.", "error");
+          setIsSwitching(false);
+      }
+  };
 
   // --- COMPUTED ---
   const isVerified = applicantData.verificationStatus === 'verified';
@@ -833,6 +874,21 @@ export default function ApplicantDashboard() {
                 <button onClick={() => { setActiveTab("Support"); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all ${activeTab === 'Support' ? (darkMode ? 'text-blue-400 bg-slate-800/50 shadow-sm border border-white/10' : 'text-blue-600 bg-white shadow-sm border border-slate-200') : (darkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50')}`}><QuestionMarkCircleIcon className="w-6 h-6"/><span className="font-bold text-xs uppercase tracking-widest">Support</span></button>
            </nav>
            <div className="p-4 space-y-3">
+            {/* --- WORKSPACE SWITCHER BUTTON --- */}
+               {applicantData?.roles?.includes('employer') && (
+                   <button 
+                       onClick={handleSwitchToEmployer} 
+                       disabled={isSwitching}
+                       className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-all duration-300 ${darkMode ? 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'} ${isSwitching ? 'opacity-50 cursor-not-allowed' : ''}`}
+                   >
+                       {isSwitching ? (
+                           <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                       ) : (
+                           <ArrowPathIcon className="w-6 h-6" />
+                       )}
+                       <span className="text-xs font-bold whitespace-nowrap">Switch to Employer</span>
+                   </button>
+               )}
                <button onClick={() => setDarkMode(!darkMode)} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-50 hover:bg-slate-100 text-slate-700'}`}>{darkMode ? <SunIcon className="w-6 h-6 text-amber-400"/> : <MoonIcon className="w-6 h-6 text-slate-600"/>}<span className="text-xs font-bold">Switch Theme</span></button>
                <button onClick={async () => { await signOut(auth); navigate("/"); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 transition-colors ${darkMode ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}><ArrowLeftOnRectangleIcon className="w-6 h-6"/><span className="text-xs font-bold">Logout</span></button>
            </div>

@@ -8,6 +8,8 @@ import {
     WrenchScrewdriverIcon, HomeIcon, UserGroupIcon,
     DocumentIcon, PhotoIcon, ArrowDownTrayIcon, PlusIcon
 } from "@heroicons/react/24/outline";
+import { db } from "../../../firebase/config";
+import { doc, updateDoc } from "firebase/firestore";
 
 export default function ProfileTab({
     applicantData, setApplicantData, profileImage, setProfileImage, 
@@ -20,6 +22,28 @@ export default function ProfileTab({
     
     // Controls which view the user is looking at in the body
     const [profileSubTab, setProfileSubTab] = useState("details"); // 'details' | 'resume'
+
+    // --- OPT-IN TO EMPLOYER LOGIC ---
+    const handleBecomeEmployer = async () => {
+        if (!currentUser?.uid) return;
+        
+        try {
+            // Because they registered as an applicant, their document is in the 'applicants' collection
+            const userRef = doc(db, "applicants", currentUser.uid);
+            
+            // Append the employer role and immediately switch their workspace
+            await updateDoc(userRef, {
+                roles: ["applicant", "employer"],
+                activeWorkspace: "employer"
+            });
+
+            // Force a reload so AuthContext refetches the new roles and routes them to the Employer Dashboard
+            window.location.reload();
+        } catch (error) {
+            console.error("Error upgrading to employer:", error);
+            alert("Failed to upgrade account. Please try again.");
+        }
+    };
 
     // --- SCROLL LOCK FOR MODAL ---
     useEffect(() => {
@@ -203,6 +227,17 @@ export default function ProfileTab({
                                 </>
                             )}
                         </button>
+
+                        {/* --- NEW: OPT-IN TO EMPLOYER BUTTON --- */}
+                        {(!applicantData.roles || !applicantData.roles.includes('employer')) && (
+                            <button 
+                                onClick={handleBecomeEmployer}
+                                className={`p-3 md:px-6 md:py-3 mt-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 w-full transition-all border-2 border-dashed ${darkMode ? 'border-purple-500/50 text-purple-400 hover:bg-purple-500/10' : 'border-purple-400 text-purple-600 hover:bg-purple-50'}`}
+                            >
+                                <UserGroupIcon className="w-5 h-5 md:w-4 md:h-4" />
+                                <span className="hidden md:block">Hire Talent</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
