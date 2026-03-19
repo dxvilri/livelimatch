@@ -6,7 +6,7 @@ import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase/config";
 import { createPortal } from "react-dom";
 import {
-  collection, query, where, onSnapshot,
+  collection, query, where, onSnapshot, orderBy,
   addDoc, serverTimestamp, setDoc, doc, updateDoc, increment, deleteDoc, 
   getDoc, getDocs, arrayUnion
 } from "firebase/firestore";
@@ -40,6 +40,7 @@ import MessagesTab from "../components/dashboard/applicant/MessagesTab";
 import ProfileTab from "../components/dashboard/applicant/ProfileTab";
 import RatingsTab from "../components/dashboard/applicant/RatingsTab";
 import SupportTab from "../components/dashboard/applicant/SupportTab";
+import AnnouncementsTab from "../components/dashboard/applicant/AnnouncementsTab";
 import RateEmployerModal from "../components/dashboard/applicant/RateEmployerModal";
 import MessageBubble from "../components/MessageBubble";
 import { BOT_FAQ, getBotAutoReply } from "../utils/applicantConstants";
@@ -365,7 +366,7 @@ export default function ApplicantDashboard() {
     const qSaved = query(collection(db, "saved_jobs"), where("userId", "==", auth.currentUser.uid));
     const unsubSaved = onSnapshot(qSaved, (snap) => setSavedJobs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     
-    const qAnnouncements = query(collection(db, "announcements"));
+    const qAnnouncements = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const unsubAnnouncements = onSnapshot(qAnnouncements, (snap) => setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     
     const ticketsQuery = query(collection(db, "support_tickets"), where("userId", "==", auth.currentUser.uid));
@@ -1000,6 +1001,13 @@ export default function ApplicantDashboard() {
                 getAvatarUrl={getAvatarUrl}
                 isChatOptionsOpen={isChatOptionsOpen}
                 setIsChatOptionsOpen={setIsChatOptionsOpen}
+            />
+        )}
+
+        {activeTab === "Announcements" && (
+            <AnnouncementsTab 
+                announcements={announcements} 
+                darkMode={darkMode} 
             />
         )}
 

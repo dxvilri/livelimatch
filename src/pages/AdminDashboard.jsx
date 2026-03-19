@@ -22,7 +22,8 @@ import {
   Bars3Icon, ChatBubbleLeftRightIcon, UserCircleIcon,
   ArrowPathIcon, PhoneIcon, EnvelopeIcon, DocumentIcon,
   TagIcon, AcademicCapIcon, Cog8ToothIcon, WrenchScrewdriverIcon, 
-  ClockIcon, CalendarDaysIcon, BoltIcon, UserGroupIcon, ArchiveBoxIcon
+  ClockIcon, CalendarDaysIcon, BoltIcon, UserGroupIcon, ArchiveBoxIcon,
+  PlusIcon
 } from "@heroicons/react/24/outline";
 
 // --- STATIC DATA & THEME CONSTANTS ---
@@ -119,6 +120,7 @@ export default function AdminDashboard() {
   // Modals
   const [selectedProof, setSelectedProof] = useState(null);
   const [selectedUserDetail, setSelectedUserDetail] = useState(null); 
+  const [isAnnounceModalOpen, setIsAnnounceModalOpen] = useState(false);
 
   const [seenTabs, setSeenTabs] = useState(["Overview"]); 
   const [verificationSubTab, setVerificationSubTab] = useState("pending"); 
@@ -212,7 +214,6 @@ export default function AdminDashboard() {
       const searchClean = ticketSearch.toLowerCase().replace('request', '').replace('#', '').trim();
       const matchesSearch = reqNum.toLowerCase().includes(searchClean);
 
-      // 'active' shows open and closed, but hides archived
       if (ticketFilter === 'active') return matchesSearch && t.status !== 'archived';
       if (ticketFilter === 'open') return matchesSearch && (t.status === 'open' || t.status === 'new' || t.status === 'admin_replied');
       if (ticketFilter === 'closed') return matchesSearch && t.status === 'closed';
@@ -387,6 +388,7 @@ export default function AdminDashboard() {
         setAnnounceTitle("");
         setAnnounceBody("");
         setAnnounceFiles([]);
+        setIsAnnounceModalOpen(false);
         showToast("Announcement Posted!", "success");
     } catch (err) {
         showToast("Error posting announcement: " + err.message, "error");
@@ -412,26 +414,47 @@ export default function AdminDashboard() {
         });
 
         if (selectedTicket.userId === "guest" && selectedTicket.guestEmail) {
+            const ticketIdStr = selectedTicket.ticketId || selectedTicket.id.slice(0,6).toUpperCase();
+            const originalMessage = selectedTicket.messages[0]?.text || "No message content.";
+
             await addDoc(collection(db, "mail"), {
                 to: selectedTicket.guestEmail,
                 message: {
-                    subject: `Re: Your Support Inquiry (Livelimatch Request #${selectedTicket.ticketId || selectedTicket.id.slice(0,6).toUpperCase()})`,
+                    subject: `Re: Your Support Inquiry (Livelimatch Request #${ticketIdStr})`,
                     html: `
-                        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-                            <h2>Response from Livelimatch Admin</h2>
-                            <p>Hello,</p>
-                            <p>You recently contacted us regarding Request #${selectedTicket.ticketId || selectedTicket.id.slice(0,6).toUpperCase()}:</p>
-                            <blockquote style="background: #f8fafc; border-left: 4px solid #cbd5e1; padding: 12px; margin-bottom: 20px;">
-                                <em>"${selectedTicket.messages[0]?.text || ""}"</em>
-                            </blockquote>
-                            <p><strong>Admin Reply:</strong></p>
-                            <p style="font-size: 16px; color: #2563eb; font-weight: bold;">${replyText}</p>
-                            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;" />
-                            <p style="font-size: 12px; color: #666;">If you have further questions, please submit a new ticket on our website.</p>
+                        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f8fafc; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+                            
+                            <div style="background-color: #2563eb; padding: 24px; text-align: center;">
+                                <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 1px;">LIVELI<span style="color: #93c5fd;">MATCH</span></h1>
+                            </div>
+                            
+                            <div style="padding: 32px; background-color: #ffffff; color: #334155; line-height: 1.6;">
+                                <h2 style="color: #1e293b; font-size: 20px; margin-top: 0;">Response from Admin</h2>
+                                <p>Hello,</p>
+                                <p>You recently contacted us regarding <strong>Request #${ticketIdStr}</strong>:</p>
+                                
+                                <div style="background-color: #f8fafc; border-left: 4px solid #cbd5e1; padding: 16px; margin: 24px 0; border-radius: 0 8px 8px 0; color: #64748b; font-style: italic;">
+                                    "${originalMessage}"
+                                </div>
+        
+                                <p><strong>Admin Reply:</strong></p>
+                                
+                                <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 16px; margin: 24px 0; border-radius: 0 8px 8px 0;">
+                                    <p style="margin: 0; font-size: 16px; color: #1e40af; font-weight: bold; white-space: pre-wrap;">${replyText}</p>
+                                </div>
+                                
+                                <p style="margin-top: 32px; font-size: 14px; color: #64748b;">If you have further questions, please submit a new ticket on our website.</p>
+                                <p style="margin-bottom: 0;">Best regards,<br><strong style="color: #2563eb;">The Livelimatch Admin Team</strong></p>
+                            </div>
+                            
+                            <div style="background-color: #f1f5f9; padding: 16px; text-align: center; color: #64748b; font-size: 12px;">
+                                <p style="margin: 0;">© ${new Date().getFullYear()} Barangay Cawayan Bogtong Livelihood Portal. All rights reserved.</p>
+                            </div>
                         </div>
                     `
                 }
             });
+            showToast(`Email reply sent to ${selectedTicket.guestEmail}`, "success");
         }
 
         setReplyText("");
@@ -464,13 +487,13 @@ export default function AdminDashboard() {
   const employerHeight = (vEmps / maxChartVal) * 100;
 
   // --- STYLES ---
-  const glassPanel = `backdrop-blur-xl border transition-all duration-300 ${darkMode 
-    ? 'bg-slate-900/60 border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)]' 
-    : 'bg-white/60 border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]'}`;
+  const glassPanel = `backdrop-blur-xl transition-all duration-300 ${darkMode 
+    ? 'bg-slate-900/60 border border-white/10 text-white' 
+    : 'bg-white border border-slate-200 text-slate-800'}`;
   
-  const glassCard = `backdrop-blur-md border rounded-2xl transition-all duration-300 group hover:-translate-y-1 ${darkMode
-    ? 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60 hover:border-blue-500/30'
-    : 'bg-white/40 border-white/60 hover:bg-white/70 hover:border-blue-300/50 hover:shadow-lg'}`;
+  const glassCard = `backdrop-blur-md border rounded-2xl md:rounded-[2rem] transition-all duration-300 group hover:-translate-y-1 ${darkMode
+    ? 'bg-slate-900 border-white/10 hover:border-blue-500/30 text-white'
+    : 'bg-white border-slate-200 hover:border-blue-300/50 hover:shadow-lg text-slate-800'}`;
 
   const glassInput = `w-full flex-1 bg-transparent outline-none font-bold text-xs ${darkMode ? 'text-white placeholder-slate-400' : 'text-slate-800 placeholder-slate-500'}`;
 
@@ -484,17 +507,11 @@ export default function AdminDashboard() {
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
-      {/* --- BACKGROUND --- */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse ${darkMode ? 'bg-blue-900' : 'bg-blue-300'}`}></div>
-        <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-40 animate-pulse delay-1000 ${darkMode ? 'bg-purple-900' : 'bg-purple-300'}`}></div>
-      </div>
-
       {/* --- MOBILE HEADER TOGGLE --- */}
       <div className="lg:hidden fixed top-4 left-4 z-[60]">
         <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className={`p-3 rounded-2xl shadow-lg backdrop-blur-md border ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/20 text-slate-800'}`}
+            className={`p-3 rounded-2xl shadow-lg backdrop-blur-md border ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-slate-200 text-slate-800'}`}
         >
             {isSidebarOpen ? <XMarkIcon className="w-6 h-6"/> : <Bars3Icon className="w-6 h-6"/>}
         </button>
@@ -740,7 +757,7 @@ export default function AdminDashboard() {
                         </div>
                         
                         {/* --- SEARCH BAR & FILTER (Matches Discover Tab style) --- */}
-                        <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white/60 border-slate-200 text-slate-800'}`}>
+                        <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                             <MagnifyingGlassIcon className={`ml-3 w-5 h-5 shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
                             <input 
                                 type="text" 
@@ -847,7 +864,6 @@ export default function AdminDashboard() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    {/* ARCHIVE BUTTON: Only show if ticket is closed */}
                                     {selectedTicket.status === 'closed' && (
                                         <button 
                                             onClick={(e) => {
@@ -870,7 +886,7 @@ export default function AdminDashboard() {
                                     <div key={idx} className={`flex ${msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
                                         <div className={`max-w-[75%] p-4 rounded-2xl text-sm font-medium leading-relaxed ${msg.sender === 'admin' 
                                             ? 'bg-blue-600 text-white rounded-tr-sm shadow-blue-500/20 shadow-lg' 
-                                            : `rounded-tl-sm ${darkMode ? 'bg-white/10 text-white' : 'bg-white/60 text-slate-800 shadow-sm border border-black/5'}`}`}>
+                                            : `rounded-tl-sm ${darkMode ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-800 shadow-sm border border-black/5'}`}`}>
                                             {msg.text}
                                         </div>
                                     </div>
@@ -886,7 +902,7 @@ export default function AdminDashboard() {
                                         value={replyText}
                                         onChange={(e) => setReplyText(e.target.value)}
                                         placeholder={selectedTicket.status === 'archived' ? "This ticket is archived." : "Type your reply..."}
-                                        className={`flex-1 p-3 rounded-xl border-none outline-none text-sm font-medium disabled:opacity-50 ${darkMode ? 'bg-slate-800 text-white placeholder-slate-500' : 'bg-white text-slate-800 shadow-inner'}`}
+                                        className={`flex-1 p-3 rounded-xl border-none outline-none text-sm font-medium disabled:opacity-50 ${darkMode ? 'bg-slate-800 text-white placeholder-slate-500' : 'bg-slate-100 text-slate-800 shadow-inner'}`}
                                     />
                                     <button disabled={selectedTicket.status === 'archived'} type="submit" className="p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-50">
                                         <PaperAirplaneIcon className="w-5 h-5"/>
@@ -906,75 +922,27 @@ export default function AdminDashboard() {
 
         {/* TAB CONTENT: ANNOUNCEMENTS */}
         {activeTab === "Announcements" && (
-             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className={`lg:col-span-1 p-6 rounded-3xl ${glassPanel} h-fit`}>
-                    <div className="flex items-center gap-3 mb-6">
-                        <MegaphoneIcon className="w-6 h-6 text-pink-500"/>
-                        <h3 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-slate-800'}`}>New Announcement</h3>
+             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                
+                {/* Header Row for Announcements */}
+                <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8 mt-4 md:mt-8">
+                    <div className="flex-1">
+                        <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-slate-800'}`}>All Announcements</h3>
                     </div>
-                    <form onSubmit={handlePostAnnouncement} className="space-y-4">
-                        <div>
-                            <label className={`text-xs font-bold uppercase opacity-50 ml-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Title</label>
-                            <input 
-                                value={announceTitle}
-                                onChange={(e)=>setAnnounceTitle(e.target.value)}
-                                required
-                                className={`w-full p-4 rounded-xl mt-1 border outline-none font-bold ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-pink-500 text-white' : 'bg-white/50 border-white/40 focus:border-pink-500 text-slate-800'}`} 
-                                placeholder="What's happening?"
-                            />
-                        </div>
-                        <div>
-                            <label className={`text-xs font-bold uppercase opacity-50 ml-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Details</label>
-                            <textarea 
-                                value={announceBody}
-                                onChange={(e)=>setAnnounceBody(e.target.value)}
-                                required
-                                rows="6"
-                                className={`w-full p-4 rounded-xl mt-1 border outline-none text-sm ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-pink-500 text-white' : 'bg-white/50 border-white/40 focus:border-pink-500 text-slate-800'}`} 
-                                placeholder="Type your announcement here..."
-                            ></textarea>
-                        </div>
-                        
-                        {/* MULTIPLE MEDIA UPLOAD */}
-                        <div className={`p-3 rounded-xl border ${darkMode ? 'border-white/10 bg-slate-800/50' : 'border-black/5 bg-white/50'}`}>
-                            <label className={`flex justify-between items-center text-xs font-bold uppercase opacity-60 mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
-                                <span>Attach Media (Optional)</span>
-                                <span>{announceFiles.length}/3</span>
-                            </label>
-                            <input 
-                                type="file" 
-                                accept="image/*,video/*,application/pdf"
-                                multiple
-                                onChange={handleAnnounceFileChange}
-                                className={`w-full text-xs outline-none transition-all font-medium 
-                                ${darkMode ? 'text-slate-300' : 'text-slate-700'}
-                                file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-black file:uppercase file:tracking-widest file:transition-colors file:cursor-pointer
-                                ${darkMode ? 'file:bg-pink-500/20 file:text-pink-400 hover:file:bg-pink-500/30' : 'file:bg-pink-100 file:text-pink-600 hover:file:bg-pink-200'}`} 
-                            />
-                            {announceFiles.length > 0 && (
-                                <div className="mt-2 space-y-1.5">
-                                    {announceFiles.map((f, i) => (
-                                        <div key={i} className={`flex justify-between items-center px-3 py-2 rounded-lg border ${darkMode ? 'border-white/10 bg-black/20 text-slate-300' : 'border-black/5 bg-white text-slate-600'}`}>
-                                            <span className="text-[10px] font-bold truncate pr-4">{f.name}</span>
-                                            <button type="button" onClick={()=>removeAnnounceFile(i)} className="text-red-400 hover:text-red-600"><XMarkIcon className="w-4 h-4"/></button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <button disabled={isPostingAnn} type="submit" className="w-full py-3 rounded-xl bg-pink-500 text-white font-black uppercase tracking-widest shadow-lg shadow-pink-500/30 hover:bg-pink-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-                            {isPostingAnn ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><PaperAirplaneIcon className="w-5 h-5"/> Post</>}
-                        </button>
-                    </form>
+                    <button 
+                        onClick={() => setIsAnnounceModalOpen(true)}
+                        className="flex items-center gap-3 px-8 py-4 bg-pink-500 hover:bg-pink-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-pink-500/30 transition-all active:scale-95 w-full md:w-auto justify-center group transform hover:-translate-y-1"
+                    >
+                        <PlusIcon className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" /> Post Announcement
+                    </button>
                 </div>
 
-                <div className="lg:col-span-2 space-y-4">
-                    <h3 className={`font-bold text-xl px-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Recent Announcements</h3>
+                {/* Announcement Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {announcements.length === 0 ? (
-                        <div className={`p-12 rounded-3xl border-dashed border-2 flex flex-col items-center justify-center ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
-                            <MegaphoneIcon className={`w-12 h-12 mb-2 ${darkMode ? 'text-white opacity-20' : 'text-black opacity-20'}`}/>
-                            <p className={`font-bold ${darkMode ? 'text-white opacity-40' : 'text-black opacity-40'}`}>No announcements yet.</p>
+                        <div className={`col-span-full p-12 rounded-3xl border-dashed border-2 flex flex-col items-center justify-center ${darkMode ? 'border-white/10' : 'border-slate-300'}`}>
+                            <MegaphoneIcon className={`w-12 h-12 mb-2 ${darkMode ? 'text-white opacity-20' : 'text-slate-400 opacity-50'}`}/>
+                            <p className={`font-bold ${darkMode ? 'text-white opacity-40' : 'text-slate-500 opacity-50'}`}>No announcements yet.</p>
                         </div>
                     ) : (
                         announcements.map(ann => (
@@ -986,7 +954,7 @@ export default function AdminDashboard() {
                                     </div>
                                     
                                     <div className="flex items-center gap-3">
-                                        <span className={`text-[10px] font-bold opacity-40 uppercase px-2 py-1 rounded ${darkMode ? 'bg-white/5 text-white' : 'bg-black/5 text-slate-800'}`}>{ann.date}</span>
+                                        <span className={`text-[10px] font-bold opacity-40 uppercase px-2 py-1 rounded ${darkMode ? 'bg-white/5 text-white' : 'bg-slate-100 text-slate-800'}`}>{ann.date}</span>
                                         <button 
                                             onClick={() => handleDeleteAnnouncement(ann.id)}
                                             className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all shadow-sm"
@@ -996,7 +964,7 @@ export default function AdminDashboard() {
                                         </button>
                                     </div>
                                 </div>
-                                <p className={`text-sm opacity-70 pl-2 leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-white' : 'text-slate-800'}`}>{ann.body}</p>
+                                <p className={`text-sm opacity-70 pl-2 leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-white' : 'text-slate-600'}`}>{ann.body}</p>
                                 
                                 {/* ATTACHMENTS VIEW */}
                                 {ann.media && ann.media.length > 0 && (
@@ -1005,7 +973,7 @@ export default function AdminDashboard() {
                                             <div 
                                                 key={i} 
                                                 onClick={() => setSelectedProof([file.url])} 
-                                                className={`shrink-0 w-24 h-24 rounded-xl overflow-hidden cursor-pointer relative group border ${darkMode ? 'border-white/10 bg-slate-800' : 'border-black/5 bg-slate-100'}`}
+                                                className={`shrink-0 w-24 h-24 rounded-xl overflow-hidden cursor-pointer relative group border ${darkMode ? 'border-white/10 bg-slate-800' : 'border-slate-200 bg-slate-100'}`}
                                             >
                                                 {file.type.startsWith('image/') ? (
                                                     <img src={file.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
@@ -1042,8 +1010,8 @@ export default function AdminDashboard() {
                     <button onClick={()=>setVerificationSubTab("rejected")} className={`text-sm font-black uppercase tracking-widest pb-2 transition-all ${verificationSubTab === "rejected" ? 'text-red-500 border-b-2 border-red-500' : `opacity-40 hover:opacity-100 ${darkMode ? 'text-white' : 'text-slate-800'}`}`}>Rejected History ({rejectedUsers.length})</button>
                 </div>
 
-                {/* --- SEARCH BAR & FILTER (Matches Discover Tab style) --- */}
-                <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white/60 border-slate-200 text-slate-800'}`}>
+                {/* --- SEARCH BAR & FILTER --- */}
+                <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                     <MagnifyingGlassIcon className={`ml-3 w-5 h-5 shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
                     <input 
                         type="text" 
@@ -1097,7 +1065,7 @@ export default function AdminDashboard() {
                         {filteredPending.map(user => (
                             <div key={user.id} className={`p-4 md:p-6 ${glassCard} relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4`}>
                                 <div className="flex items-center gap-4 w-full md:w-auto">
-                                    <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-white/20 shadow-md shrink-0 ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                                    <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-slate-200 dark:border-white/20 shadow-md shrink-0 ${darkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
                                         {user.profilePic ? <img src={user.profilePic} className="w-full h-full object-cover"/> : <div className={`w-full h-full flex items-center justify-center font-black opacity-30 text-xl ${darkMode ? 'text-white' : 'text-slate-800'}`}>?</div>}
                                     </div>
                                     <div className="min-w-0 flex-1">
@@ -1119,7 +1087,7 @@ export default function AdminDashboard() {
                                                 : (user.proofOfResidencyUrl || user.residencyProofUrl || user.businessPermitUrl ? [user.proofOfResidencyUrl || user.residencyProofUrl || user.businessPermitUrl] : []);
                                             setSelectedProof(files);
                                         }} 
-                                        className={`p-2 px-3 rounded-xl flex items-center justify-center gap-2 text-xs font-bold border transition-all w-full md:w-auto ${darkMode ? 'border-white/10 hover:bg-white/5 text-white' : 'border-black/10 hover:bg-black/5 text-slate-800'}`}
+                                        className={`p-2 px-3 rounded-xl flex items-center justify-center gap-2 text-xs font-bold border transition-all w-full md:w-auto ${darkMode ? 'border-white/10 hover:bg-white/5 text-white' : 'border-slate-200 hover:bg-slate-50 text-slate-800'}`}
                                     >
                                         <EyeIcon className="w-4 h-4"/> Files
                                     </button>
@@ -1140,7 +1108,7 @@ export default function AdminDashboard() {
                         {filteredRejected.map(user => (
                             <div key={user.id} className={`p-4 md:p-6 ${glassCard} relative overflow-hidden opacity-75 hover:opacity-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-4`}>
                                  <div className="flex items-center gap-4 w-full md:w-auto">
-                                    <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-white/20 shadow-md shrink-0 ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                                    <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-slate-200 dark:border-white/20 shadow-md shrink-0 ${darkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
                                         {user.profilePic ? <img src={user.profilePic} className="w-full h-full object-cover"/> : <div className={`w-full h-full flex items-center justify-center font-black opacity-30 text-xl ${darkMode ? 'text-white' : 'text-slate-800'}`}>?</div>}
                                     </div>
                                     <div className="min-w-0 flex-1">
@@ -1167,8 +1135,8 @@ export default function AdminDashboard() {
         {(activeTab !== "Overview" && activeTab !== "Verifications" && activeTab !== "Announcements" && activeTab !== "Help") && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 
-                {/* --- SEARCH BAR & FILTER (Matches Discover Tab style) --- */}
-                <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white/60 border-slate-200 text-slate-800'}`}>
+                {/* --- SEARCH BAR & FILTER --- */}
+                <div className={`w-full flex items-center p-1.5 rounded-2xl border shadow-sm ${darkMode ? 'bg-slate-900/60 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                     <MagnifyingGlassIcon className={`ml-3 w-5 h-5 shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
                     <input 
                         type="text" 
@@ -1242,7 +1210,6 @@ export default function AdminDashboard() {
                                                 const catStyle = getCatStyles(c.id);
                                                 const CatIcon = catStyle.icon;
                                                 const isSelected = categoryFilter === c.id;
-                                                // Dynamic active/hover states based on darkmode logic
                                                 const activeClass = darkMode ? 'bg-blue-400/10 border-blue-400' : 'bg-blue-10/10 border-blue-600';
                                                 const hoverClass = darkMode ? 'hover:border-blue-400/50 hover:bg-slate-800' : 'hover:border-blue-600/50 hover:bg-slate-50';
                                                 const textClass = isSelected ? (darkMode ? 'text-blue-400' : 'text-blue-600') : (darkMode ? 'text-white group-hover:text-blue-400' : 'text-slate-700 group-hover:text-blue-600');
@@ -1347,14 +1314,13 @@ export default function AdminDashboard() {
                                 return (
                                     <div key={item.id} onClick={() => setSelectedUserDetail(item)} className={`p-6 ${glassCard} cursor-pointer`}>
                                         <div className="flex items-center gap-4">
-                                            <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-white/20 shadow-md shrink-0 ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                                            <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-slate-200 dark:border-white/20 shadow-md shrink-0 ${darkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
                                                 {item.profilePic ? <img src={item.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center font-black opacity-30 text-xl">?</div>}
                                             </div>
                                             <div className="min-w-0 flex-1">
                                                 <h4 className={`font-bold text-sm truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>{item.firstName} {item.lastName}</h4>
                                                 <div className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold border truncate ${PUROK_STYLES[item.sitio] || 'bg-slate-100 text-slate-500'}`}>{item.sitio}</div>
                                             </div>
-                                            {/* Note: Instead of Reject on the card, Admin uses the Detail Modal for verified users. */}
                                             <button className="p-2 rounded-xl text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-all">
                                                 <EyeIcon className="w-5 h-5"/>
                                             </button>
@@ -1369,6 +1335,89 @@ export default function AdminDashboard() {
         )}
 
       </main>
+
+      {/* --- CREATE ANNOUNCEMENT MODAL --- */}
+      {isAnnounceModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsAnnounceModalOpen(false)}>
+              <div 
+                  className={`relative w-full max-w-lg p-6 sm:p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`} 
+                  onClick={e => e.stopPropagation()}
+              >
+                  <div className="flex justify-between items-center mb-6">
+                      <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-pink-500/10 text-pink-500">
+                              <MegaphoneIcon className="w-6 h-6"/>
+                          </div>
+                          <h3 className={`font-black text-xl ${darkMode ? 'text-white' : 'text-slate-800'}`}>New Announcement</h3>
+                      </div>
+                      <button 
+                          onClick={() => setIsAnnounceModalOpen(false)} 
+                          className={`p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-slate-100 text-slate-500'}`}
+                      >
+                          <XMarkIcon className="w-6 h-6"/>
+                      </button>
+                  </div>
+
+                  <form onSubmit={handlePostAnnouncement} className="space-y-4">
+                      <div>
+                          <label className={`text-[10px] font-black uppercase tracking-widest opacity-60 ml-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Title</label>
+                          <input 
+                              value={announceTitle}
+                              onChange={(e)=>setAnnounceTitle(e.target.value)}
+                              required
+                              className={`w-full p-4 rounded-xl mt-1 border outline-none font-bold transition-colors ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-pink-500 text-white' : 'bg-slate-50 border-slate-200 focus:border-pink-500 text-slate-800'}`} 
+                              placeholder="What's happening?"
+                          />
+                      </div>
+                      <div>
+                          <label className={`text-[10px] font-black uppercase tracking-widest opacity-60 ml-1 ${darkMode ? 'text-white' : 'text-slate-800'}`}>Details</label>
+                          <textarea 
+                              value={announceBody}
+                              onChange={(e)=>setAnnounceBody(e.target.value)}
+                              required
+                              rows="5"
+                              className={`w-full p-4 rounded-xl mt-1 border outline-none text-sm transition-colors ${darkMode ? 'bg-slate-800/50 border-white/10 focus:border-pink-500 text-white' : 'bg-slate-50 border-slate-200 focus:border-pink-500 text-slate-800'}`} 
+                              placeholder="Type your announcement here..."
+                          ></textarea>
+                      </div>
+                      
+                      {/* MULTIPLE MEDIA UPLOAD */}
+                      <div className={`p-4 rounded-xl border ${darkMode ? 'border-white/10 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+                          <label className={`flex justify-between items-center text-[10px] font-black uppercase tracking-widest opacity-60 mb-3 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
+                              <span>Attach Media (Optional)</span>
+                              <span>{announceFiles.length}/3</span>
+                          </label>
+                          <input 
+                              type="file" 
+                              accept="image/*,video/*,application/pdf"
+                              multiple
+                              onChange={handleAnnounceFileChange}
+                              className={`w-full text-xs outline-none transition-all font-medium 
+                              ${darkMode ? 'text-slate-300' : 'text-slate-700'}
+                              file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:uppercase file:tracking-widest file:transition-colors file:cursor-pointer
+                              ${darkMode ? 'file:bg-pink-500/20 file:text-pink-400 hover:file:bg-pink-500/30' : 'file:bg-pink-100 file:text-pink-600 hover:file:bg-pink-200'}`} 
+                          />
+                          {announceFiles.length > 0 && (
+                              <div className="mt-3 space-y-2">
+                                  {announceFiles.map((f, i) => (
+                                      <div key={i} className={`flex justify-between items-center px-4 py-3 rounded-xl border ${darkMode ? 'border-white/10 bg-slate-900 text-slate-300' : 'border-slate-200 bg-white text-slate-600'}`}>
+                                          <span className="text-xs font-bold truncate pr-4">{f.name}</span>
+                                          <button type="button" onClick={()=>removeAnnounceFile(i)} className="text-red-400 hover:text-red-600 transition-colors p-1"><XMarkIcon className="w-5 h-5"/></button>
+                                      </div>
+                                  ))}
+                              </div>
+                          )}
+                      </div>
+
+                      <div className="pt-2">
+                          <button disabled={isPostingAnn} type="submit" className="w-full py-4 rounded-xl bg-pink-500 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-pink-500/30 hover:bg-pink-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover:-translate-y-0.5">
+                              {isPostingAnn ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><PaperAirplaneIcon className="w-5 h-5"/> Post Announcement</>}
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
 
       {/* --- MULTIPLE MEDIA / PROOF VIEWER MODAL (VERTICAL SCROLL) --- */}
       {selectedProof && selectedProof.length > 0 && (
@@ -1418,7 +1467,7 @@ export default function AdminDashboard() {
       {selectedUserDetail && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedUserDetail(null)}>
              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
-             <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/50 text-slate-900'}`}>
+             <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-md p-8 rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
                 <div className={`w-24 h-24 rounded-3xl overflow-hidden shadow-lg mb-6 shrink-0 ${darkMode ? 'bg-slate-800' : 'bg-slate-200'}`}>
                     {selectedUserDetail.profilePic ? <img src={selectedUserDetail.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-4xl font-black opacity-20">?</div>}
                 </div>
@@ -1521,7 +1570,7 @@ function GlassStat({ title, value, icon, color, dark }) {
     return (
         <div className={`p-6 rounded-3xl border backdrop-blur-md transition-all duration-300 group hover:-translate-y-1 ${dark 
             ? 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60' 
-            : 'bg-white/40 border-white/50 hover:bg-white/60 hover:shadow-xl'}`}
+            : 'bg-white border-slate-200 hover:bg-slate-50 hover:shadow-xl'}`}
         >
             <div className="flex justify-between items-start">
                 <div>
