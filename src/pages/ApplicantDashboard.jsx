@@ -32,7 +32,6 @@ import {
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 
-
 // --- SUB-COMPONENTS ---
 import FindJobsTab from "../components/dashboard/applicant/FindJobsTab";
 import SavedJobsTab from "../components/dashboard/applicant/SavedJobsTab";
@@ -95,6 +94,7 @@ export default function ApplicantDashboard() {
 
   // --- CUSTOM CONFIRMATION MODAL STATE ---
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: "", message: "", onConfirm: null, isDestructive: false, confirmText: "Confirm" });
+  const [withdrawModal, setWithdrawModal] = useState({ isOpen: false, app: null, reason: '' });
   
   const requestConfirm = (title, message, onConfirm, isDestructive = false, confirmText = "Confirm") => {
       setConfirmDialog({ isOpen: true, title, message, onConfirm, isDestructive, confirmText });
@@ -285,13 +285,13 @@ export default function ApplicantDashboard() {
 
   // --- EFFECTS ---
   useEffect(() => {
-    if (isBubbleExpanded || selectedJob || viewingApplication || isRatingEmployerModalOpen || lightboxUrl || confirmDialog.isOpen) {
+    if (isBubbleExpanded || selectedJob || viewingApplication || isRatingEmployerModalOpen || lightboxUrl || confirmDialog.isOpen || withdrawModal.isOpen) {
         document.body.style.overflow = "hidden";
     } else {
         document.body.style.overflow = "";
     }
     return () => { document.body.style.overflow = ""; };
-  }, [isBubbleExpanded, selectedJob, viewingApplication, isRatingEmployerModalOpen, lightboxUrl, confirmDialog.isOpen]);
+  }, [isBubbleExpanded, selectedJob, viewingApplication, isRatingEmployerModalOpen, lightboxUrl, confirmDialog.isOpen, withdrawModal.isOpen]);
 
   useEffect(() => {
       const activeItem = selectedJob || viewingApplication;
@@ -402,7 +402,12 @@ export default function ApplicantDashboard() {
     });
     
     const qApps = query(collection(db, "applications"), where("applicantId", "==", auth.currentUser.uid));
-    const unsubApps = onSnapshot(qApps, (snap) => setMyApplications(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.appliedAt?.seconds || 0) - (a.appliedAt?.seconds || 0))));
+    const unsubApps = onSnapshot(qApps, (snap) => {
+        const allApps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Filter out applications the applicant has "deleted"
+        const visibleApps = allApps.filter(app => !app.deletedByApplicant);
+        setMyApplications(visibleApps.sort((a, b) => (b.appliedAt?.seconds || 0) - (a.appliedAt?.seconds || 0)));
+    });
     
     const qSaved = query(collection(db, "saved_jobs"), where("userId", "==", auth.currentUser.uid));
     const unsubSaved = onSnapshot(qSaved, (snap) => setSavedJobs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -451,7 +456,8 @@ export default function ApplicantDashboard() {
           setLoading(true);
           try {
               await addDoc(collection(db, "applications"), {
-                  jobId: job.id, jobTitle: job.title, employerId: job.employerId, employerName: job.employerName,
+                  jobId: job.id, jobTitle: job.title, jobType: job.type || "N/A", 
+                  employerId: job.employerId, employerName: job.employerName,
                   employerLogo: job.employerLogo || "", applicantId: auth.currentUser.uid,
                   applicantName: `${applicantData.firstName} ${applicantData.lastName}`,
                   applicantProfilePic: profileImage || "", status: 'pending', appliedAt: serverTimestamp(),
@@ -460,43 +466,200 @@ export default function ApplicantDashboard() {
 
               await updateDoc(doc(db, "jobs", job.id), { applicationCount: increment(1) });
 
+              await addDoc(collection(db, "notifications"), {
+                  userId: job.employerId,
+                  type: "new_application",
+                  title: "New Job Application",
+                  message: `${applicantData.firstName} ${applicantData.lastName} applied for your post: ${job.title}.`,
+                  createdAt: serverTimestamp(),
+                  isRead: false
+              });
+
               if (!savedJobs.some(s => s.jobId === job.id)) {
                    await addDoc(collection(db, "saved_jobs"), { userId: auth.currentUser.uid, jobId: job.id, jobData: job, savedAt: serverTimestamp() });
               }
+
+              // --- ROBUST EMAIL BLOCK WITH UI ALERTS ---
+              try {
+                  let targetEmail = null;
+                  
+                  // Check all possible field names where the Employer's ID might be saved
+                  const empId = job.employerId || job.userId || job.employerUid || job.uid;
+                  
+                  if (employerContact && employerContact.email) {
+                      targetEmail = employerContact.email;
+                  } else if (job.email) {
+                      targetEmail = job.email;
+                  } else if (empId) {
+                      const employerSnap = await getDoc(doc(db, "employers", empId));
+                      if (employerSnap.exists()) {
+                          targetEmail = employerSnap.data().email;
+                      }
+                  }
+
+                  if (targetEmail) {
+                      await addDoc(collection(db, "mail"), {
+                          to: targetEmail,
+                          message: {
+                              subject: `New Job Application: ${job.title}`,
+                              html: `
+                              <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f8fafc; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+                                  <div style="background-color: #2563eb; padding: 24px; text-align: center;">
+                                      <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 1px;">LIVELI<span style="color: #93c5fd;">MATCH</span></h1>
+                                  </div>
+                                  <div style="padding: 32px; background-color: #ffffff; color: #334155; line-height: 1.6;">
+                                      <h2 style="color: #1e293b; font-size: 20px; margin-top: 0;">Hello ${job.employerName || "Employer"},</h2>
+                                      <p>You have received a new application for your job post: <strong>${job.title}</strong>.</p>
+                                      
+                                      <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 16px; margin: 24px 0; border-radius: 0 8px 8px 0;">
+                                          <p style="margin: 0; color: #1e40af;"><strong>Applicant:</strong> ${applicantData.firstName} ${applicantData.lastName}</p>
+                                      </div>
+      
+                                      <p>Log in to your Livelimatch Employer Dashboard to review their profile and qualifications.</p>
+                                      
+                                      <div style="text-align: center; margin: 32px 0;">
+                                          <a href="https://livelimatch-portal.web.app/login" style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; text-transform: uppercase; font-size: 14px; letter-spacing: 1px;">View Application</a>
+                                      </div>
+                                      <p style="margin-bottom: 0;">Warm regards,<br><strong style="color: #2563eb;">The Livelimatch Admin Team</strong></p>
+                                  </div>
+                                  <div style="background-color: #f1f5f9; padding: 16px; text-align: center; color: #64748b; font-size: 12px;">
+                                      <p style="margin: 0;">© ${new Date().getFullYear()} Barangay Cawayan Bogtong, Malasiqui, Pangasinan Livelihood Portal. All rights reserved.</p>
+                                  </div>
+                              </div>
+                              `
+                          }
+                      });
+                      
+                      setTimeout(() => showToast(`Email notice sent to ${targetEmail}`, "success"), 1000);
+                  } else {
+                      setTimeout(() => showToast(`Dev Warning: No email found for Employer ID: ${empId}`, "error"), 1000);
+                  }
+              } catch (emailErr) {
+                  setTimeout(() => showToast(`Email System Error: ${emailErr.message}`, "error"), 1000);
+              }
+
               showToast("Application Sent Successfully!", "success"); 
               setSelectedJob(null);
-          } catch(err) { showToast("Error applying: " + err.message, "error"); } 
-          finally { setLoading(false); }
+          } catch(err) { 
+              showToast("Error applying: " + err.message, "error"); 
+          } finally { 
+              setLoading(false); 
+          }
       }, false, "Apply");
   };
 
-  const handleWithdrawApplication = async (appId) => { 
-      requestConfirm("Withdraw Application", "Are you sure you want to withdraw this application?", async () => {
-          setLoading(true); 
-          try { 
-              const appDoc = await getDoc(doc(db, "applications", appId));
-              if (appDoc.exists()) {
-                  const jobId = appDoc.data().jobId;
-                  if (jobId) await updateDoc(doc(db, "jobs", jobId), { applicationCount: increment(-1) });
-              }
+  const handleWithdrawApplication = (app) => { 
+      if (app.status === 'accepted') {
+          // 1. ACCEPTED FLOW: Requires reason and employer approval
+          setWithdrawModal({ isOpen: true, app, reason: '' });
+      } else if (app.status === 'pending') {
+          // 2. PENDING FLOW: Immediate withdrawal, no approval needed
+          requestConfirm("Withdraw Application", "Are you sure you want to withdraw your pending application? This action is immediate.", async () => {
+              setLoading(true);
+              try {
+                  // Immediately update status to withdrawn
+                  await updateDoc(doc(db, "applications", app.id), { 
+                      status: 'withdrawn',
+                      withdrawnAt: serverTimestamp()
+                  }); 
+                  
+                  // Decrement job application count
+                  if (app.jobId) {
+                      await updateDoc(doc(db, "jobs", app.jobId), { applicationCount: increment(-1) });
+                  }
 
-              await updateDoc(doc(db, "applications", appId), { status: 'withdrawn' }); 
-              showToast("Application Withdrawn.", "success");
-              setViewingApplication(null); 
+                  // In-App Notification
+                  await addDoc(collection(db, "notifications"), {
+                      userId: app.employerId,
+                      type: "application_withdrawn",
+                      title: "Application Withdrawn",
+                      message: `${applicantData.firstName} ${applicantData.lastName} withdrew their pending application for ${app.jobTitle}.`,
+                      createdAt: serverTimestamp(),
+                      isRead: false
+                  });
+
+                  // Email Notice to Employer
+                  try {
+                      let targetEmail = null;
+                      const empId = app.employerId;
+
+                      if (employerContact && employerContact.email) {
+                          targetEmail = employerContact.email;
+                      } else if (empId) {
+                          const employerSnap = await getDoc(doc(db, "employers", empId));
+                          if (employerSnap.exists()) {
+                              targetEmail = employerSnap.data().email;
+                          }
+                      }
+
+                      if (targetEmail) {
+                          await addDoc(collection(db, "mail"), {
+                              to: targetEmail,
+                              message: {
+                                  subject: `Application Withdrawn: ${app.jobTitle}`,
+                                  html: `
+                                  <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f8fafc; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+                                      <div style="background-color: #2563eb; padding: 24px; text-align: center;">
+                                          <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 1px;">LIVELI<span style="color: #93c5fd;">MATCH</span></h1>
+                                      </div>
+                                      <div style="padding: 32px; background-color: #ffffff; color: #334155; line-height: 1.6;">
+                                          <h2 style="color: #1e293b; font-size: 20px; margin-top: 0;">Hello ${app.employerName || "Employer"},</h2>
+                                          <p><strong>${applicantData.firstName} ${applicantData.lastName}</strong> has withdrawn their application for <strong>${app.jobTitle}</strong>.</p>
+                                          
+                                          <div style="background-color: #f1f5f9; border-left: 4px solid #94a3b8; padding: 16px; margin: 24px 0; border-radius: 0 8px 8px 0;">
+                                              <p style="margin: 0; color: #475569;">Since this application was still in the <strong>Pending</strong> stage, it has been automatically withdrawn. No further action or approval is required from you.</p>
+                                          </div>
+            
+                                          <div style="text-align: center; margin: 32px 0;">
+                                              <a href="https://livelimatch-portal.web.app/login" style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; text-transform: uppercase; font-size: 14px; letter-spacing: 1px;">Go to Dashboard</a>
+                                          </div>
+                                          <p style="margin-bottom: 0;">Warm regards,<br><strong style="color: #2563eb;">The Livelimatch Admin Team</strong></p>
+                                      </div>
+                                      <div style="background-color: #f1f5f9; padding: 16px; text-align: center; color: #64748b; font-size: 12px;">
+                                          <p style="margin: 0;">© ${new Date().getFullYear()} Barangay Cawayan Bogtong, Malasiqui, Pangasinan Livelihood Portal. All rights reserved.</p>
+                                      </div>
+                                  </div>
+                                  `
+                              }
+                          });
+                          setTimeout(() => showToast(`Withdrawal notice sent to employer.`, "success"), 1000);
+                      }
+                  } catch (emailErr) {}
+
+                  showToast("Application withdrawn successfully.", "success");
+                  setViewingApplication(null); 
+              } catch (err) { 
+                  showToast("Error: " + err.message, "error"); 
+              } finally { 
+                  setLoading(false); 
+              }
+          }, true, "Withdraw");
+      }
+  };
+
+  const handleArchiveApplication = async (appId) => {
+      requestConfirm("Archive Application", "Move this record to your archives?", async () => {
+          setLoading(true);
+          try { 
+              await updateDoc(doc(db, "applications", appId), { status: 'archived' }); 
+              showToast("Application Archived.", "success");
           } catch (err) { showToast("Error: " + err.message, "error"); } 
-          finally { setLoading(false); } 
-      }, true, "Withdraw");
+          finally { setLoading(false); }
+      }, false, "Archive");
   };
 
   const handleDeleteApplication = async (appId) => {
-      requestConfirm("Delete Application", "Are you sure you want to permanently delete this application record?", async () => {
+      requestConfirm("Remove Record", "Are you sure you want to remove this record? The employer will still keep their copy, but this will allow you to apply for this job again.", async () => {
           setLoading(true);
           try { 
-              await deleteDoc(doc(db, "applications", appId)); 
-              showToast("Application Record Deleted.", "success");
+              // SOFT DELETE: We flag it as deleted for the applicant instead of destroying the shared document!
+              await updateDoc(doc(db, "applications", appId), { deletedByApplicant: true }); 
+              
+              showToast("Application record removed from your dashboard.", "success");
+              setViewingApplication(null); // Close modal if open
           } catch (err) { showToast("Error: " + err.message, "error"); } 
           finally { setLoading(false); }
-      }, true, "Delete");
+      }, true, "Remove");
   };
 
   const handleViewAnnouncement = (annId) => { setActiveTab("Announcements"); setIsNotifOpen(false); setLastReadAnnouncementId(annId); localStorage.setItem("lastReadAnnounceApp", annId); };
@@ -804,6 +967,34 @@ export default function ApplicantDashboard() {
       return map[id] || TagIcon;
   };
 
+  // =========================================================
+  // ⛔ ACCOUNT SUSPENSION LOCKOUT SCREEN
+  // =========================================================
+  if (applicantData?.status === 'suspended') {
+      return (
+          <div className={`min-h-screen flex items-center justify-center p-6 ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
+              <div className={`w-full max-w-md p-8 rounded-[2.5rem] shadow-2xl border text-center animate-in zoom-in-95 duration-500 ${darkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                  <div className="w-24 h-24 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                      <LockClosedIcon className="w-12 h-12" />
+                  </div>
+                  <h1 className="text-3xl font-black mb-3">Account Suspended</h1>
+                  <p className={`text-sm mb-6 leading-relaxed font-medium ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                      Your access to the Livelimatch platform has been suspended by an administrator due to a violation of our terms or pending an investigation.
+                  </p>
+                  <p className={`text-xs font-bold mb-8 opacity-50 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      If you believe this is a mistake, please contact our support team via email.
+                  </p>
+                  <button 
+                      onClick={async () => { await signOut(auth); navigate("/"); }}
+                      className="w-full py-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-red-500/30 flex items-center justify-center gap-2"
+                  >
+                      <ArrowLeftOnRectangleIcon className="w-5 h-5" /> Sign Out
+                  </button>
+              </div>
+          </div>
+      );
+  }
+  
   return (
     <div className={`relative min-h-screen transition-colors duration-500 font-sans pb-24 md:pb-0 select-none cursor-default overflow-x-hidden ${darkMode ? 'bg-slate-950 text-white' : 'bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200 text-blue-900'}`}>
       
@@ -909,6 +1100,7 @@ export default function ApplicantDashboard() {
                         {activeTab === "Profile" && <UserCircleIcon className="w-6 h-6"/>}
                         {activeTab === "Ratings" && <StarIconOutline className="w-6 h-6"/>}
                         {activeTab === "Support" && <QuestionMarkCircleIcon className="w-6 h-6"/>}
+                        {activeTab === "Announcements" && <MegaphoneIcon className="w-6 h-6"/>} {/* <--- ADDED THIS LINE */}
                     </div>
                     <div>
                         <h2 className={`text-xl lg:text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-blue-900'}`}>
@@ -974,6 +1166,7 @@ export default function ApplicantDashboard() {
                 applicationSearch={applicationSearch}
                 setApplicationSearch={setApplicationSearch}
                 handleWithdrawApplication={handleWithdrawApplication}
+                handleArchiveApplication={handleArchiveApplication}
                 handleDeleteApplication={handleDeleteApplication}
                 handleViewApplicationDetails={(app) => { 
                     const fetchJob = async () => {
@@ -1163,6 +1356,29 @@ export default function ApplicantDashboard() {
                   <div className="flex gap-3 w-full">
                       <button onClick={closeConfirm} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Cancel</button>
                       <button onClick={() => { confirmDialog.onConfirm(); closeConfirm(); }} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg text-white ${confirmDialog.isDestructive ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'}`}>{confirmDialog.confirmText}</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* WITHDRAWAL MODAL */}
+      {withdrawModal.isOpen && (
+          <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'bg-slate-950/80' : 'bg-slate-900/60'}`} onClick={() => setWithdrawModal({ isOpen: false, app: null, reason: '' })}>
+              <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm p-6 md:p-8 rounded-[2.5rem] shadow-2xl border animate-in zoom-in-95 duration-300 flex flex-col items-center text-center ${darkMode ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-white/60 text-slate-900'}`}>
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-amber-500/10 text-amber-500`}>
+                      <ArrowUturnLeftIcon className="w-8 h-8"/>
+                  </div>
+                  <h3 className="text-xl font-black mb-2 tracking-tight">Withdraw Application</h3>
+                  <p className={`text-xs font-medium mb-4 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Please provide a reason. The employer must approve this request.</p>
+                  <textarea 
+                      value={withdrawModal.reason} 
+                      onChange={e => setWithdrawModal({ ...withdrawModal, reason: e.target.value })} 
+                      className={`w-full p-4 text-sm font-medium rounded-2xl mb-6 outline-none resize-none h-28 border ${darkMode ? 'bg-slate-800 border-white/10 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`} 
+                      placeholder="E.g., I found another opportunity..."
+                  ></textarea>
+                  <div className="flex gap-3 w-full">
+                      <button onClick={() => setWithdrawModal({ isOpen: false, app: null, reason: '' })} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 ${darkMode ? 'bg-white/5 hover:bg-white/10 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Cancel</button>
+                      <button onClick={submitWithdrawal} disabled={loading} className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg text-white bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 disabled:opacity-50`}>Submit</button>
                   </div>
               </div>
           </div>
@@ -1619,16 +1835,25 @@ export default function ApplicantDashboard() {
 
                             {/* Actions (Pinned to bottom) */}
                             <div className={`flex gap-3 pt-4 shrink-0 border-t z-10 mt-2 ${theme.divider}`}>
-                                <button onClick={() => handleWithdrawApplication(viewingApplication.id)} className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] border active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-sm ${darkMode ? 'border-red-500/30 text-red-400 hover:bg-red-500/20' : 'bg-red-500/10 text-red-100 hover:bg-red-500 hover:text-white border-transparent'}`}>
-                                    {viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' ? 'Delete Record' : 'Withdraw'}
-                                </button>
+                                {(viewingApplication.status === 'rejected' || viewingApplication.status === 'withdrawn' || viewingApplication.status === 'archived') ? (
+                                    viewingApplication.status !== 'archived' && (
+                                        <button onClick={() => { handleArchiveApplication(viewingApplication.id); setViewingApplication(null); }} className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] border active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-sm ${darkMode ? 'border-slate-500/30 text-slate-400 hover:bg-slate-500/20' : 'bg-slate-500/10 text-slate-700 hover:bg-slate-500 hover:text-white border-transparent'}`}>
+                                            Archive Record
+                                        </button>
+                                    )
+                                ) : (
+                                    <button onClick={() => handleWithdrawApplication(viewingApplication)} disabled={viewingApplication.status === 'withdrawal_pending'} className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] border active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${darkMode ? 'border-red-500/30 text-red-400 hover:bg-red-500/20' : 'bg-red-500/10 text-red-700 hover:bg-red-500 hover:text-white border-transparent'}`}>
+                                        Withdraw Application
+                                    </button>
+                                )}
+                                
                                 {viewingApplication.status === 'accepted' ? (
                                     <button onClick={() => { handleStartChatFromExternal({ id: viewingApplication.employerId, name: viewingApplication.employerName, profilePic: viewingApplication.employerLogo || null }); setViewingApplication(null); }} className={`flex-[2] py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-transform duration-300 hover:-translate-y-1 shadow-lg ${theme.solid}`}>
                                         Message Employer
                                     </button>
                                 ) : (
                                     <button disabled className={`flex-[2] py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] cursor-not-allowed border bg-black/20 text-white/50 border-white/10 backdrop-blur-md`}>
-                                        {viewingApplication.status === 'rejected' ? 'Application Rejected' : viewingApplication.status === 'withdrawn' ? 'Application Withdrawn' : 'Pending Review'}
+                                        {viewingApplication.status === 'rejected' ? 'Application Rejected' : viewingApplication.status === 'withdrawal_pending' ? 'Withdrawal Requested' : viewingApplication.status === 'withdrawn' ? 'Application Withdrawn' : viewingApplication.status === 'archived' ? 'Archived' : 'Pending Review'}
                                     </button>
                                 )}
                             </div>

@@ -152,13 +152,12 @@ export default function DiscoverTab({
         }
     };
 
-    // Helper to safely check active status
     const checkIsOnline = (user) => {
         if (user.isOnline) return true;
         if (!user.lastSeen) return false;
         const now = new Date();
         const date = user.lastSeen?.toDate ? user.lastSeen.toDate() : new Date(user.lastSeen);
-        return (now - date) / 60000 < 3; // Active within last 3 minutes
+        return (now - date) / 60000 < 3; 
     };
 
     const filteredTalents = discoverTalents.filter(user => {
@@ -175,7 +174,6 @@ export default function DiscoverTab({
 
     const isFiltering = (talentSearch?.length > 0) || (talentSitioFilter?.length > 0) || (talentCategoryFilter?.length > 0);
 
-    // Suggest applicants with the exact same location as the employer's profile
     const suggestedTalents = filteredTalents.filter(user => {
         return user.sitio && employerData?.sitio && user.sitio === employerData.sitio;
     });
@@ -187,10 +185,8 @@ export default function DiscoverTab({
         const theme = getCardTheme(user.category, darkMode);
         const CatIcon = catStyle.icon;
         
-        // Dynamic Online Status
         const isOnline = checkIsOnline(user);
 
-        // Fetch User Ratings dynamically
         const userReviews = applicantReviews.filter(r => r.targetId === user.id);
         const avgRating = userReviews.length > 0 
             ? (userReviews.reduce((acc, curr) => acc + parseFloat(curr.rating), 0) / userReviews.length).toFixed(1) 
@@ -206,7 +202,6 @@ export default function DiscoverTab({
                     <CatIcon className="w-32 h-32 md:w-40 md:h-40" />
                 </div>
 
-                {/* ACTIVE/INACTIVE DOT */}
                 <div className="absolute top-3 right-3 md:top-4 md:right-4 z-10">
                     <span className={`flex h-2.5 w-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-slate-300/50 dark:bg-slate-600'} shadow-sm transition-colors duration-500`}></span>
                 </div>
@@ -217,7 +212,6 @@ export default function DiscoverTab({
                 
                 <h3 className={`text-xs md:text-sm font-black mb-0.5 truncate w-full relative z-10 ${theme.title}`}>{user.firstName} {user.lastName}</h3>
                 
-                {/* 5-STAR RATING SYSTEM */}
                 <div className="flex flex-col items-center justify-center mt-1 mb-3 relative z-10">
                     <div className="flex gap-0.5 text-amber-400 drop-shadow-sm mb-0.5">
                         {[1, 2, 3, 4, 5].map(star => (
@@ -258,7 +252,8 @@ export default function DiscoverTab({
                     className={`w-full py-2 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 relative z-10 shrink-0 ${isHired ? 'bg-slate-500/20 text-slate-500 cursor-not-allowed border border-white/10' : theme.btnPrimary}`}
                 >
                     <BoltIcon className={`w-3 h-3 ${isHired ? 'fill-current' : ''}`} /> 
-                    <span className="hidden md:inline">{isHired ? 'Hired' : 'Immediate Hire'}</span>
+                    {/* CHANGED THIS LINE */}
+                    <span className="hidden md:inline">{isHired ? 'Hired' : 'Hire'}</span>
                     <span className="md:hidden">{isHired ? 'Hired' : 'Hire'}</span>
                 </button>
             </div>

@@ -313,6 +313,30 @@ export default function AdminDashboard() {
     );
   };
 
+  // --- NEW: SUSPEND USER ACTION ---
+  const handleToggleSuspend = (user) => {
+      const isCurrentlySuspended = user.status === 'suspended';
+      const newStatus = isCurrentlySuspended ? 'verified' : 'suspended';
+      const collectionName = user.type === 'employer' ? 'employers' : 'applicants';
+      
+      requestConfirm(
+          isCurrentlySuspended ? "Restore User" : "Suspend User",
+          isCurrentlySuspended ? `Are you sure you want to restore ${user.firstName}'s account access?` : `Are you sure you want to suspend ${user.firstName}? They will not be able to access the platform.`,
+          async () => {
+              try {
+                  await updateDoc(doc(db, collectionName, user.id), {
+                      status: newStatus
+                  });
+                  showToast(`User successfully ${newStatus}.`, "success");
+              } catch (err) {
+                  showToast("Error: " + err.message, "error");
+              }
+          },
+          !isCurrentlySuspended, 
+          isCurrentlySuspended ? "Restore" : "Suspend"
+      );
+  };
+
   const handleDeleteJob = (jobId) => {
     requestConfirm("Delete Job", "Permanently delete this job?", async () => {
         try {
@@ -1131,8 +1155,8 @@ export default function AdminDashboard() {
             </div>
         )}
 
-        {/* TAB CONTENT: LISTS */}
-        {(activeTab !== "Overview" && activeTab !== "Verifications" && activeTab !== "Announcements" && activeTab !== "Help") && (
+        {/* TAB CONTENT: LISTS (Jobs, Applicants, Employers) */}
+        {(activeTab === "Jobs" || activeTab === "Applicants" || activeTab === "Employers") && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 
                 {/* --- SEARCH BAR & FILTER --- */}
@@ -1235,102 +1259,150 @@ export default function AdminDashboard() {
                     )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {(activeTab === "Jobs" ? jobs : (activeTab === "Applicants" ? applicants : employers))
-                        .filter(item => {
-                            if(activeTab === "Jobs") {
-                                const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase());
-                                const matchesCat = categoryFilter ? item.category === categoryFilter : true;
-                                return matchesSearch && matchesCat;
-                            }
-                            const matchesSearch = `${item.firstName} ${item.lastName}`.toLowerCase().includes(searchTerm.toLowerCase());
-                            const isVerifiedUser = (item.status === 'verified' || item.verificationStatus === 'verified');
-                            const matchesSitio = sitioFilter ? item.sitio === sitioFilter : true;
-                            return isVerifiedUser && matchesSearch && matchesSitio;
-                        })
-                        .map(item => {
-                            if (activeTab === "Jobs") {
-                                const catStyle = getCatStyles(item.category);
-                                const CatIcon = catStyle.icon;
-                                const theme = getCardTheme(item.category, darkMode);
-                                const typeStyle = getJobStyle(item.type);
-                                const applicantCount = item.applicationCount || 0;
-                                
-                                return (
-                                    <div key={item.id} className={`relative p-5 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 ${theme.hoverShadow} flex flex-col justify-between min-h-[260px] ${theme.cardBg} w-full`}>
-                                        
-                                        <div className={`absolute -right-4 bottom-0 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${theme.bgIcon}`}>
-                                            <CatIcon className="w-40 h-40 md:w-48 md:h-48" />
-                                        </div>
-
-                                        <div className="relative z-10 flex flex-col h-full">
-                                            <div className="flex justify-between items-start gap-4 mb-2">
-                                                <h3 className={`font-black text-xl leading-tight line-clamp-2 pt-1 ${theme.title}`}>{item.title}</h3>
-                                                <button onClick={() => handleDeleteJob(item.id)} className={`p-2 rounded-full transition-colors shrink-0 -mt-1 -mr-1 ${theme.saveIdle} hover:text-red-500 hover:bg-red-500/20 dark:hover:bg-red-500/20`} title="Delete Job">
-                                                    <TrashIcon className="w-5 h-5"/>
-                                                </button>
-                                            </div>
-                                            
-                                            <div className={`flex items-center gap-1.5 mb-3 ${theme.location}`}>
-                                                <MapPinIcon className="w-4 h-4 shrink-0" />
-                                                <p className="text-[11px] font-bold uppercase tracking-wide opacity-80 truncate">{item.employerName} • {item.sitio || "No Location"}</p>
-                                            </div>
-
-                                            <p className={`text-xs mb-4 line-clamp-3 leading-relaxed ${theme.descText}`}>
-                                                {item.description || "No description provided for this job."}
-                                            </p>
-
-                                            <div className="flex flex-wrap items-center gap-2 mb-6">
-                                                {item.category && (
-                                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 shadow-sm ${theme.badge}`}>
-                                                        <CatIcon className="w-3 h-3" />
-                                                        {JOB_CATEGORIES.find(c => c.id === item.category)?.label || item.category}
-                                                    </span>
-                                                )}
-                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 shadow-sm ${theme.badge}`}>
-                                                    {cloneElement(typeStyle.icon, { className: "w-3 h-3 scale-75" })}
-                                                    {item.type}
-                                                </span>
-                                            </div>
-
-                                            <div className={`mt-auto pt-4 border-t flex flex-wrap items-end justify-between gap-3 ${theme.borderColor}`}>
-                                                <div className="mb-1">
-                                                    <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${theme.salaryLabel}`}>Salary</p>
-                                                    <div className="flex items-center gap-1">
-                                                        <span className={`text-sm font-black ${theme.currency}`}>₱</span>
-                                                        <span className={`text-lg font-black leading-none ${theme.salaryValue}`}>{item.salary}</span>
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className={`flex items-center gap-1.5 mr-1 ${theme.salaryLabel}`} title={`${applicantCount} Applicants`}>
-                                                    <UsersIcon className="w-4 h-4" />
-                                                    <span className="text-[10px] font-black uppercase tracking-widest">{applicantCount} {item.capacity > 0 ? `/ ${item.capacity}` : ''} Applicants</span>
-                                                </div>
-                                            </div>
-                                        </div>
+                {/* --- JOBS RENDERING --- */}
+                {activeTab === "Jobs" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {jobs.filter(item => {
+                            const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase());
+                            const matchesCat = categoryFilter ? item.category === categoryFilter : true;
+                            return matchesSearch && matchesCat;
+                        }).map(item => {
+                            const catStyle = getCatStyles(item.category);
+                            const CatIcon = catStyle.icon;
+                            const theme = getCardTheme(item.category, darkMode);
+                            const typeStyle = getJobStyle(item.type);
+                            const applicantCount = item.applicationCount || 0;
+                            
+                            return (
+                                <div key={item.id} className={`relative p-5 md:p-6 rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-300 hover:-translate-y-1 ${theme.hoverShadow} flex flex-col justify-between min-h-[260px] ${theme.cardBg} w-full`}>
+                                    
+                                    <div className={`absolute -right-4 bottom-0 md:-right-4 md:-bottom-4 opacity-10 rotate-12 transform group-hover:scale-110 transition-transform duration-500 pointer-events-none ${theme.bgIcon}`}>
+                                        <CatIcon className="w-40 h-40 md:w-48 md:h-48" />
                                     </div>
-                                );
-                            } else {
-                                return (
-                                    <div key={item.id} onClick={() => setSelectedUserDetail(item)} className={`p-6 ${glassCard} cursor-pointer`}>
-                                        <div className="flex items-center gap-4">
-                                            <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-slate-200 dark:border-white/20 shadow-md shrink-0 ${darkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
-                                                {item.profilePic ? <img src={item.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center font-black opacity-30 text-xl">?</div>}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <h4 className={`font-bold text-sm truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>{item.firstName} {item.lastName}</h4>
-                                                <div className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold border truncate ${PUROK_STYLES[item.sitio] || 'bg-slate-100 text-slate-500'}`}>{item.sitio}</div>
-                                            </div>
-                                            <button className="p-2 rounded-xl text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-all">
-                                                <EyeIcon className="w-5 h-5"/>
+
+                                    <div className="relative z-10 flex flex-col h-full">
+                                        <div className="flex justify-between items-start gap-4 mb-2">
+                                            <h3 className={`font-black text-xl leading-tight line-clamp-2 pt-1 ${theme.title}`}>{item.title}</h3>
+                                            <button onClick={() => handleDeleteJob(item.id)} className={`p-2 rounded-full transition-colors shrink-0 -mt-1 -mr-1 ${theme.saveIdle} hover:text-red-500 hover:bg-red-500/20 dark:hover:bg-red-500/20`} title="Delete Job">
+                                                <TrashIcon className="w-5 h-5"/>
                                             </button>
                                         </div>
+                                        
+                                        <div className={`flex items-center gap-1.5 mb-3 ${theme.location}`}>
+                                            <MapPinIcon className="w-4 h-4 shrink-0" />
+                                            <p className="text-[11px] font-bold uppercase tracking-wide opacity-80 truncate">{item.employerName} • {item.sitio || "No Location"}</p>
+                                        </div>
+
+                                        <p className={`text-xs mb-4 line-clamp-3 leading-relaxed ${theme.descText}`}>
+                                            {item.description || "No description provided for this job."}
+                                        </p>
+
+                                        <div className="flex flex-wrap items-center gap-2 mb-6">
+                                            {item.category && (
+                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 shadow-sm ${theme.badge}`}>
+                                                    <CatIcon className="w-3 h-3" />
+                                                    {JOB_CATEGORIES.find(c => c.id === item.category)?.label || item.category}
+                                                </span>
+                                            )}
+                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 shadow-sm ${theme.badge}`}>
+                                                {cloneElement(typeStyle.icon, { className: "w-3 h-3 scale-75" })}
+                                                {item.type}
+                                            </span>
+                                        </div>
+
+                                        <div className={`mt-auto pt-4 border-t flex flex-wrap items-end justify-between gap-3 ${theme.borderColor}`}>
+                                            <div className="mb-1">
+                                                <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${theme.salaryLabel}`}>Salary</p>
+                                                <div className="flex items-center gap-1">
+                                                    <span className={`text-sm font-black ${theme.currency}`}>₱</span>
+                                                    <span className={`text-lg font-black leading-none ${theme.salaryValue}`}>{item.salary}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className={`flex items-center gap-1.5 mr-1 ${theme.salaryLabel}`} title={`${applicantCount} Applicants`}>
+                                                <UsersIcon className="w-4 h-4" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest">{applicantCount} {item.capacity > 0 ? `/ ${item.capacity}` : ''} Applicants</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                );
-                            }
-                        })
-                    }
-                </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* --- USERS RENDERING (Applicants / Employers with Active/Suspended split) --- */}
+                {(activeTab === "Applicants" || activeTab === "Employers") && (() => {
+                    const currentList = activeTab === "Applicants" ? applicants : employers;
+                    
+                    const filteredList = currentList.filter(item => {
+                        const matchesSearch = `${item.firstName} ${item.lastName}`.toLowerCase().includes(searchTerm.toLowerCase());
+                        const matchesSitio = sitioFilter ? item.sitio === sitioFilter : true;
+                        return matchesSearch && matchesSitio;
+                    });
+
+                    // Separate into active and suspended arrays
+                    const activeUsers = filteredList.filter(u => u.status === 'verified' || (u.verificationStatus === 'verified' && u.status !== 'suspended'));
+                    const suspendedUsers = filteredList.filter(u => u.status === 'suspended');
+
+                    const renderUserCard = (item) => (
+                        <div key={item.id} onClick={() => setSelectedUserDetail(item)} className={`p-6 ${glassCard} cursor-pointer`}>
+                            <div className="flex items-center gap-4">
+                                <div className={`w-14 h-14 rounded-full overflow-hidden border-2 border-slate-200 dark:border-white/20 shadow-md shrink-0 ${darkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
+                                    {item.profilePic ? <img src={item.profilePic} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center font-black opacity-30 text-xl">?</div>}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h4 className={`font-bold text-sm truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>{item.firstName} {item.lastName}</h4>
+                                    <div className={`mt-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold border truncate ${PUROK_STYLES[item.sitio] || 'bg-slate-100 text-slate-500'}`}>{item.sitio}</div>
+                                </div>
+                                <button className="p-2 rounded-xl text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-all">
+                                    <EyeIcon className="w-5 h-5"/>
+                                </button>
+                            </div>
+                        </div>
+                    );
+
+                    return (
+                        <div className="space-y-10 mt-2">
+                            {/* ACTIVE USERS SECTION */}
+                            <section>
+                                <div className="flex items-center gap-3 mb-4 pl-2">
+                                    <div className={`w-2 h-2 rounded-full shadow-sm ${darkMode ? 'bg-blue-400' : 'bg-blue-600'}`}></div>
+                                    <h3 className={`font-black text-sm uppercase tracking-[0.2em] ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                                        Active {activeTab} ({activeUsers.length})
+                                    </h3>
+                                    <div className={`flex-1 h-px ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+                                </div>
+                                {activeUsers.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {activeUsers.map(item => renderUserCard(item))}
+                                    </div>
+                                ) : (
+                                    <div className={`p-10 rounded-3xl border-dashed border-2 flex flex-col items-center justify-center ${darkMode ? 'border-white/10 text-slate-500' : 'border-slate-300 text-slate-400'}`}>
+                                        <p className="font-bold uppercase tracking-widest text-xs opacity-60">No active users found.</p>
+                                    </div>
+                                )}
+                            </section>
+
+                            {/* SUSPENDED USERS SECTION */}
+                            {suspendedUsers.length > 0 && (
+                                <section>
+                                    <div className="flex items-center gap-3 mb-4 pl-2">
+                                        <div className="w-2 h-2 rounded-full bg-red-500 shadow-sm"></div>
+                                        <h3 className={`font-black text-sm uppercase tracking-[0.2em] text-red-500`}>
+                                            Suspended ({suspendedUsers.length})
+                                        </h3>
+                                        <div className={`flex-1 h-px ${darkMode ? 'bg-white/10' : 'bg-slate-200'}`}></div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-75 hover:opacity-100 transition-opacity">
+                                        {suspendedUsers.map(item => renderUserCard(item))}
+                                    </div>
+                                </section>
+                            )}
+                        </div>
+                    );
+                })()}
+
             </div>
         )}
 
@@ -1475,6 +1547,9 @@ export default function AdminDashboard() {
                 <div className="flex gap-2 mb-6">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-blue-500/10 text-blue-500`}>{selectedUserDetail.type}</span>
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${darkMode ? 'border-white/10' : 'border-black/10'}`}>{selectedUserDetail.sitio}</span>
+                    {selectedUserDetail.status === 'suspended' && (
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-red-500/10 text-red-500`}>Suspended</span>
+                    )}
                 </div>
                 <div className="w-full space-y-4">
                     <div className={`p-4 rounded-xl flex items-center gap-4 ${darkMode ? 'bg-white/5' : 'bg-slate-50'}`}>
@@ -1495,14 +1570,26 @@ export default function AdminDashboard() {
                     )}
 
                     <div className="pt-4 border-t border-slate-200 dark:border-white/10">
-                        <button onClick={() => {
-                                handleVerifyUser(selectedUserDetail, 'rejected');
-                                setSelectedUserDetail(null);
-                            }} 
-                            className="w-full py-3 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all font-bold text-xs uppercase flex items-center justify-center gap-2"
-                        >
-                            <XMarkIcon className="w-4 h-4"/> Suspend / Reject User
-                        </button>
+                        {/* THE NEW SUSPEND / RESTORE BUTTON */}
+                        {selectedUserDetail.status === 'suspended' ? (
+                            <button onClick={() => {
+                                    handleToggleSuspend(selectedUserDetail);
+                                    setSelectedUserDetail(null);
+                                }} 
+                                className="w-full py-3 rounded-xl border border-blue-500/30 text-blue-500 hover:bg-blue-500 hover:text-white transition-all font-bold text-xs uppercase flex items-center justify-center gap-2"
+                            >
+                                <ArrowPathIcon className="w-4 h-4"/> Restore User
+                            </button>
+                        ) : (
+                            <button onClick={() => {
+                                    handleToggleSuspend(selectedUserDetail);
+                                    setSelectedUserDetail(null);
+                                }} 
+                                className="w-full py-3 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all font-bold text-xs uppercase flex items-center justify-center gap-2"
+                            >
+                                <XMarkIcon className="w-4 h-4"/> Suspend User
+                            </button>
+                        )}
                     </div>
 
                 </div>

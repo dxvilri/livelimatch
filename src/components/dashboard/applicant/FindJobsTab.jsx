@@ -481,7 +481,7 @@ export default function FindJobsTab({
                     <div className="w-full">
                         <div className="flex items-center justify-between mb-4 pl-2 pr-2">
                             <h2 className={`text-sm font-black uppercase tracking-widest opacity-50 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                                Recently Posted
+                                All Job Post
                             </h2>
                         </div>
                         <div 
