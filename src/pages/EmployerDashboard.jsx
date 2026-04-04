@@ -227,7 +227,7 @@ export default function EmployerDashboard() {
       workExperience: [""], 
       education: { primary: "", secondary: "", college: "" }, 
       verificationStatus: "pending",
-      status: "pending" // Added status here to make sure it's available
+      status: "pending" 
   });
 
   const [reviews, setReviews] = useState([]); 
@@ -329,7 +329,6 @@ export default function EmployerDashboard() {
         const q = query(collection(db, "applicants"));
         const unsub = onSnapshot(q, (querySnapshot) => {
             const talents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            // Filter out the current user's UID so they don't see themselves as a candidate
             const validTalents = talents.filter(t => (t.firstName || t.lastName) && t.id !== auth.currentUser?.uid);
             setDiscoverTalents(validTalents);
         });
@@ -359,7 +358,6 @@ export default function EmployerDashboard() {
   useEffect(() => {
     if (!auth.currentUser || !userData) return;
     
-    // DYNAMIC COLLECTION: Find where the user actually lives in the DB
     const collectionName = (userData.roles && userData.roles[0] === 'applicant') ? 'applicants' : 'employers';
     const userRef = doc(db, collectionName, auth.currentUser.uid);
     
@@ -391,7 +389,7 @@ export default function EmployerDashboard() {
             aboutMe: data.aboutMe || data.bio || "",
             workExperience: parsedExperience,
             education: parsedEducation,
-            status: data.status || "pending", // <--- THE CRITICAL FIX IS HERE
+            status: data.status || "pending", 
             verificationStatus: data.verificationStatus || "pending" 
         }));
       }
@@ -411,7 +409,6 @@ export default function EmployerDashboard() {
     const qApps = query(collection(db, "applications"), where("employerId", "==", auth.currentUser.uid));
     const unsubApps = onSnapshot(qApps, (snap) => {
         const allApps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        // Filter out applications the employer has soft-deleted
         const visibleApps = allApps.filter(app => !app.deletedByEmployer);
         setReceivedApplications(visibleApps.sort((a, b) => (b.appliedAt?.seconds || 0) - (a.appliedAt?.seconds || 0)));
     });
@@ -634,7 +631,6 @@ export default function EmployerDashboard() {
 
         const cleanExperience = (employerData.workExperience || []).filter(e => e.trim() !== "");
 
-        // DYNAMIC COLLECTION SAVE
         const collectionName = (userData.roles && userData.roles[0] === 'applicant') ? 'applicants' : 'employers';
 
         await setDoc(doc(db, collectionName, auth.currentUser.uid), {
@@ -720,24 +716,9 @@ export default function EmployerDashboard() {
     const isWithdrawn = newStatus === 'withdrawn';
     const actionText = isReject ? 'Reject' : isWithdrawn ? 'Approve Withdrawal for' : 'Accept';
 
-    const handleDeleteApplication = async (appId) => {
-      requestConfirm("Remove Record", "Are you sure you want to permanently remove this record from your archives? The applicant will still keep their copy.", async () => {
-          setLoading(true);
-          try { 
-              // SOFT DELETE: Flag it as deleted for the employer!
-              await updateDoc(doc(db, "applications", appId), { deletedByEmployer: true }); 
-              
-              showToast("Application record removed from your archives.", "success");
-              if (selectedApplication?.id === appId) setSelectedApplication(null); // Close modal if open
-          } catch (err) { showToast("Error: " + err.message, "error"); } 
-          finally { setLoading(false); }
-      }, true, "Remove");
-  };
-
     requestConfirm(`${actionText} Application`, `Are you sure you want to mark this applicant as ${newStatus}?`, async () => {
         setLoading(true);
         try {
-          // 1. Update status in database
           await updateDoc(doc(db, "applications", app.id), { status: newStatus, isReadByApplicant: false });
           
           if (newStatus === 'rejected') {
@@ -746,7 +727,6 @@ export default function EmployerDashboard() {
               }
           }
 
-          // 2. Send In-App Notification
           await addDoc(collection(db, "notifications"), {
               userId: app.applicantId,
               type: `application_${newStatus}`,
@@ -756,7 +736,6 @@ export default function EmployerDashboard() {
               isRead: false
           });
 
-          // 3. Send Real Email via Firebase Extension
           try {
               const applicantSnap = await getDoc(doc(db, "applicants", app.applicantId));
               if (applicantSnap.exists()) {
@@ -765,19 +744,19 @@ export default function EmployerDashboard() {
                   if (applicantEmail) {
                       let subject = "";
                       let emailMessage = "";
-                      let color = "#2563eb"; // Default Blue
+                      let color = "#2563eb"; 
                       
                       if (newStatus === "accepted") {
                           subject = `Application Accepted: ${app.jobTitle}`;
-                          color = "#16a34a"; // Green
+                          color = "#16a34a"; 
                           emailMessage = `<p>Congratulations! <strong>${app.employerName}</strong> has accepted your application for the <strong>${app.jobTitle}</strong> position.</p><p>Please check your LiveliMatch messages to coordinate the next steps.</p>`;
                       } else if (newStatus === "rejected") {
                           subject = `Application Update: ${app.jobTitle}`;
-                          color = "#dc2626"; // Red
+                          color = "#dc2626"; 
                           emailMessage = `<p>Thank you for applying to the <strong>${app.jobTitle}</strong> position.</p><p>After careful consideration, <strong>${app.employerName}</strong> has decided to move forward with other candidates at this time. We encourage you to keep applying to other opportunities on LiveliMatch!</p>`;
                       } else if (newStatus === "withdrawn") {
                           subject = `Withdrawal Approved: ${app.jobTitle}`;
-                          color = "#475569"; // Slate
+                          color = "#475569"; 
                           emailMessage = `<p>Your request to withdraw your application for <strong>${app.jobTitle}</strong> has been acknowledged and approved by <strong>${app.employerName}</strong>.</p>`;
                       }
 
@@ -825,18 +804,15 @@ export default function EmployerDashboard() {
   };
 
   const handleDeleteApplication = async (appId) => {
-    requestConfirm("Delete Application", "Are you sure you want to permanently delete this application record?", async () => {
+    requestConfirm("Remove Record", "Are you sure you want to permanently remove this record from your archives? The applicant will still keep their copy.", async () => {
         setLoading(true);
         try { 
-            const appDoc = await getDoc(doc(db, "applications", appId));
-            if (appDoc.exists() && appDoc.data().jobId && appDoc.data().status !== 'rejected' && appDoc.data().status !== 'withdrawn') {
-                await updateDoc(doc(db, "jobs", appDoc.data().jobId), { applicationCount: increment(-1) });
-            }
-            await deleteDoc(doc(db, "applications", appId)); 
+            await updateDoc(doc(db, "applications", appId), { deletedByEmployer: true }); 
+            showToast("Application record removed from your archives.", "success");
             if (selectedApplication?.id === appId) setSelectedApplication(null); 
-            showToast("Application deleted.", "success");
-        } catch (err) { showToast("Error deleting: " + err.message, "error"); } finally { setLoading(false); }
-    }, true, "Delete");
+        } catch (err) { showToast("Error: " + err.message, "error"); } 
+        finally { setLoading(false); }
+    }, true, "Remove");
   };
   
   const handleSubmitApplicantRating = async (ratingData) => {
@@ -867,7 +843,6 @@ export default function EmployerDashboard() {
       navigate("/"); 
   };
 
-  // --- WORKSPACE SWITCHER LOGIC ---
   const handleSwitchWorkspace = async (newWorkspace) => {
       if (!auth.currentUser || !userData) return;
       try {
@@ -950,6 +925,9 @@ export default function EmployerDashboard() {
           };
       }
   };
+
+  const filteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (!otherId || (adminUser && otherId === adminUser.id)) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(chatSearch.toLowerCase()); });
+  const bubbleFilteredChats = conversations.filter(c => { const otherId = c.participants?.find(p => p !== auth.currentUser?.uid); if (!otherId || (adminUser && otherId === adminUser.id)) return false; const name = c.names?.[otherId] || "User"; return name.toLowerCase().includes(bubbleSearch.toLowerCase()); });
 
   // =========================================================
   // ⛔ ACCOUNT SUSPENSION LOCKOUT SCREEN
@@ -2114,6 +2092,309 @@ return (
           </div>
       )}
 
+      {/* 4. CHAT BUBBLES OVERLAY */}
+      {isBubbleVisible && (
+        isMobile ? (
+            <>
+                {!isBubbleExpanded && (
+                    <div style={{ top: bubblePos.y, left: bubblePos.x }} className="fixed z-[201] touch-none" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+                        <div className="relative">
+                            <button onClick={(e) => { if (!isDragging) { setIsBubbleExpanded(true); if(effectiveActiveChatUser) { openChat(effectiveActiveChatUser); markConversationAsRead(effectiveActiveChatUser.id); } } }} className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 overflow-hidden ${darkMode ? 'bg-slate-800' : 'bg-white/80 border border-white/60 backdrop-blur-md'}`}>
+                                {activeBubbleView !== 'inbox' && effectiveActiveChatUser ? ((getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{effectiveActiveChatUser.name.charAt(0)}</div>) : <ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-white' : 'text-blue-600'}`} />}
+                            </button>
+                            {(() => { const activeUnread = activeBubbleView !== 'inbox' && effectiveActiveChatUser ? (conversations.find(c => c.chatId?.includes(effectiveActiveChatUser.id))?.[`unread_${auth.currentUser.uid}`] || 0) : conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0); return activeUnread > 0 ? <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-10 animate-in zoom-in border-none">{activeUnread}</span> : null; })()}
+                        </div>
+                    </div>
+                )}
+                {isDragging && <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] w-16 h-16 rounded-full flex items-center justify-center border-4 animate-in zoom-in backdrop-blur-md ${darkMode ? 'border-slate-500/30 bg-slate-800/40' : 'border-blue-400/30 bg-white/40'}`}><XMarkIcon className={`w-8 h-8 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`} /></div>}
+                {isBubbleExpanded && (
+                    <div className={`fixed inset-0 z-[1000] flex flex-col backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'bg-black/60' : 'bg-slate-900/40'}`}>
+                        <div className="pt-12 px-4 pb-4 flex items-center gap-4 overflow-x-auto hide-scrollbar pointer-events-auto">
+                            {openBubbles.map((chat) => {
+                                const unread = chat[`unread_${auth.currentUser.uid}`] || 0;
+                                const chatPic = chat.profilePic || conversations.find(c => c.chatId?.includes(chat.id))?.profilePics?.[chat.id];
+                                return (
+                                    <div key={chat.id} className="relative group flex flex-col items-center gap-1 shrink-0">
+                                        <button onClick={() => { setActiveBubbleView(chat.id); openChat(chat); markConversationAsRead(chat.id); }} className={`w-14 h-14 rounded-full overflow-hidden shadow-lg transition-all border-2 ${darkMode ? 'border-white/10' : 'border-white/60'} ${activeBubbleView === chat.id ? 'scale-110 shadow-blue-500/50' : 'opacity-80'}`}>
+                                            {chatPic ? <img src={chatPic} className="w-full h-full object-cover" alt="pfp" /> : <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">{chat.name.charAt(0)}</div>}
+                                        </button>
+                                        {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-sm z-20 border-none">{unread}</span>}
+                                        {activeBubbleView === chat.id && (<button onClick={(e) => { e.stopPropagation(); const newBubbles = openBubbles.filter(b => b.id !== chat.id); setOpenBubbles(newBubbles); if(activeBubbleView === chat.id) { setActiveBubbleView(newBubbles.length ? newBubbles[0].id : 'inbox'); } }} className={`absolute -top-1 -right-1 text-white rounded-full p-0.5 shadow-md animate-in zoom-in border-none ${darkMode ? 'bg-slate-500' : 'bg-slate-600'}`}><XMarkIcon className="w-3 h-3"/></button>)}
+                                    </div>
+                                );
+                            })}
+                            <div className="flex flex-col items-center gap-1 shrink-0">
+                                <button onClick={() => setActiveBubbleView('inbox')} className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all backdrop-blur-md border ${darkMode ? 'bg-slate-800/80 border-white/10' : 'bg-white/60 border-white/60'} ${activeBubbleView === 'inbox' ? 'scale-110 shadow-blue-500/30' : 'opacity-80'}`}><ChatBubbleOvalLeftEllipsisIcon className={`w-7 h-7 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} /></button>
+                            </div>
+                        </div>
+                        <div className="flex-1 flex flex-col justify-end relative" onClick={() => setIsBubbleExpanded(false)}>
+                            <div className={`w-full h-[80vh] rounded-t-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10 text-white' : 'bg-white/80 border-white/60 text-blue-900'}`} onClick={(e) => e.stopPropagation()}>
+                                {activeBubbleView === 'inbox' ? (
+                                    <div className="flex flex-col h-full">
+                                        <div className={`p-5 flex justify-between items-center border-b ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+                                            <h3 className={`font-black text-2xl ${darkMode ? 'text-white' : 'text-blue-900'}`}>Chats</h3>
+                                            <button onClick={() => setIsBubbleExpanded(false)} className={`p-2 shadow-sm rounded-full ${darkMode ? 'bg-white/10 text-white' : 'bg-white/60 text-blue-600'}`}><ChevronDownIcon className="w-5 h-5"/></button> 
+                                        </div>
+                                        <div className={`px-5 py-3 border-b ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/30 border-white/60'}`}><div className={`flex items-center p-2 rounded-xl border shadow-inner ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/60 border-white/60'}`}><MagnifyingGlassIcon className={`w-4 h-4 ml-2 ${darkMode ? 'text-slate-400' : 'text-blue-400'}`} /><input value={bubbleSearch} onChange={(e) => setBubbleSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-xs p-1.5 w-full font-bold ${darkMode ? 'text-white placeholder-slate-500' : 'text-blue-900 placeholder-blue-300'}`} /></div></div>
+                                        <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
+                                            {bubbleFilteredChats.map(c => {
+                                                const otherId = c.participants.find(p => p !== auth.currentUser.uid);
+                                                if (!otherId) return null;
+                                                const name = c.names?.[otherId] || "User";
+                                                const otherPic = c.profilePics?.[otherId];
+                                                const unread = c[`unread_${auth.currentUser.uid}`] || 0;
+                                                return (
+                                                    <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; if(!openBubbles.find(b => b.id === userObj.id)) { setOpenBubbles(prev => [userObj, ...prev]); } openChat(userObj); setActiveBubbleView(otherId); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/10 text-slate-200' : 'hover:bg-white/50 text-blue-900'}`}>
+                                                        <div className={`w-11 h-11 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="other-pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                                        <div className="flex-1 text-left overflow-hidden">
+                                                            <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className={`text-[9px] font-bold opacity-60 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`}>{formatTime(c.lastTimestamp)}</span></div>
+                                                            <div className="flex justify-between items-center"><p className="text-[11px] truncate font-medium opacity-70">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
+                                                        </div>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    effectiveActiveChatUser && (
+                                        <>
+                                            <div className={`p-4 flex justify-between items-center shrink-0 border-b ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-10 h-10 rounded-full overflow-hidden shadow-inner ${darkMode ? 'bg-slate-800 text-blue-400' : 'bg-white/60 text-blue-600'}`}>{(getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic) ? <img src={getAvatarUrl(effectiveActiveChatUser) || effectiveActiveChatUser.profilePic} className="w-full h-full object-cover" alt="header-pfp" /> : <span className="flex items-center justify-center h-full font-bold">{effectiveActiveChatUser.name.charAt(0)}</span>}</div>
+                                                    <div>
+                                                        <h3 className={`font-black text-base leading-none ${darkMode ? 'text-white' : 'text-blue-900'}`}>{effectiveActiveChatUser.name}</h3>
+                                                        <p className={`text-[10px] font-bold opacity-70 uppercase flex items-center gap-1 mt-0.5 ${darkMode ? 'text-slate-400' : 'text-blue-600'}`}>
+                                                            {(() => {
+                                                                const status = formatLastSeen(conversations.find(c => c.chatId?.includes(effectiveActiveChatUser.id))?.lastTimestamp);
+                                                                return <><span className={`w-2 h-2 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
+                                                            })()}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className={`flex gap-4 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}><button onClick={() => setIsBubbleExpanded(false)}><ChevronDownIcon className="w-6 h-6"/></button></div>
+                                            </div>
+                                            
+                                            <div className={`flex-1 overflow-y-auto p-4 space-y-6 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`} onClick={() => setActiveMenuId(null)}>
+                                                {messages.map((msg, index) => {
+                                                    const isMe = msg.senderId === auth.currentUser.uid;
+                                                    const myPic = profileImage || employerData?.profilePic || null;
+                                                    const otherPic = effectiveActiveChatUser?.profilePic || getAvatarUrl(effectiveActiveChatUser) || null;
+                                                    
+                                                    const currentConv = conversations.find(c => c.participants?.includes(auth.currentUser.uid) && c.participants?.includes(effectiveActiveChatUser.id));
+                                                    const unreadByOther = currentConv ? (currentConv[`unread_${effectiveActiveChatUser.id}`] || 0) : 0;
+                                                    const isUnseen = (messages.length - 1 - index) < unreadByOther;
+                                                    const status = formatLastSeen(currentConv?.lastTimestamp);
+                                                    
+                                                    let statusText = "";
+                                                    if (isMe && !msg.isUnsent) {
+                                                        if (!isUnseen) statusText = "Seen";
+                                                        else if (status.isOnline) statusText = "Delivered";
+                                                        else statusText = "Sent";
+                                                    }
+
+                                                    return (
+                                                        <MessageBubble
+                                                            key={msg.id}
+                                                            msg={msg}
+                                                            isMe={isMe}
+                                                            isMobile={true}
+                                                            darkMode={darkMode}
+                                                            myPic={myPic}
+                                                            otherPic={otherPic}
+                                                            senderName={effectiveActiveChatUser?.name}
+                                                            statusText={statusText}
+                                                            formatTime={formatTime}
+                                                            setLightboxUrl={setLightboxUrl}
+                                                            setReplyingTo={setReplyingTo}
+                                                            togglePinMessage={togglePinMessage}
+                                                            unsendMessage={unsendMessage}
+                                                            activeMenuId={activeMenuId}
+                                                            setActiveMenuId={setActiveMenuId}
+                                                            menuPosition={menuPosition}
+                                                            setMenuPosition={setMenuPosition}
+                                                        />
+                                                    );
+                                                })}
+                                                <div ref={scrollRef}/>
+                                            </div>
+                                            
+                                            <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
+                                               {replyingTo && (
+                                                <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
+                                                        <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+                                                            {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
+                                                        </span>
+                                                    </div>
+                                                    <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
+                                                </div>
+                                            )}
+                                                <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
+                                                    <input type="file" ref={bubbleFileRef} onChange={handleFileSelect} className="hidden" />
+                                                    <button type="button" onClick={() => bubbleFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2.5 text-sm outline-none rounded-full shadow-inner font-medium border ${darkMode ? 'bg-slate-900/50 border-white/10 text-white placeholder-slate-500' : 'bg-white/60 border-white/60 text-blue-900 placeholder-blue-900/40'}`} />
+                                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-white bg-blue-600 rounded-full shadow-md disabled:opacity-50 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5" />}</button>
+                                                </form>
+                                            </div>
+                                        </>
+                                    )
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+            </>
+        ) : (
+            // --- DESKTOP VIEW BUBBLES ---
+            <div className="fixed z-[200] bottom-6 right-4 md:right-6 flex flex-col-reverse items-end gap-3 pointer-events-none">
+                <div className="pointer-events-auto relative">
+                    <button onClick={() => { setIsDesktopInboxVisible(!isDesktopInboxVisible); setActiveChat(null); }} className="group relative w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-90 overflow-hidden bg-blue-600 border-2 border-white">
+                        <ChatBubbleLeftRightIcon className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                    </button>
+                    {conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm pointer-events-none z-20 animate-bounce border-none">{conversations.reduce((acc, curr) => acc + (curr[`unread_${auth.currentUser?.uid}`] || 0), 0)}</span>}
+                </div>
+                {openBubbles.map((chat) => {
+                    const unread = chat[`unread_${auth.currentUser?.uid}`] || 0;
+                    const chatPic = chat.profilePic || conversations.find(c => c.chatId?.includes(chat.id))?.profilePics?.[chat.id];
+                    return (
+                    <div key={chat.id} className="pointer-events-auto relative group flex items-center gap-3">
+                        <span className={`absolute right-full mr-3 px-3 py-1.5 rounded-xl backdrop-blur-md border text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/60 text-blue-900'}`}>{chat.name}</span>
+                        <div className="relative">
+                            <button onClick={() => { openChat(chat); setIsChatMinimized(false); setIsDesktopInboxVisible(false); markConversationAsRead(chat.id); }} className={`w-12 h-12 md:w-14 md:h-14 rounded-full shadow-xl border-2 overflow-hidden transition-all hover:scale-110 active:scale-95 ${darkMode ? 'border-white/10 bg-slate-800' : 'border-white/60 bg-white/60'}`}>
+                                {chatPic ? (<img src={chatPic} alt="pfp" className="w-full h-full object-cover" />) : (<div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-black text-lg">{chat.name.charAt(0)}</div>)}
+                            </button>
+                            {unread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full shadow-sm z-20 animate-bounce border-none">{unread}</span>}
+                            <button onClick={(e) => { e.stopPropagation(); setOpenBubbles(prev => prev.filter(b => b.id !== chat.id)); if (openBubbles.length <= 1) setIsBubbleVisible(false); }} className={`absolute -top-1 -left-1 w-5 h-5 backdrop-blur-md border rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm ${darkMode ? 'bg-slate-800/80 border-white/10 text-white' : 'bg-white/80 border-white/60 text-slate-500'}`}><XMarkIcon className="w-3 h-3" /></button>
+                        </div>
+                    </div>
+                )})}
+                {isDesktopInboxVisible && !activeChat && (
+                    <div className="fixed z-[210] pointer-events-auto bottom-6 right-24 animate-in slide-in-from-right-4 duration-300">
+                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10' : 'bg-white/80 border-white/60'}`}>
+                            <div className={`p-5 flex justify-between items-center border-b ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+                                <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-blue-900'}`}>Chats</h3>
+                                <button onClick={() => setIsDesktopInboxVisible(false)} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><XMarkIcon className="w-5 h-5"/></button>
+                            </div>
+                            <div className={`p-3 pb-0 ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
+                                <div className={`flex items-center p-1.5 rounded-xl border shadow-inner ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                    <MagnifyingGlassIcon className={`w-4 h-4 ml-2 ${darkMode ? 'text-slate-400' : 'text-blue-400'}`} />
+                                    <input value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} placeholder="Search..." className={`bg-transparent border-none outline-none text-[11px] p-1.5 w-full font-bold ${darkMode ? 'text-white placeholder-slate-500' : 'text-blue-900 placeholder-blue-300'}`} />
+                                </div>
+                            </div>
+                            <div className={`flex-1 overflow-y-auto p-2 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`}>
+                                {filteredChats.map(c => {
+                                    const otherId = c.participants?.find(p => p !== auth.currentUser?.uid);
+                                    if (!otherId) return null;
+                                    const name = c.names?.[otherId] || "User";
+                                    const otherPic = c.profilePics?.[otherId];
+                                    const unread = c[`unread_${auth.currentUser.uid}`] || 0;
+                                    return (
+                                        <button key={c.chatId} onClick={() => { const userObj = { id: otherId, name, profilePic: otherPic }; openChat(userObj); setIsDesktopInboxVisible(false); markConversationAsRead(otherId); }} className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-colors ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-900'}`}>
+                                            <div className={`w-11 h-11 rounded-full overflow-hidden shrink-0 shadow-inner border flex items-center justify-center ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{otherPic ? <img src={otherPic} className="w-full h-full object-cover" alt="pfp" /> : <span className="font-bold">{name.charAt(0)}</span>}</div>
+                                            <div className="flex-1 text-left overflow-hidden">
+                                                <div className="flex justify-between items-center"><span className="font-black text-sm truncate">{name}</span><span className={`text-[9px] font-bold opacity-60 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{formatTime(c.lastTimestamp)}</span></div>
+                                                <div className="flex justify-between items-center"><p className="text-[11px] truncate font-medium opacity-70">{c.lastMessage}</p>{unread > 0 && <span className="min-w-[14px] h-[14px] flex items-center justify-center bg-blue-500 text-white text-[9px] rounded-full px-1 font-bold">{unread}</span>}</div>
+                                            </div>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {!isChatMinimized && activeChat && activeTab !== "Support" && (
+                    <div className="fixed z-[210] pointer-events-auto bottom-6 right-24">
+                        <div className={`w-[320px] h-[450px] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 backdrop-blur-xl border ${darkMode ? 'bg-slate-900/90 border-white/10' : 'bg-white/80 border-white/60'}`}>
+                            
+                            {/* Desktop Chat Header */}
+                            <div className={`p-4 flex justify-between items-center border-b shrink-0 shadow-sm ${darkMode ? 'bg-slate-800/50 border-white/10' : 'bg-white/60 border-white/60'}`}>
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-9 h-9 rounded-full shadow-inner overflow-hidden border ${darkMode ? 'bg-slate-800 border-white/10 text-blue-400' : 'bg-white/60 border-white/60 text-blue-600'}`}>{(getAvatarUrl(activeChat) || activeChat.profilePic) ? <img src={getAvatarUrl(activeChat) || activeChat.profilePic} className="w-full h-full object-cover" alt="pfp"/> : <span className="flex items-center justify-center h-full font-black">{activeChat.name.charAt(0)}</span>}</div>
+                                    <div>
+                                        <span className={`font-black text-xs uppercase block ${darkMode ? 'text-white' : 'text-blue-900'}`}>{activeChat.name}</span>
+                                        <span className={`text-[9px] opacity-80 font-bold flex items-center gap-1 mt-0.5 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                                            {(() => {
+                                                const status = formatLastSeen(conversations.find(c => c.chatId?.includes(activeChat.id))?.lastTimestamp);
+                                                return <><span className={`w-1.5 h-1.5 rounded-full ${status.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span> {status.text}</>;
+                                            })()}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex gap-1"><button onClick={() => { setIsChatMinimized(true); setIsBubbleVisible(true); setOpenBubbles(prev => [...prev, activeChat].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i)); setActiveBubbleView(activeChat.id); closeChat(); }} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><ChevronDownIcon className="w-4 h-4"/></button><button onClick={closeChat} className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-white/60 text-blue-600'}`}><XMarkIcon className="w-4 h-4"/></button></div>
+                            </div>
+                            
+                            {/* Desktop Chat Messages */}
+                            <div className={`flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar ${darkMode ? 'bg-slate-900/30' : 'bg-white/30'}`} onClick={() => setActiveMenuId(null)}>
+                                {messages.map((msg, index) => {
+                                    const isMe = msg.senderId === auth.currentUser.uid;
+                                    const myPic = profileImage || employerData?.profilePic || null;
+                                    const otherPic = activeChat?.profilePic || getAvatarUrl(activeChat) || null;
+
+                                    const currentConv = conversations.find(c => c.participants?.includes(auth.currentUser.uid) && c.participants?.includes(activeChat.id));
+                                    const unreadByOther = currentConv ? (currentConv[`unread_${activeChat.id}`] || 0) : 0;
+                                    const isUnseen = (messages.length - 1 - index) < unreadByOther;
+                                    const status = formatLastSeen(currentConv?.lastTimestamp);
+                                    
+                                    let statusText = "";
+                                    if (isMe && !msg.isUnsent) {
+                                        if (!isUnseen) statusText = "Seen";
+                                        else if (status.isOnline) statusText = "Delivered";
+                                        else statusText = "Sent";
+                                    }
+
+                                    return (
+                                        <MessageBubble
+                                            key={msg.id}
+                                            msg={msg}
+                                            isMe={isMe}
+                                            isMobile={false}
+                                            darkMode={darkMode}
+                                            myPic={myPic}
+                                            otherPic={otherPic}
+                                            senderName={activeChat?.name}
+                                            statusText={statusText}
+                                            formatTime={formatTime}
+                                            setLightboxUrl={setLightboxUrl}
+                                            setReplyingTo={setReplyingTo}
+                                            togglePinMessage={togglePinMessage}
+                                            unsendMessage={unsendMessage}
+                                            activeMenuId={activeMenuId}
+                                            setActiveMenuId={setActiveMenuId}
+                                            menuPosition={menuPosition}
+                                            setMenuPosition={setMenuPosition}
+                                        />
+                                    );
+                                })}
+                                <div ref={scrollRef}/>
+                            </div>
+                            
+                            {/* Desktop Chat Input */}
+                            <div className={`p-3 shrink-0 border-t ${darkMode ? 'bg-slate-900/50 border-white/10' : 'bg-white/50 border-white/60'}`} onClick={() => setActiveMenuId(null)}>
+                                {replyingTo && (
+                                <div className={`mb-2 flex justify-between items-center p-2.5 rounded-xl border-l-4 border-blue-500 text-[10px] font-bold ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                                    <div className="flex flex-col">
+                                        <span className="text-blue-500 uppercase">Replying to {replyingTo.senderId === auth.currentUser.uid ? 'You' : (effectiveActiveChatUser?.name || activeChat?.name || 'User')}</span>
+                                        <span className={`truncate max-w-[200px] font-medium ${darkMode ? 'text-slate-300' : 'text-slate-500'}`}>
+                                            {replyingTo.isUnsent ? "Message unsent" : (replyingTo.fileType ? `[${replyingTo.fileType}]` : replyingTo.text)}
+                                        </span>
+                                    </div>
+                                    <button onClick={() => setReplyingTo(null)}><XMarkIcon className="w-4 h-4 text-slate-400 hover:text-red-500"/></button>
+                                </div>
+                            )}
+                                <form onSubmit={handleSendMessageWrapper} className="flex gap-2 items-center">
+                                    <input type="file" ref={chatFileRef} onChange={handleFileSelect} className="hidden" />
+                                    <button type="button" onClick={() => chatFileRef.current.click()} className={`p-2 rounded-xl shadow-sm border ${darkMode ? 'text-blue-400 bg-slate-800/50 hover:bg-slate-800 border-white/10' : 'text-blue-600 bg-white/40 hover:bg-white/60 border-white/60'}`}><PaperClipIcon className="w-5 h-5"/></button>
+                                    <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Aa" className={`flex-1 px-4 py-2.5 text-sm outline-none rounded-full shadow-inner font-medium border ${darkMode ? 'bg-slate-900/50 border-white/10 text-white placeholder-slate-500' : 'bg-white/60 border-white/60 text-blue-900 placeholder-blue-900/40'}`} />
+                                    <button type="submit" disabled={(!newMessage.trim() && !attachment) || isUploading} className="p-2 text-white bg-blue-600 rounded-full shadow-md disabled:opacity-50 active:scale-90 transition-transform">{isUploading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <PaperAirplaneIcon className="w-5 h-5" />}</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        ))}
     </div>
   );
 }

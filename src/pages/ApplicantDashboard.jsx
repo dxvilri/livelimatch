@@ -154,7 +154,7 @@ export default function ApplicantDashboard() {
 
   const [applicantData, setApplicantData] = useState({
     firstName: "", lastName: "", sitio: "", title: "Job Seeker",
-    bio: "", skills: "", education: "", experience: "",
+    bio: "", skills: "", education: "", workExperience: [], // <-- FIXED KEY
     verificationStatus: "pending", category: "",
     resumeImageUrl: "", resumeFileUrl: ""
   });
@@ -722,11 +722,17 @@ export default function ApplicantDashboard() {
             resumeNameUpdate = resumeDocFile.name; 
         }
 
+        // 1. Define cleanExperience here, right before we use it
+        const cleanExperience = Array.isArray(applicantData.workExperience) 
+             ? applicantData.workExperience.filter(e => e.trim() !== "")
+             : [];
+
+        // 2. Use cleanExperience in updatedData
         const updatedData = { 
             title: applicantData.title, 
             aboutMe: applicantData.bio, 
             education: applicantData.education, 
-            workExperience: applicantData.experience, 
+            workExperience: cleanExperience, 
             category: applicantData.category, 
             resumeImageUrl: resumeImageUpdate,
             resumeFileUrl: resumeDocUpdate,
