@@ -637,6 +637,78 @@ export default function ApplicantDashboard() {
       }
   };
 
+  const submitWithdrawal = async () => {
+      if (!withdrawModal.app) return;
+      if (!withdrawModal.reason.trim()) {
+          return showToast("Please provide a reason for withdrawal.", "error");
+      }
+
+      setLoading(true);
+      try {
+          const app = withdrawModal.app;
+
+          // 1. Update status to withdrawal_pending and attach the reason
+          await updateDoc(doc(db, "applications", app.id), { 
+              status: 'withdrawal_pending',
+              withdrawalReason: withdrawModal.reason,
+              withdrawalRequestedAt: serverTimestamp()
+          }); 
+
+          // 2. Notify Employer via In-App Notification
+          await addDoc(collection(db, "notifications"), {
+              userId: app.employerId,
+              type: "withdrawal_request",
+              title: "Withdrawal Request",
+              message: `${applicantData.firstName} ${applicantData.lastName} has requested to withdraw from their accepted job: ${app.jobTitle}.`,
+              createdAt: serverTimestamp(),
+              isRead: false
+          });
+
+          // 3. Optional: Send Email Notice to Employer
+          try {
+              let targetEmail = null;
+              const empId = app.employerId;
+
+              if (employerContact && employerContact.email) {
+                  targetEmail = employerContact.email;
+              } else if (empId) {
+                  const employerSnap = await getDoc(doc(db, "employers", empId));
+                  if (employerSnap.exists()) {
+                      targetEmail = employerSnap.data().email;
+                  }
+              }
+
+              if (targetEmail) {
+                  await addDoc(collection(db, "mail"), {
+                      to: targetEmail,
+                      message: {
+                          subject: `Withdrawal Request: ${app.jobTitle}`,
+                          html: `
+                          <div style="font-family: sans-serif; padding: 20px;">
+                              <h2>Hello ${app.employerName || "Employer"},</h2>
+                              <p><strong>${applicantData.firstName} ${applicantData.lastName}</strong> has requested to withdraw from the accepted position: <strong>${app.jobTitle}</strong>.</p>
+                              <p><strong>Reason provided:</strong> "${withdrawModal.reason}"</p>
+                              <p>Please log in to your Livelimatch Employer Dashboard to review and approve this request.</p>
+                          </div>
+                          `
+                      }
+                  });
+              }
+          } catch (emailErr) {
+              console.error("Failed to send withdrawal email", emailErr);
+          }
+
+          showToast("Withdrawal request submitted to employer.", "success");
+          setWithdrawModal({ isOpen: false, app: null, reason: '' });
+          setViewingApplication(null);
+          
+      } catch (err) { 
+          showToast("Error submitting withdrawal: " + err.message, "error"); 
+      } finally { 
+          setLoading(false); 
+      }
+  };
+
   const handleArchiveApplication = async (appId) => {
       requestConfirm("Archive Application", "Move this record to your archives?", async () => {
           setLoading(true);

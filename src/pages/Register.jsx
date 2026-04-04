@@ -359,7 +359,9 @@ export default function Register() {
         await signOut(auth);
         clearRecaptcha(); // Use the helper here as well
 
-        triggerToast("Registration successful! Your account is pending admin verification.", "info");
+        // --- NEW TOAST MESSAGE (SUCCESS THEME) ---
+        triggerToast("Registration pending! Please allow 1 to 3 days for processing. You will receive an email notice once your account status has been verified.", "success");
+        
         setTimeout(() => {
             navigate("/login");
         }, 3500); 
@@ -367,6 +369,7 @@ export default function Register() {
     } catch (err) {
         console.error(err);
         triggerToast(err.message, "error");
+    } finally {
         setLoading(false);
     }
   };

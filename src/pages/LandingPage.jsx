@@ -109,13 +109,12 @@ export default function LandingPage() {
   // --- REGISTER STATES ---
   const [registerStep, setRegisterStep] = useState(1);
   const [registerRole, setRegisterRole] = useState("");
-  const [hasBusiness, setHasBusiness] = useState(false);
   const [proofFiles, setProofFiles] = useState([]);
   const [registerOtp, setRegisterOtp] = useState("");
   const [registerConfirmation, setRegisterConfirmation] = useState(null);
   const [registerData, setRegisterData] = useState({
     email: "", password: "", phoneNumber: "", firstName: "",
-    middleName: "", lastName: "", suffix: "", sitio: "", businessName: "",
+    middleName: "", lastName: "", suffix: "", sitio: "",
   });
 
   const PUROK_LIST = ["Sagur", "Ampungan", "Centro 1", "Centro 2", "Centro 3", "Bypass Road", "Boundary"];
@@ -397,8 +396,7 @@ export default function LandingPage() {
             lastName: capitalizeName(registerData.lastName.trim()),
             suffix: capitalizeName(registerData.suffix.trim()),
             sitio: registerData.sitio, proofOfResidencyUrls: uploadedUrls, proofOfResidencyUrl: uploadedUrls[0],
-            status: "pending", createdAt: new Date().toISOString(),
-            ...(registerRole === "employer" && hasBusiness && { businessName: registerData.businessName })
+            status: "pending", createdAt: new Date().toISOString()
         });
 
         await addDoc(collection(db, "mail"), {
@@ -436,7 +434,10 @@ export default function LandingPage() {
 
         await signOut(auth);
         if (window.recaptchaVerifier) { window.recaptchaVerifier.clear(); window.recaptchaVerifier = null; }
-        triggerToast("Registration successful! Pending admin verification.", "info");
+        
+        // --- NEW PENDING TOAST MESSAGE ---
+        triggerToast("Registration pending! Please allow 1 to 3 days for processing. You will receive an email notice once your account status has been verified.", "success");
+        
         setTimeout(() => { setAuthMode('login'); setRegisterStep(1); }, 3000); 
     } catch (err) { triggerToast(err.message, "error"); }
     setLoading(false);
@@ -609,7 +610,7 @@ export default function LandingPage() {
                               </form>
                             )}
 
-                            {registerStep === 5 && (<form onSubmit={handleFinalRegisterSubmit} className="space-y-3"><div><label className={labelStyle}>Select Purok *</label><div className="flex flex-wrap gap-2">{PUROK_LIST.map((sName) => (<button type="button" key={sName} onClick={() => setRegisterData({ ...registerData, sitio: sName })} className={`px-3 py-2.5 rounded-xl border transition-all font-black text-[9px] uppercase tracking-widest flex-grow text-center ${registerData.sitio === sName ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white/60 border-white/60 text-blue-900 hover:bg-white/90'}`}>{sName}</button>))}</div></div><div className="p-3 rounded-2xl border transition-colors bg-white/60 border-white/60 shadow-inner"><label className="text-[10px] font-black uppercase tracking-widest flex justify-between mb-1 text-blue-800"><span>Proof of Residency *</span><span className="text-blue-600">{proofFiles.length}/3</span></label><input type="file" accept="image/*,application/pdf" multiple onChange={handleFileChange} className="w-full px-2 py-1.5 border rounded-xl text-xs outline-none transition-all font-medium bg-white/50 border-white/60 text-blue-900 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:transition-colors file:bg-blue-600 file:text-white hover:file:bg-blue-700" />{proofFiles.length > 0 && (<div className="mt-2 space-y-1.5">{proofFiles.map((file, idx) => (<div key={idx} className="flex justify-between items-center px-2.5 py-1.5 rounded-lg border bg-white border-slate-200 shadow-sm"><span className="text-[10px] font-bold truncate pr-4 text-slate-600">{file.name}</span><button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-500"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button></div>))}</div>)}</div>{registerRole === "employer" && (<div className="space-y-2 pt-1"><div onClick={() => setHasBusiness(!hasBusiness)} className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${hasBusiness ? 'border-blue-400 bg-blue-50' : 'border-white/60 bg-white/60'}`}><div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-colors ${hasBusiness ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>{hasBusiness && <span className="text-white text-[10px] font-bold">✓</span>}</div><span className={`text-[10px] font-black uppercase tracking-widest ${hasBusiness ? 'text-blue-800' : 'text-slate-500'}`}>I have a registered business</span></div>{hasBusiness && <input name="businessName" required placeholder="Company Name" className={`${inputStyle} py-3 text-xs`} onChange={handleRegisterInputChange} />}</div>)}<div className="pt-2"><button disabled={loading || !registerData.sitio || proofFiles.length === 0} type="submit" className="w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed flex justify-center items-center gap-3 bg-blue-600 text-white">{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Complete"}</button></div></form>)}
+                            {registerStep === 5 && (<form onSubmit={handleFinalRegisterSubmit} className="space-y-3"><div><label className={labelStyle}>Select Purok *</label><div className="flex flex-wrap gap-2">{PUROK_LIST.map((sName) => (<button type="button" key={sName} onClick={() => setRegisterData({ ...registerData, sitio: sName })} className={`px-3 py-2.5 rounded-xl border transition-all font-black text-[9px] uppercase tracking-widest flex-grow text-center ${registerData.sitio === sName ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white/60 border-white/60 text-blue-900 hover:bg-white/90'}`}>{sName}</button>))}</div></div><div className="p-3 rounded-2xl border transition-colors bg-white/60 border-white/60 shadow-inner"><label className="text-[10px] font-black uppercase tracking-widest flex justify-between mb-1 text-blue-800"><span>Proof of Residency *</span><span className="text-blue-600">{proofFiles.length}/3</span></label><input type="file" accept="image/*,application/pdf" multiple onChange={handleFileChange} className="w-full px-2 py-1.5 border rounded-xl text-xs outline-none transition-all font-medium bg-white/50 border-white/60 text-blue-900 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:transition-colors file:bg-blue-600 file:text-white hover:file:bg-blue-700" />{proofFiles.length > 0 && (<div className="mt-2 space-y-1.5">{proofFiles.map((file, idx) => (<div key={idx} className="flex justify-between items-center px-2.5 py-1.5 rounded-lg border bg-white border-slate-200 shadow-sm"><span className="text-[10px] font-bold truncate pr-4 text-slate-600">{file.name}</span><button type="button" onClick={() => removeFile(idx)} className="text-red-400 hover:text-red-500"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button></div>))}</div>)}</div><div className="pt-2"><button disabled={loading || !registerData.sitio || proofFiles.length === 0} type="submit" className="w-full py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-xl transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed flex justify-center items-center gap-3 bg-blue-600 text-white">{loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Complete"}</button></div></form>)}
 
                             <div className="mt-auto text-center border-t pt-4 lg:pt-4 pt-8 border-white/50">
                               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Already have an account? <span onClick={() => setAuthMode('login')} className="ml-2 cursor-pointer hover:underline text-blue-700">Sign In</span></p>
